@@ -200,7 +200,7 @@ _DEFAULTS = {
     "disc_bkg_weights": {"c-jet": 0.3, "light-jet": 0.7},
 
     # training-only
-    "train_file":      "mc-flavtag-ttbar-small.h5",
+    "train_file":      "../opendata_tt/mc-flavtag-ttbar-small.h5",
     "n_train":         120_000,
     "n_test":          40_000,
     "epochs":          40,

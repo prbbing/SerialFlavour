@@ -1,0 +1,402 @@
+"""
+Evaluation plots: input distributions, training curves, confusion matrices,
+vertex-fit validation, pair-vertexing evaluation, output probabilities,
+b-tagging discriminant and ROC curves.
+"""
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, roc_curve, auc
+
+
+# ===========================================================================
+# plot_input_variables — per-feature histograms coloured by jet flavour.
+# Shows how the track-feature distributions differ across b/c/light jets.
+# ===========================================================================
+def plot_input_variables(X_train, mask_train, y_train, track_fields, top_k,
+                         jet_class_names, colours, plot_dir):
+    tracks_flat = X_train.reshape(-1, len(track_fields))     # (N*K, F)
+    labels_rep  = np.repeat(y_train, top_k)                  # per-track label
+    nonzero     = mask_train.ravel()                         # valid entries
+
+    n_cols = min(len(track_fields), 4)
+    n_rows = (len(track_fields) + n_cols - 1) // n_cols
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
+    axes = np.array(axes).ravel()
+    fig.suptitle("Input variables by jet flavour (training sample)", fontweight="bold")
+    for fi, fld in enumerate(track_fields):
+        col = tracks_flat[:, fi]
+        valid_col = col[nonzero]
+        clip = np.percentile(np.abs(valid_col), 99) if valid_col.size else 1.0
+        for cls_idx, name in enumerate(jet_class_names):
+            m = (labels_rep == cls_idx) & nonzero
+            axes[fi].hist(col[m], bins=80, range=(-clip, clip),
+                          histtype="step", label=name, color=colours[name],
+                          linewidth=1.5, density=True)
+        axes[fi].set_title(fld, fontsize=8)
+        axes[fi].set_xlabel(fld, fontsize=7)
+        axes[fi].set_ylabel("Density", fontsize=7)
+        if fi == 0:
+            axes[fi].legend(fontsize=7)
+    for ax in axes[len(track_fields):]:
+        ax.set_visible(False)
+    plt.tight_layout()
+    plt.savefig(plot_dir + "input_variables.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved input_variables.png")
+
+
+# ===========================================================================
+# plot_training_summary — loss curves, accuracy curves, jet confusion matrix.
+# ===========================================================================
+def plot_training_summary(history, all_true, all_preds, jet_class_names,
+                          plot_dir, epochs):
+    n_jet_classes = len(jet_class_names)
+    fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
+    fig.suptitle("Staged origin -> vertex -> jet transformer -- training summary",
+                 fontweight="bold")
+    ep = range(1, epochs + 1)
+
+    # left: loss curves
+    axes[0].plot(ep, history["train_loss"],        label="train (total)")
+    axes[0].plot(ep, history["train_jet_loss"],    label="train jet CE",    linestyle="--")
+    axes[0].plot(ep, history["train_origin_loss"], label="train origin CE", linestyle=":")
+    axes[0].plot(ep, history["train_vertex_loss"], label="train vertex",    linestyle="-.")
+    axes[0].plot(ep, history["val_loss"],          label="val (total)")
+    axes[0].set_title("Loss"); axes[0].set_xlabel("Epoch")
+    axes[0].legend(fontsize=7)
+
+    # middle: validation accuracy
+    axes[1].plot(ep, history["val_acc"],        label="jet accuracy")
+    axes[1].plot(ep, history["val_origin_acc"], label="origin accuracy (Stage 1)")
+    axes[1].set_title("Validation accuracy"); axes[1].set_xlabel("Epoch")
+    axes[1].set_ylim(0, 1); axes[1].legend(fontsize=8)
+
+    # right: row-normalised jet confusion matrix
+    cm = confusion_matrix(all_true, all_preds, normalize="true")
+    im = axes[2].imshow(cm, cmap="Blues", vmin=0, vmax=1)
+    axes[2].set_xticks(range(n_jet_classes))
+    axes[2].set_yticks(range(n_jet_classes))
+    axes[2].set_xticklabels(jet_class_names, rotation=45, ha="right", fontsize=8)
+    axes[2].set_yticklabels(jet_class_names, fontsize=8)
+    axes[2].set_xlabel("Predicted"); axes[2].set_ylabel("True")
+    axes[2].set_title("Jet confusion matrix (normalised)")
+    for i in range(n_jet_classes):
+        for j in range(n_jet_classes):
+            axes[2].text(j, i, f"{cm[i,j]:.2f}", ha="center", va="center",
+                         color="white" if cm[i,j] > 0.5 else "black", fontsize=8)
+    plt.colorbar(im, ax=axes[2])
+    plt.tight_layout()
+    plt.savefig(plot_dir + "training_summary.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved training_summary.png")
+
+
+# ===========================================================================
+# plot_origin_confusion_matrix — Stage 1 track-origin classification.
+# ===========================================================================
+def plot_origin_confusion_matrix(origin_true, origin_preds, origin_class_names,
+                                 plot_dir):
+    n_origin_classes = len(origin_class_names)
+    fig, ax = plt.subplots(figsize=(7, 6))
+    fig.suptitle("Track-origin confusion matrix -- Stage 1 (normalised)",
+                 fontweight="bold")
+    cm_o = confusion_matrix(origin_true, origin_preds, normalize="true",
+                            labels=list(range(n_origin_classes)))
+    im = ax.imshow(cm_o, cmap="Blues", vmin=0, vmax=1)
+    ax.set_xticks(range(n_origin_classes))
+    ax.set_yticks(range(n_origin_classes))
+    ax.set_xticklabels(origin_class_names, rotation=45, ha="right", fontsize=8)
+    ax.set_yticklabels(origin_class_names, fontsize=8)
+    ax.set_xlabel("Predicted"); ax.set_ylabel("True")
+    for i in range(n_origin_classes):
+        for j in range(n_origin_classes):
+            ax.text(j, i, f"{cm_o[i,j]:.2f}", ha="center", va="center",
+                    color="white" if cm_o[i,j] > 0.5 else "black", fontsize=7)
+    plt.colorbar(im, ax=ax)
+    plt.tight_layout()
+    plt.savefig(plot_dir + "origin_confusion_matrix.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved origin_confusion_matrix.png")
+
+
+# ===========================================================================
+# plot_vertex_fit — predicted vs true Lxy/dz per vertex leg per jet flavour.
+#
+# Left panel: truth (solid) vs predicted (dashed) for jets that own the leg.
+# Right panel: fitted-value distributions for jets without a matching truth
+#   hadron — diagnostic of whether the network suppresses spurious fits.
+#
+# model: staged_origin_vertex_jet
+# ===========================================================================
+def plot_vertex_fit(lxy_pred, lxy_true, dz_pred, dz_true, vtx_valid, all_true,
+                    config, plot_dir):
+    fit_lxy      = config.fit_lxy
+    fit_dz       = config.fit_dz
+    vertex_legs  = config.vertex_legs
+    vertex_leg_names = config.vertex_leg_names
+    n_vertex_legs    = config.n_vertex_legs
+    vertex_targets   = config.vertex_targets
+    jet_class_names  = config.jet_class_names
+    colours          = config.colours
+
+    # auto-generate leg titles from config
+    _leg_titles = {
+        lname: (f"{lname.replace('_', '-')} (tracks: "
+                f"{', '.join(vertex_legs[lname]) if isinstance(vertex_legs[lname], list) else vertex_legs[lname]})")
+        for lname in vertex_leg_names
+    }
+
+    for leg in range(n_vertex_legs):
+        leg_name   = vertex_leg_names[leg]
+        owner_cls  = config.leg_owner_cls[leg_name]
+        owner_name = jet_class_names[owner_cls]
+        # "has truth" = truth-valid, Lxy>0, and jet flavour matches the leg owner
+        has_truth  = vtx_valid[:, leg] & (lxy_true[:, leg] > 0) & (all_true == owner_cls)
+        no_truth   = ~has_truth
+
+        # -- Lxy comparison --
+        if fit_lxy:
+            fig, (ax_cmp, ax_dist) = plt.subplots(1, 2, figsize=(13, 5.5))
+            fig.suptitle(
+                f"Differentiable origin-gated vertex fit — {_leg_titles[leg_name]}  "
+                r"— $L_{xy}$ (test sample, by true jet flavour)", fontweight="bold")
+
+            if has_truth.any():
+                _clip = max(np.percentile(lxy_true[has_truth, leg], 99),
+                            np.percentile(lxy_pred[has_truth, leg], 99), 1e-3)
+                _bins = np.linspace(0, _clip, 61)
+                ax_cmp.hist(lxy_true[has_truth, leg], bins=_bins, histtype="step",
+                            color=colours[owner_name], linestyle="-", linewidth=1.5,
+                            density=True, label=f"{owner_name} (truth)")
+                ax_cmp.hist(lxy_pred[has_truth, leg], bins=_bins, histtype="step",
+                            color=colours[owner_name], linestyle="--", linewidth=1.5,
+                            density=True, label=f"{owner_name} (pred)")
+                ax_cmp.set_xlim(0, _clip)
+            else:
+                ax_cmp.text(0.5, 0.5, "no jets with a matching truth hadron",
+                            ha="center", va="center", transform=ax_cmp.transAxes,
+                            fontsize=9, color="grey")
+            ax_cmp.set_xlabel(r"$L_{xy}$ [mm]"); ax_cmp.set_ylabel("Density")
+            ax_cmp.set_title(r"Truth (solid) vs. predicted (dashed) — truth hadron exists")
+            ax_cmp.legend(fontsize=6); ax_cmp.grid(True, linestyle="--", alpha=0.3)
+
+            if no_truth.any():
+                _lxy_clip = np.percentile(lxy_pred[no_truth, leg], 99)
+                for cls_idx, cls_name in enumerate(jet_class_names):
+                    m = no_truth & (all_true == cls_idx)
+                    if not m.any():
+                        continue
+                    ax_dist.hist(lxy_pred[m, leg], bins=60, range=(0, _lxy_clip),
+                                 histtype="step", color=colours[cls_name],
+                                 label=cls_name, linewidth=1.5, density=True)
+            else:
+                ax_dist.text(0.5, 0.5, "every jet has a matching truth hadron",
+                             ha="center", va="center", transform=ax_dist.transAxes,
+                             fontsize=9, color="grey")
+            ax_dist.set_xlabel(r"Predicted $L_{xy}$ [mm]")
+            ax_dist.set_ylabel("Density")
+            ax_dist.set_title(r"Fitted-value distribution (no truth hadron)")
+            ax_dist.legend(fontsize=7); ax_dist.grid(True, linestyle="--", alpha=0.3)
+
+            plt.tight_layout()
+            plt.savefig(plot_dir + f"vertex_fit_{leg_name}.png", dpi=150,
+                        bbox_inches="tight")
+            plt.close(fig)
+            print(f"Saved vertex_fit_{leg_name}.png")
+
+        # -- dz comparison (same structure, signed axis) --
+        if fit_dz:
+            fig_dz, axes_dz = plt.subplots(1, 2, figsize=(13, 5.5))
+            fig_dz.suptitle(
+                f"Vertex dz — {_leg_titles[leg_name]}  "
+                r"— $d_z$ (test sample, by true jet flavour)", fontweight="bold")
+            ax_dz_cmp, ax_dz_dist = axes_dz
+
+            if has_truth.any():
+                _dz_all  = np.concatenate([dz_true[has_truth, leg],
+                                           dz_pred[has_truth, leg]])
+                _dz_edge = np.percentile(np.abs(_dz_all[np.isfinite(_dz_all)]), 99)
+                _dz_bins = np.linspace(-_dz_edge, _dz_edge, 61)
+                ax_dz_cmp.hist(dz_true[has_truth, leg], bins=_dz_bins, histtype="step",
+                               color=colours[owner_name], linestyle="-", linewidth=1.5,
+                               density=True, label=f"{owner_name} (truth)")
+                ax_dz_cmp.hist(dz_pred[has_truth, leg], bins=_dz_bins, histtype="step",
+                               color=colours[owner_name], linestyle="--", linewidth=1.5,
+                               density=True, label=f"{owner_name} (pred)")
+            else:
+                ax_dz_cmp.text(0.5, 0.5, "no jets with a matching truth hadron",
+                               ha="center", va="center", transform=ax_dz_cmp.transAxes,
+                               fontsize=9, color="grey")
+            ax_dz_cmp.set_xlabel(r"$d_z$ [mm]"); ax_dz_cmp.set_ylabel("Density")
+            ax_dz_cmp.set_title(r"Truth (solid) vs. predicted (dashed) — truth hadron exists")
+            ax_dz_cmp.legend(fontsize=6); ax_dz_cmp.grid(True, linestyle="--", alpha=0.3)
+
+            if no_truth.any():
+                _dz_clip = np.percentile(np.abs(dz_pred[no_truth, leg]), 99)
+                for cls_idx, cls_name in enumerate(jet_class_names):
+                    m = no_truth & (all_true == cls_idx)
+                    if not m.any():
+                        continue
+                    ax_dz_dist.hist(dz_pred[m, leg], bins=60,
+                                    range=(-_dz_clip, _dz_clip),
+                                    histtype="step", color=colours[cls_name],
+                                    label=cls_name, linewidth=1.5, density=True)
+            else:
+                ax_dz_dist.text(0.5, 0.5, "every jet has a matching truth hadron",
+                                ha="center", va="center",
+                                transform=ax_dz_dist.transAxes,
+                                fontsize=9, color="grey")
+            ax_dz_dist.set_xlabel(r"Predicted $d_z$ [mm]")
+            ax_dz_dist.set_ylabel("Density")
+            ax_dz_dist.set_title(r"Fitted-value distribution (no truth hadron)")
+            ax_dz_dist.legend(fontsize=7); ax_dz_dist.grid(True, linestyle="--", alpha=0.3)
+
+            plt.tight_layout()
+            plt.savefig(plot_dir + f"vertex_fit_{leg_name}_dz.png", dpi=150,
+                        bbox_inches="tight")
+            plt.close(fig_dz)
+            print(f"Saved vertex_fit_{leg_name}_dz.png")
+
+
+# ===========================================================================
+# plot_output_probabilities — P(cls) histogram per true jet flavour.
+# ===========================================================================
+def plot_output_probabilities(all_probs, all_true, jet_class_names, colours,
+                              plot_dir):
+    n_jet_classes = len(jet_class_names)
+    fig, axes = plt.subplots(1, n_jet_classes, figsize=(5 * n_jet_classes, 4))
+    fig.suptitle("Jet output probabilities by true flavour (test sample)",
+                 fontweight="bold")
+    axes = np.atleast_1d(axes)
+    for cls_idx, cls_name in enumerate(jet_class_names):
+        ax = axes[cls_idx]
+        for true_idx, true_name in enumerate(jet_class_names):
+            ax.hist(all_probs[all_true == true_idx, cls_idx], bins=50, range=(0, 1),
+                    histtype="step", label=true_name, color=colours[true_name],
+                    linewidth=1.5, density=True)
+        ax.set_title(f"P({cls_name})"); ax.set_xlabel("Probability")
+        ax.set_ylabel("Density"); ax.legend(fontsize=7)
+    plt.tight_layout()
+    plt.savefig(plot_dir + "output_probs.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved output_probs.png")
+
+
+# ===========================================================================
+# plot_discriminant_roc — b-tagging discriminant log(p_b / Σ w_i p_i) and
+# per-background ROC curves.
+# ===========================================================================
+def plot_discriminant_roc(all_probs, all_true, jet_class_names,
+                          disc_bkg_weights, colours, plot_dir):
+    n_jet_classes = len(jet_class_names)
+    b_idx = jet_class_names.index("b-jet")
+    bkg_idxs = [i for i in range(n_jet_classes) if i != b_idx]
+    w = np.array([disc_bkg_weights[jet_class_names[i]] for i in bkg_idxs])
+    w = w / w.sum()
+
+    # discriminant = log( p_b / (w_c·p_c + w_light·p_light) )
+    pb   = all_probs[:, b_idx]
+    pbkg = all_probs[:, bkg_idxs] @ w
+    disc = np.log(pb / (pbkg + 1e-10))
+    finite = np.isfinite(disc)
+    clip = np.percentile(np.abs(disc[finite]), 99)
+
+    # -- discriminant distribution --
+    fig, ax = plt.subplots(figsize=(7, 5))
+    fig.suptitle(r"$\log(p_b\,/\,\sum_i w_i\,p_i)$ -- test sample",
+                 fontweight="bold")
+    for true_idx, true_name in enumerate(jet_class_names):
+        mfin = (all_true == true_idx) & finite
+        ax.hist(disc[mfin], bins=80, range=(-clip, clip), histtype="step",
+                label=true_name, color=colours[true_name], linewidth=1.5,
+                density=True)
+    ax.set_xlabel(r"$\log(p_b\,/\,\sum_i w_i\,p_i)$")
+    ax.set_ylabel("Density"); ax.legend()
+    plt.tight_layout()
+    plt.savefig(plot_dir + "discriminant.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved discriminant.png")
+
+    # -- ROC curves (b vs c, b vs light) --
+    fig, axes = plt.subplots(1, len(bkg_idxs), figsize=(6 * len(bkg_idxs), 5))
+    fig.suptitle(r"ROC curves — $\log(p_b\,/\,\sum_i w_i\,p_i)$",
+                 fontweight="bold")
+    ax_list = np.atleast_1d(axes)
+    for ax, bkg_idx in zip(ax_list, bkg_idxs):
+        bkg_name = jet_class_names[bkg_idx]
+        mroc   = (all_true == b_idx) | (all_true == bkg_idx)
+        labels = (all_true[mroc] == b_idx).astype(int)
+        score  = disc[mroc]
+        fin    = np.isfinite(score)
+        fpr, tpr, _ = roc_curve(labels[fin], score[fin])
+        ax.plot(tpr, fpr, color="#1f77b4", linewidth=1.5,
+                label=f"AUC={auc(fpr,tpr):.3f}")
+        ax.set_xlabel("b-jet efficiency (TPR)")
+        ax.set_ylabel(f"{bkg_name} rate (FPR)")
+        ax.set_title(f"b vs {bkg_name}"); ax.set_yscale("log")
+        ax.legend(); ax.grid(True, which="both", linestyle="--", alpha=0.4)
+    plt.tight_layout()
+    plt.savefig(plot_dir + "roc.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved roc.png")
+
+
+# ===========================================================================
+# plot_pair_vertexing — track-pair vertex compatibility evaluation.
+#
+# Left: ROC curve for classifying pairs as same-vertex vs different-vertex.
+# Right: predicted same-vertex probability distributions by jet flavour.
+#
+# model: parallel_origin_vertex_jet
+# ===========================================================================
+def plot_pair_vertexing(pair_logits, pair_target, pair_mask,
+                        jet_class_names, all_true, colours, plot_dir):
+    B, K, _ = pair_logits.shape
+    pair_prob    = 1.0 / (1.0 + np.exp(-pair_logits))  # sigmoid
+    valid_pair   = pair_mask[:, :, None] & pair_mask[:, None, :]  # (B, K, K)
+    pos_mask     = valid_pair & (pair_target == 1)     # same vertex
+    neg_mask     = valid_pair & (pair_target == 0)     # different vertex
+    true_classes = np.repeat(all_true, K * K)          # per-pair jet label
+
+    def _hist(data, mask, label, style="-"):
+        d = data[mask]
+        if len(d) == 0:
+            return
+        clip = np.percentile(d, 99.9)
+        bins = np.linspace(0, min(clip, 1), 51)
+        plt.hist(d, bins=bins, histtype="step", label=label,
+                 linestyle=style, linewidth=1.5, density=True)
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.5))
+    fig.suptitle("Track-pair vertexing — parallel_origin_vertex_jet  (test sample)",
+                 fontweight="bold")
+
+    # -- ROC: same-vertex vs different-vertex binary classification --
+    if pos_mask.any() and neg_mask.any():
+        from sklearn.metrics import roc_curve, auc as _auc
+        y_true  = np.concatenate([np.ones(pos_mask.sum(), dtype=int),
+                                  np.zeros(neg_mask.sum(), dtype=int)])
+        y_score = np.concatenate([pair_prob[pos_mask], pair_prob[neg_mask]])
+        fpr, tpr, _ = roc_curve(y_true, y_score)
+        ax1.plot(tpr, fpr, color="#1f77b4", linewidth=1.5,
+                 label=f"AUC={_auc(fpr,tpr):.3f}")
+    ax1.set_xlabel("Same-vertex efficiency (TPR)")
+    ax1.set_ylabel("Different-vertex rate (FPR)")
+    ax1.set_title("Pair-vs-pair ROC"); ax1.set_yscale("log")
+    ax1.legend(); ax1.grid(True, which="both", linestyle="--", alpha=0.4)
+
+    # -- score distributions split by jet flavour --
+    for cls_idx, cls_name in enumerate(jet_class_names):
+        m = true_classes == cls_idx
+        _hist(pair_prob, pos_mask & m.reshape(B, K, K),
+              f"{cls_name} (same vertex)", "--")
+        _hist(pair_prob, neg_mask & m.reshape(B, K, K),
+              f"{cls_name} (different)", ":")
+    ax2.set_xlabel(r"Predicted $p$(same vertex)"); ax2.set_ylabel("Density")
+    ax2.set_title("Pair-score distributions by jet flavour")
+    ax2.legend(fontsize=7); ax2.grid(True, linestyle="--", alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(plot_dir + "pair_vertexing.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved pair_vertexing.png")
