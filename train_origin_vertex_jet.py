@@ -37,6 +37,8 @@ from src.plotting import (
     plot_pair_vertexing,
     plot_output_probabilities,
     plot_discriminant_roc,
+    plot_c_discriminant_roc,
+    plot_track_vertex_assignment,
 )
 
 from sklearn.metrics import classification_report, confusion_matrix
@@ -192,6 +194,18 @@ plot_output_probabilities(all_probs, all_true, config.jet_class_names,
 
 plot_discriminant_roc(all_probs, all_true, config.jet_class_names,
                       config.disc_bkg_weights, config.colours, config.plot_dir)
+
+plot_c_discriminant_roc(all_probs, all_true, config.jet_class_names,
+                        config.c_disc_bkg_weights, config.colours, config.plot_dir)
+
+if "vtx_weight" in pred_arrays:
+    plot_track_vertex_assignment(
+        pred_arrays["vtx_weight"], pred_arrays["origin_full"],
+        pred_arrays["mask_full"], all_true,
+        config.origin_class_names, config.vertex_leg_names,
+        config.vertex_legs, config.n_vertex_legs,
+        config.leg_owner_cls, config.jet_class_names,
+        config.colours, config.plot_dir)
 
 print(f"\nAll outputs saved to {config.plot_dir}")
 

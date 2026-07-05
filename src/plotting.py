@@ -1,7 +1,7 @@
 """
 Evaluation plots: input distributions, training curves, confusion matrices,
 vertex-fit validation, pair-vertexing evaluation, output probabilities,
-b-tagging discriminant and ROC curves.
+b-/c-tagging discriminant and ROC curves, track-to-vertex assignment.
 """
 import numpy as np
 import matplotlib.pyplot as plt
@@ -330,9 +330,10 @@ def plot_discriminant_roc(all_probs, all_true, jet_class_names,
     print("Saved discriminant.png")
 
     # -- ROC curves (b vs c, b vs light) --
+    _roc_data = {}
     fig, axes = plt.subplots(1, len(bkg_idxs), figsize=(6 * len(bkg_idxs), 5))
     fig.suptitle(r"ROC curves — $\log(p_b\,/\,\sum_i w_i\,p_i)$",
-                 fontweight="bold")
+                  fontweight="bold")
     ax_list = np.atleast_1d(axes)
     for ax, bkg_idx in zip(ax_list, bkg_idxs):
         bkg_name = jet_class_names[bkg_idx]
@@ -341,6 +342,7 @@ def plot_discriminant_roc(all_probs, all_true, jet_class_names,
         score  = disc[mroc]
         fin    = np.isfinite(score)
         fpr, tpr, _ = roc_curve(labels[fin], score[fin])
+        _roc_data[bkg_name] = (fpr, tpr)
         ax.plot(tpr, fpr, color="#1f77b4", linewidth=1.5,
                 label=f"AUC={auc(fpr,tpr):.3f}")
         ax.set_xlabel("b-jet efficiency (TPR)")
@@ -351,6 +353,34 @@ def plot_discriminant_roc(all_probs, all_true, jet_class_names,
     plt.savefig(plot_dir + "roc.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
     print("Saved roc.png")
+
+    # -- background rejection vs b-jet efficiency --
+    fig, ax = plt.subplots(figsize=(7, 5))
+    fig.suptitle(r"Background rejection vs $b$-jet efficiency",
+                 fontweight="bold")
+    _wp_eps = [0.65, 0.70, 0.77, 0.85, 0.90]
+    print("\n=== b-tagging rejection rates ===")
+    for ep in _wp_eps:
+        _parts = []
+        for bkg_name, (fpr, tpr) in _roc_data.items():
+            _rej = np.interp(ep, tpr, 1.0 / np.clip(fpr, 1e-10, None))
+            _bkg_short = bkg_name.replace("-jet", "")
+            _parts.append(f"1/ε_{_bkg_short} = {_rej:.0f}")
+        print(f"  ε_b={ep:.0%}:  " + "  ".join(_parts))
+    for bkg_name, (fpr, tpr) in _roc_data.items():
+        rej = 1.0 / np.clip(fpr, 1e-10, None)
+        ax.plot(tpr, rej, linewidth=1.5, label=bkg_name,
+                color=colours[bkg_name])
+    for ep in _wp_eps:
+        ax.axvline(ep, color="grey", linestyle=":", alpha=0.4, linewidth=0.8)
+    ax.set_xlabel(r"$b$-jet efficiency")
+    ax.set_ylabel("Background rejection (1 / ε_bg)")
+    ax.set_yscale("log")
+    ax.legend(); ax.grid(True, which="both", linestyle="--", alpha=0.4)
+    plt.tight_layout()
+    plt.savefig(plot_dir + "rejection.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved rejection.png")
 
 
 # ===========================================================================
@@ -412,3 +442,166 @@ def plot_pair_vertexing(pair_logits, pair_target, pair_mask,
     plt.savefig(plot_dir + "pair_vertexing.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
     print("Saved pair_vertexing.png")
+
+
+# ===========================================================================
+# plot_c_discriminant_roc — c-tagging discriminant, ROC, and rejection.
+# Symmetric to the b-tagging version, using c-jet as signal.
+# ===========================================================================
+def plot_c_discriminant_roc(all_probs, all_true, jet_class_names,
+                            disc_bkg_weights, colours, plot_dir):
+    n_jet_classes = len(jet_class_names)
+    c_idx = jet_class_names.index("c-jet")
+    bkg_idxs = [i for i in range(n_jet_classes) if i != c_idx]
+    w = np.array([disc_bkg_weights[jet_class_names[i]] for i in bkg_idxs])
+    w = w / w.sum()
+
+    # discriminant = log( p_c / (w_b·p_b + w_light·p_light) )
+    pc   = all_probs[:, c_idx]
+    pbkg = all_probs[:, bkg_idxs] @ w
+    disc = np.log(pc / (pbkg + 1e-10))
+    finite = np.isfinite(disc)
+    clip = np.percentile(np.abs(disc[finite]), 99)
+
+    # -- discriminant distribution --
+    fig, ax = plt.subplots(figsize=(7, 5))
+    fig.suptitle(r"$\log(p_c\,/\,\sum_i w_i\,p_i)$ -- test sample",
+                 fontweight="bold")
+    for true_idx, true_name in enumerate(jet_class_names):
+        mfin = (all_true == true_idx) & finite
+        ax.hist(disc[mfin], bins=80, range=(-clip, clip), histtype="step",
+                label=true_name, color=colours[true_name], linewidth=1.5,
+                density=True)
+    ax.set_xlabel(r"$\log(p_c\,/\,\sum_i w_i\,p_i)$")
+    ax.set_ylabel("Density"); ax.legend()
+    plt.tight_layout()
+    plt.savefig(plot_dir + "c_discriminant.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved c_discriminant.png")
+
+    # -- ROC curves (c vs b, c vs light) --
+    _roc_data = {}
+    fig, axes = plt.subplots(1, len(bkg_idxs), figsize=(6 * len(bkg_idxs), 5))
+    fig.suptitle(r"ROC curves — $\log(p_c\,/\,\sum_i w_i\,p_i)$",
+                  fontweight="bold")
+    ax_list = np.atleast_1d(axes)
+    for ax, bkg_idx in zip(ax_list, bkg_idxs):
+        bkg_name = jet_class_names[bkg_idx]
+        mroc   = (all_true == c_idx) | (all_true == bkg_idx)
+        labels = (all_true[mroc] == c_idx).astype(int)
+        score  = disc[mroc]
+        fin    = np.isfinite(score)
+        fpr, tpr, _ = roc_curve(labels[fin], score[fin])
+        _roc_data[bkg_name] = (fpr, tpr)
+        ax.plot(tpr, fpr, color="#ff7f0e", linewidth=1.5,
+                label=f"AUC={auc(fpr,tpr):.3f}")
+        ax.set_xlabel("c-jet efficiency (TPR)")
+        ax.set_ylabel(f"{bkg_name} rate (FPR)")
+        ax.set_title(f"c vs {bkg_name}"); ax.set_yscale("log")
+        ax.legend(); ax.grid(True, which="both", linestyle="--", alpha=0.4)
+    plt.tight_layout()
+    plt.savefig(plot_dir + "c_roc.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved c_roc.png")
+
+    # -- background rejection vs c-jet efficiency --
+    fig, ax = plt.subplots(figsize=(7, 5))
+    fig.suptitle(r"Background rejection vs $c$-jet efficiency",
+                 fontweight="bold")
+    _wp_eps = [0.20, 0.30, 0.40]
+    print("\n=== c-tagging rejection rates ===")
+    for ep in _wp_eps:
+        _parts = []
+        for bkg_name, (fpr, tpr) in _roc_data.items():
+            _rej = np.interp(ep, tpr, 1.0 / np.clip(fpr, 1e-10, None))
+            _bkg_short = bkg_name.replace("-jet", "")
+            _parts.append(f"1/ε_{_bkg_short} = {_rej:.0f}")
+        print(f"  ε_c={ep:.0%}:  " + "  ".join(_parts))
+    for bkg_name, (fpr, tpr) in _roc_data.items():
+        rej = 1.0 / np.clip(fpr, 1e-10, None)
+        ax.plot(tpr, rej, linewidth=1.5, label=bkg_name,
+                color=colours[bkg_name])
+    for ep in _wp_eps:
+        ax.axvline(ep, color="grey", linestyle=":", alpha=0.4, linewidth=0.8)
+    ax.set_xlabel(r"$c$-jet efficiency")
+    ax.set_ylabel("Background rejection (1 / ε_bg)")
+    ax.set_yscale("log")
+    ax.legend(); ax.grid(True, which="both", linestyle="--", alpha=0.4)
+    plt.tight_layout()
+    plt.savefig(plot_dir + "c_rejection.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved c_rejection.png")
+
+
+# ===========================================================================
+# plot_track_vertex_assignment — per-leg track-to-vertex weight fidelity.
+#
+# For each vertex leg, plots the vtx_weight distribution for tracks whose
+# true origin matches the leg's target classes vs. tracks from the same jet
+# flavour with a different origin.  Also prints assignment efficiency at
+# weight thresholds 0.5 and 0.8.
+#
+# model: staged_origin_vertex_jet
+# ===========================================================================
+def plot_track_vertex_assignment(vtx_weight, origin_full, mask_full, all_true,
+                                 origin_class_names, vertex_leg_names,
+                                 vertex_legs, n_vertex_legs, leg_owner_cls,
+                                 jet_class_names, colours, plot_dir):
+    # origin_full: (N, K)  — true origin label per track (-1 = padding)
+    # vtx_weight:  (N, K, L)
+    # mask_full:   (N, K)  — valid track mask
+    # all_true:    (N,)    — jet flavour label
+
+    print("\n=== Track-to-vertex assignment efficiency ===")
+    for leg in range(n_vertex_legs):
+        leg_name = vertex_leg_names[leg]
+        owner_cls = leg_owner_cls[leg_name]
+        owner_name = jet_class_names[owner_cls]
+        leg_origin_cls_names = vertex_legs[leg_name]
+        if isinstance(leg_origin_cls_names, str):
+            leg_origin_cls_names = [leg_origin_cls_names]
+        leg_origin_ids = [origin_class_names.index(c) for c in leg_origin_cls_names]
+
+        # select jets of the leg-owner flavour
+        owner_mask = (all_true == owner_cls)
+        if not owner_mask.any():
+            print(f"  {leg_name}: no {owner_name} jets in test set")
+            continue
+
+        jet_vtx_w = vtx_weight[owner_mask, :, leg]    # (N_owner, K)
+        jet_orig  = origin_full[owner_mask]             # (N_owner, K)
+        jet_mask  = mask_full[owner_mask]               # (N_owner, K)
+
+        # tracks whose true origin matches this leg
+        match_mask = np.isin(jet_orig, leg_origin_ids) & jet_mask
+        # tracks from same jet flavour but different origin
+        other_mask = ~np.isin(jet_orig, leg_origin_ids) & jet_mask & (jet_orig >= 0)
+
+        match_weights = jet_vtx_w[match_mask]
+        other_weights = jet_vtx_w[other_mask]
+
+        for thr in [0.5, 0.8]:
+            eff = (match_weights > thr).mean() if len(match_weights) > 0 else 0.0
+            fp  = (other_weights > thr).mean() if len(other_weights) > 0 else 0.0
+            print(f"  {leg_name} (thr>{thr:.1f}): assignment={eff:.3f}  "
+                  f"false-positive={fp:.4f}  n_match={len(match_weights)}")
+
+        # -- histogram figure --
+        fig, ax = plt.subplots(figsize=(6.5, 4.5))
+        fig.suptitle(f"Track-to-vertex weight — {leg_name}  ({owner_name} jets only)",
+                     fontweight="bold")
+        if len(match_weights) > 0:
+            ax.hist(match_weights, bins=40, range=(0, 1), histtype="step",
+                    color=colours[owner_name], linewidth=1.5, density=True,
+                    label=f"True {leg_name.replace('_','-')} origin  (n={len(match_weights)}")
+        if len(other_weights) > 0:
+            ax.hist(other_weights, bins=40, range=(0, 1), histtype="step",
+                    color="grey", linestyle="--", linewidth=1.5, density=True,
+                    label=f"Other origin  (n={len(other_weights)})")
+        ax.set_xlabel("vtx_weight"); ax.set_ylabel("Density")
+        ax.legend(fontsize=8); ax.grid(True, linestyle="--", alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(plot_dir + f"track_vtx_assignment_{leg_name}.png",
+                    dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Saved track_vtx_assignment_{leg_name}.png")

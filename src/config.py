@@ -114,6 +114,8 @@ _DEFAULTS = {
     },
     # Background weights in the b-tagging discriminant: log(p_b / Σ w_i p_i)
     "disc_bkg_weights": {"c-jet": 0.3, "light-jet": 0.7},
+    # Background weights in the c-tagging discriminant: log(p_c / Σ w_i p_i)
+    "c_disc_bkg_weights": {"b-jet": 0.5, "light-jet": 0.5},
 
     # -- training -----------------------------------------------------------
     "train_file":      "/data/yuyang/opendata/gn2_tt/mc-flavtag-ttbar-small.h5",
@@ -196,6 +198,7 @@ class Config:
         self.origin_class_names = cfg_dict["origin_class_names"]
         self.colours            = cfg_dict["colours"]
         self.disc_bkg_weights   = cfg_dict["disc_bkg_weights"]
+        self.c_disc_bkg_weights = cfg_dict["c_disc_bkg_weights"]
 
         # -- validation ----------------------------------------------------
         assert set(self.vertex_fit_coords) <= {"Lxy", "dz"} and len(self.vertex_fit_coords) >= 1, \
