@@ -49,11 +49,16 @@ def plot_input_variables(X_train, mask_train, y_train, track_fields, top_k,
 # plot_training_summary — loss curves, accuracy curves, jet confusion matrix.
 # ===========================================================================
 def plot_training_summary(history, all_true, all_preds, jet_class_names,
-                          plot_dir, epochs):
+                          plot_dir, epochs, model_type="staged_origin_vertex_jet"):
+    _model_titles = {
+        "staged_origin_vertex_jet":   "Staged origin → vertex → jet",
+        "parallel_origin_vertex_jet": "Parallel origin + vertex + jet",
+    }
+    _title = _model_titles.get(model_type, model_type) + " — training summary"
+
     n_jet_classes = len(jet_class_names)
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
-    fig.suptitle("Staged origin -> vertex -> jet transformer -- training summary",
-                 fontweight="bold")
+    fig.suptitle(_title, fontweight="bold")
     ep = range(1, epochs + 1)
 
     # left: loss curves
@@ -62,8 +67,11 @@ def plot_training_summary(history, all_true, all_preds, jet_class_names,
     axes[0].plot(ep, history["train_origin_loss"], label="train origin CE", linestyle=":")
     axes[0].plot(ep, history["train_vertex_loss"], label="train vertex",    linestyle="-.")
     axes[0].plot(ep, history["val_loss"],          label="val (total)")
+    axes[0].plot(ep, history["val_jet_loss"],      label="val jet CE",      linestyle="--")
+    axes[0].plot(ep, history["val_origin_loss"],   label="val origin CE",   linestyle=":")
+    axes[0].plot(ep, history["val_vertex_loss"],   label="val vertex",      linestyle="-.")
     axes[0].set_title("Loss"); axes[0].set_xlabel("Epoch")
-    axes[0].legend(fontsize=7)
+    axes[0].legend(fontsize=6)
 
     # middle: validation accuracy
     axes[1].plot(ep, history["val_acc"],        label="jet accuracy")

@@ -79,7 +79,8 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
                    n_origin_classes, lambda_jet, lambda_origin, lambda_vertex,
                    fit_lxy, fit_dz, device):
     model.eval()
-    val_loss, correct, origin_correct, origin_total, n_total = 0.0, 0, 0, 0, 0
+    val_loss, val_jet_loss, val_origin_loss, val_vertex_loss = 0.0, 0.0, 0.0, 0.0
+    correct, origin_correct, origin_total, n_total = 0, 0, 0, 0
     all_preds, all_true, all_probs = [], [], []
     all_origin_preds, all_origin_true = [], []
 
@@ -118,7 +119,10 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
             vtx_loss = out["jet_logits"].new_tensor(0.0)
 
         loss = lambda_jet * jet_loss + lambda_origin * origin_loss + lambda_vertex * vtx_loss
-        val_loss += loss.item() * len(y_b)
+        val_loss        += loss.item()        * len(y_b)
+        val_jet_loss    += jet_loss.item()    * len(y_b)
+        val_origin_loss += origin_loss.item() * len(y_b)
+        val_vertex_loss += vtx_loss.item()    * len(y_b)
 
         # ── jet classification predictions ──────────────────────────────
         preds = out["jet_logits"].argmax(dim=1)
@@ -152,9 +156,12 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
         n_total += len(y_b)
 
     # ── aggregate metrics ────────────────────────────────────────────────
-    val_loss       /= n_total
-    val_acc         = correct / n_total
-    val_origin_acc  = origin_correct / max(origin_total, 1)
+    val_loss        /= n_total
+    val_jet_loss    /= n_total
+    val_origin_loss /= n_total
+    val_vertex_loss /= n_total
+    val_acc          = correct / n_total
+    val_origin_acc   = origin_correct / max(origin_total, 1)
 
     pred_arrays = {
         "all_preds":       torch.cat(all_preds).numpy(),
@@ -178,7 +185,8 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
         pred_arrays["pair_target"] = torch.cat(all_pair_target).numpy()
         pred_arrays["pair_mask"]   = torch.cat(all_pair_mask).numpy().astype(bool)
 
-    return val_loss, val_acc, val_origin_acc, pred_arrays
+    return (val_loss, val_jet_loss, val_origin_loss, val_vertex_loss,
+            val_acc, val_origin_acc, pred_arrays)
 
 
 # ===========================================================================
@@ -192,7 +200,8 @@ def run_training(model, train_loader, val_loader, optimiser,
     history = {
         "train_loss": [], "train_jet_loss": [], "train_origin_loss": [],
         "train_vertex_loss": [],
-        "val_loss": [], "val_acc": [], "val_origin_acc": [],
+        "val_loss": [], "val_jet_loss": [], "val_origin_loss": [],
+        "val_vertex_loss": [], "val_acc": [], "val_origin_acc": [],
     }
 
     for epoch in range(1, epochs + 1):
@@ -201,7 +210,8 @@ def run_training(model, train_loader, val_loader, optimiser,
             n_origin_classes, config.lambda_jet, config.lambda_origin,
             config.lambda_vertex, config.fit_lxy, config.fit_dz, device)
 
-        val_loss, val_acc, val_origin_acc, pred_arrays = validate_epoch(
+        (val_loss, val_jet_loss, val_origin_loss, val_vertex_loss,
+         val_acc, val_origin_acc, pred_arrays) = validate_epoch(
             model, val_loader, criterion_jet, criterion_origin,
             n_origin_classes, config.lambda_jet, config.lambda_origin,
             config.lambda_vertex, config.fit_lxy, config.fit_dz, device)
@@ -212,6 +222,9 @@ def run_training(model, train_loader, val_loader, optimiser,
         history["train_origin_loss"].append(train_origin_loss)
         history["train_vertex_loss"].append(train_vertex_loss)
         history["val_loss"].append(val_loss)
+        history["val_jet_loss"].append(val_jet_loss)
+        history["val_origin_loss"].append(val_origin_loss)
+        history["val_vertex_loss"].append(val_vertex_loss)
         history["val_acc"].append(val_acc)
         history["val_origin_acc"].append(val_origin_acc)
 
@@ -230,7 +243,8 @@ def run_training(model, train_loader, val_loader, optimiser,
         print(f"Epoch {epoch:02d}/{epochs}  "
               f"loss={train_loss:.4f} (jet={train_jet_loss:.4f} "
               f"origin={train_origin_loss:.4f} vtx={train_vertex_loss:.4f})  "
-              f"val_loss={val_loss:.4f}  val_acc={val_acc:.4f}  "
-              f"origin_acc={val_origin_acc:.4f}{_calib_str}")
+              f"val_loss={val_loss:.4f} (jet={val_jet_loss:.4f} "
+              f"origin={val_origin_loss:.4f} vtx={val_vertex_loss:.4f})  "
+              f"val_acc={val_acc:.4f}  origin_acc={val_origin_acc:.4f}{_calib_str}")
 
     return history, pred_arrays

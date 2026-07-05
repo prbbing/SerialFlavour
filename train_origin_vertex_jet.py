@@ -145,7 +145,7 @@ print(classification_report(origin_true, origin_preds, target_names=config.origi
                             labels=list(range(config.n_origin_classes)), zero_division=0))
 
 plot_training_summary(history, all_true, all_preds, config.jet_class_names,
-                      config.plot_dir, config.epochs)
+                      config.plot_dir, config.epochs, model_type=config.model_type)
 
 plot_origin_confusion_matrix(origin_true, origin_preds,
                              config.origin_class_names, config.plot_dir)
