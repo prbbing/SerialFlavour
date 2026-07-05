@@ -121,7 +121,7 @@ _DEFAULTS = {
     "n_test":          40_000,        # natural distribution (last N)
     "epochs":          40,
     "lr":              1e-3,          # Adam learning rate
-    "num_workers":     0,             # DataLoader workers
+    "num_workers":     4,             # DataLoader workers
     "model_name":      "model.pt",
     "train_plot_dir":  "./results/",
     "train_cache_dir": ".track_cache/",

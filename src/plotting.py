@@ -95,8 +95,12 @@ def plot_training_summary(history, all_true, all_preds, jet_class_names,
     plt.colorbar(im, ax=axes[2])
     plt.tight_layout()
     plt.savefig(plot_dir + "training_summary.png", dpi=150, bbox_inches="tight")
+
+    axes[0].set_yscale("log")
+    axes[0].set_title("Loss (log scale)")
+    plt.savefig(plot_dir + "training_summary_log.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print("Saved training_summary.png")
+    print("Saved training_summary.png  training_summary_log.png")
 
 
 # ===========================================================================

@@ -17,6 +17,8 @@ Usage: python train_origin_vertex.py [--config config.json]
 import argparse
 import json
 import os
+import sys
+from datetime import datetime
 
 import torch
 import torch.nn as nn
@@ -50,6 +52,28 @@ args = parser.parse_args()
 
 config, cfg_dict = load_config(args.config)
 
+ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+config.plot_dir = f"{config.plot_dir.rstrip('/')}_{ts}/"
+
+os.makedirs(config.plot_dir, exist_ok=True)
+os.makedirs(config.cache_dir, exist_ok=True)
+
+_orig_stdout = sys.stdout
+log_file = open(os.path.join(config.plot_dir, "training_log.md"), "w")
+
+class _Tee:
+    def __init__(self, a, b):
+        self.a = a
+        self.b = b
+    def write(self, msg):
+        self.a.write(msg)
+        self.b.write(msg)
+    def flush(self):
+        self.a.flush()
+        self.b.flush()
+
+sys.stdout = _Tee(_orig_stdout, log_file)
+
 # ----------------------------------------------------------------
 # Device selection
 #   gpu_ids: [-1]        → auto  (cpu fallback)
@@ -66,9 +90,6 @@ else:
     gpu_ids  = [0]
 print(f"Device: {gpu_ids}  |  DataParallel: {use_dp}")
 # ----------------------------------------------------------------
-
-os.makedirs(config.plot_dir,  exist_ok=True)
-os.makedirs(config.cache_dir, exist_ok=True)
 
 _cfg_save_path = os.path.join(config.plot_dir, "config.json")
 with open(_cfg_save_path, "w") as f:
@@ -173,3 +194,6 @@ plot_discriminant_roc(all_probs, all_true, config.jet_class_names,
                       config.disc_bkg_weights, config.colours, config.plot_dir)
 
 print(f"\nAll outputs saved to {config.plot_dir}")
+
+sys.stdout = _orig_stdout
+log_file.close()
