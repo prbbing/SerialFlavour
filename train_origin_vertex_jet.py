@@ -28,7 +28,7 @@ from src.config import load_config, _DEFAULTS
 from src.data import create_dataloaders
 from src.models import build_model
 from src.losses import compute_origin_class_weights
-from src.training import run_training
+from src.training import run_training, validate_epoch
 from src.plotting import (
     plot_input_variables,
     plot_training_summary,
@@ -50,34 +50,14 @@ parser = argparse.ArgumentParser(
 )
 parser.add_argument("--config", default=None,
                     help="Path to JSON config file. Keys override built-in defaults.")
+parser.add_argument("--eval-only", action="store_true",
+                    help="Skip training; load saved weights and run evaluation only.")
 args = parser.parse_args()
 
 config, cfg_dict = load_config(args.config)
 
-ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-config.plot_dir = f"{config.plot_dir.rstrip('/')}_{ts}/"
-
-os.makedirs(config.plot_dir, exist_ok=True)
-os.makedirs(config.cache_dir, exist_ok=True)
-
-_orig_stdout = sys.stdout
-log_file = open(os.path.join(config.plot_dir, "training_log.md"), "w")
-
-class _Tee:
-    def __init__(self, a, b):
-        self.a = a
-        self.b = b
-    def write(self, msg):
-        self.a.write(msg)
-        self.b.write(msg)
-    def flush(self):
-        self.a.flush()
-        self.b.flush()
-
-sys.stdout = _Tee(_orig_stdout, log_file)
-
 # ----------------------------------------------------------------
-# Device selection
+# Device selection (shared by train & eval)
 #   gpu_ids: [-1]        → auto  (cpu fallback)
 #   gpu_ids: [0]         → single GPU 0
 #   gpu_ids: [0, 1, 2]   → DataParallel on GPUs 0,1,2
@@ -90,9 +70,148 @@ else:
     DEVICE   = "cuda" if torch.cuda.is_available() else "cpu"
     use_dp   = False
     gpu_ids  = [0]
-print(f"Device: {gpu_ids}  |  DataParallel: {use_dp}")
 # ----------------------------------------------------------------
 
+# ── _Tee utility (shared) ──────────────────────────────────────────
+class _Tee:
+    def __init__(self, a, b):
+        self.a = a
+        self.b = b
+    def write(self, msg):
+        self.a.write(msg)
+        self.b.write(msg)
+    def flush(self):
+        self.a.flush()
+        self.b.flush()
+
+# ── _run_evaluation (shared by train and eval-only modes) ────────────
+def _run_evaluation(pred_arrays, cfg, plot_dir, history=None):
+    all_preds    = pred_arrays["all_preds"]
+    all_true     = pred_arrays["all_true"]
+    all_probs    = pred_arrays["all_probs"]
+    origin_preds = pred_arrays["origin_preds"]
+    origin_true  = pred_arrays["origin_true"]
+
+    print("\nJet classification report:")
+    print(classification_report(all_true, all_preds,
+                                target_names=cfg.jet_class_names))
+    print("Jet confusion matrix (rows=true, cols=pred):")
+    print(confusion_matrix(all_true, all_preds))
+
+    print("\nTrack-origin classification report:")
+    print(classification_report(origin_true, origin_preds,
+                                target_names=cfg.origin_class_names,
+                                labels=list(range(cfg.n_origin_classes)),
+                                zero_division=0))
+
+    if history is not None:
+        plot_training_summary(history, all_true, all_preds,
+                              cfg.jet_class_names, plot_dir, cfg.epochs,
+                              model_type=cfg.model_type)
+
+    plot_output_probabilities(all_probs, all_true, cfg.jet_class_names,
+                              cfg.colours, plot_dir)
+
+    plot_origin_confusion_matrix(origin_true, origin_preds,
+                                 cfg.origin_class_names, plot_dir)
+
+    plot_discriminant_roc(all_probs, all_true, cfg.jet_class_names,
+                          cfg.disc_bkg_weights, cfg.colours, plot_dir)
+
+    plot_c_discriminant_roc(all_probs, all_true, cfg.jet_class_names,
+                            cfg.c_disc_bkg_weights, cfg.colours, plot_dir)
+
+    if "lxy_pred" in pred_arrays:
+        plot_vertex_fit(pred_arrays["lxy_pred"], pred_arrays["lxy_true"],
+                        pred_arrays["dz_pred"], pred_arrays["dz_true"],
+                        pred_arrays["vtx_valid"], all_true, cfg, plot_dir)
+    if "vtx_weight" in pred_arrays:
+        plot_track_vertex_assignment(
+            pred_arrays["vtx_weight"], pred_arrays["origin_full"],
+            pred_arrays["mask_full"], all_true,
+            cfg.origin_class_names, cfg.vertex_leg_names,
+            cfg.vertex_legs, cfg.n_vertex_legs,
+            cfg.leg_owner_cls, cfg.jet_class_names,
+            cfg.colours, plot_dir)
+    if "pair_logits" in pred_arrays:
+        plot_pair_vertexing(pred_arrays["pair_logits"],
+                            pred_arrays["pair_target"],
+                            pred_arrays["pair_mask"],
+                            cfg.jet_class_names, all_true,
+                            cfg.colours, plot_dir)
+
+    print(f"\nAll outputs saved to {plot_dir}")
+
+# ══════════════════════════════════════════════════════════════════════
+# Eval-only mode — load weights, validate, run all diagnostic plots.
+# ══════════════════════════════════════════════════════════════════════
+if args.eval_only:
+    os.makedirs(config.cache_dir, exist_ok=True)
+    eval_plot_dir = os.path.join(config.plot_dir, "eval/")
+    os.makedirs(eval_plot_dir, exist_ok=True)
+
+    _orig_stdout = sys.stdout
+    log_file = open(os.path.join(eval_plot_dir, "eval_log.md"), "w")
+    sys.stdout = _Tee(_orig_stdout, log_file)
+
+    print(f"Device: {gpu_ids}  |  DataParallel: {use_dp}")
+    print(f"Eval-only — weights: {config.plot_dir}/{config.model_name}")
+
+    print("Loading data...")
+    _, val_loader, _, test_data, _, y_test = create_dataloaders(config, DEVICE)
+
+    model = build_model(config).to(DEVICE)
+    if use_dp:
+        model = torch.nn.DataParallel(model, device_ids=gpu_ids)
+
+    weights_path = os.path.join(config.plot_dir, config.model_name)
+    if not os.path.exists(weights_path):
+        raise FileNotFoundError(f"Model weights not found: {weights_path}")
+    model.load_state_dict(
+        torch.load(weights_path, map_location=DEVICE, weights_only=True))
+    print(f"Loaded weights from {weights_path}")
+
+    if config.model_type == "staged_origin_vertex_jet":
+        print(f"  Vertex fit coordinates: {config.vertex_fit_coords}")
+        print(f"  Stage-3 extra inputs: {config.stage3_extra_inputs}")
+        print(f"  Stage-3 tagging fields ({len(config.tagging_fields)}): "
+              f"{config.tagging_fields}")
+
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Parameters: {n_params:,}")
+    print(f"Device: {DEVICE}  |  Test: {len(y_test):,}\n")
+
+    criterion_jet = nn.CrossEntropyLoss()
+    criterion_origin = nn.CrossEntropyLoss(ignore_index=-1)
+    *_, pred_arrays = validate_epoch(
+        model, val_loader, criterion_jet, criterion_origin,
+        config.n_origin_classes, config.lambda_jet,
+        config.lambda_origin, config.lambda_vertex,
+        config.fit_lxy, config.fit_dz, DEVICE)
+
+    _run_evaluation(pred_arrays, config, eval_plot_dir)
+
+    sys.stdout = _orig_stdout
+    log_file.close()
+    sys.exit(0)
+
+# ══════════════════════════════════════════════════════════════════════
+# Training mode
+# ══════════════════════════════════════════════════════════════════════
+
+ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+config.plot_dir = f"{config.plot_dir.rstrip('/')}_{ts}/"
+
+os.makedirs(config.plot_dir, exist_ok=True)
+os.makedirs(config.cache_dir, exist_ok=True)
+
+_orig_stdout = sys.stdout
+log_file = open(os.path.join(config.plot_dir, "training_log.md"), "w")
+sys.stdout = _Tee(_orig_stdout, log_file)
+
+print(f"Device: {gpu_ids}  |  DataParallel: {use_dp}")
+
+cfg_dict["train_plot_dir"] = config.plot_dir
 _cfg_save_path = os.path.join(config.plot_dir, "config.json")
 with open(_cfg_save_path, "w") as f:
     json.dump(cfg_dict, f, indent=4)
@@ -148,66 +267,8 @@ history, pred_arrays = run_training(
 torch.save(model.state_dict(), os.path.join(config.plot_dir, config.model_name))
 print(f"Saved {config.model_name}")
 
-# -----------------------------------------------------------------
-# Evaluate model on test set and produce plots
-# -----------------------------------------------------------------
-
-all_preds   = pred_arrays["all_preds"]
-all_true    = pred_arrays["all_true"]
-all_probs   = pred_arrays["all_probs"]
-origin_preds = pred_arrays["origin_preds"]
-origin_true  = pred_arrays["origin_true"]
-
-print("\nJet classification report:")
-print(classification_report(all_true, all_preds, target_names=config.jet_class_names))
-print("Jet confusion matrix (rows=true, cols=pred):")
-print(confusion_matrix(all_true, all_preds))
-
-print("\nTrack-origin classification report:")
-print(classification_report(origin_true, origin_preds, target_names=config.origin_class_names,
-                            labels=list(range(config.n_origin_classes)), zero_division=0))
-
-plot_training_summary(history, all_true, all_preds, config.jet_class_names,
-                      config.plot_dir, config.epochs, model_type=config.model_type)
-
-plot_origin_confusion_matrix(origin_true, origin_preds,
-                             config.origin_class_names, config.plot_dir)
-
-# ----------------------------------------------------------------
-# model: staged_origin_vertex_jet — Lxy/dz vertex-fit evaluation
-# ----------------------------------------------------------------
-if "lxy_pred" in pred_arrays:
-    plot_vertex_fit(pred_arrays["lxy_pred"], pred_arrays["lxy_true"],
-                    pred_arrays["dz_pred"], pred_arrays["dz_true"],
-                    pred_arrays["vtx_valid"], all_true, config, config.plot_dir)
-# ----------------------------------------------------------------
-# model: parallel_origin_vertex_jet — pair-vertexing evaluation
-# ----------------------------------------------------------------
-if "pair_logits" in pred_arrays:
-    plot_pair_vertexing(pred_arrays["pair_logits"], pred_arrays["pair_target"],
-                        pred_arrays["pair_mask"], config.jet_class_names,
-                        all_true, config.colours, config.plot_dir)
-# ----------------------------------------------------------------
-
-plot_output_probabilities(all_probs, all_true, config.jet_class_names,
-                          config.colours, config.plot_dir)
-
-plot_discriminant_roc(all_probs, all_true, config.jet_class_names,
-                      config.disc_bkg_weights, config.colours, config.plot_dir)
-
-plot_c_discriminant_roc(all_probs, all_true, config.jet_class_names,
-                        config.c_disc_bkg_weights, config.colours, config.plot_dir)
-
-if "vtx_weight" in pred_arrays:
-    plot_track_vertex_assignment(
-        pred_arrays["vtx_weight"], pred_arrays["origin_full"],
-        pred_arrays["mask_full"], all_true,
-        config.origin_class_names, config.vertex_leg_names,
-        config.vertex_legs, config.n_vertex_legs,
-        config.leg_owner_cls, config.jet_class_names,
-        config.colours, config.plot_dir)
-
-print(f"\nAll outputs saved to {config.plot_dir}")
+# ── run evaluation (training mode) ────────────────────────────────────
+_run_evaluation(pred_arrays, config, config.plot_dir, history=history)
 
 sys.stdout = _orig_stdout
 log_file.close()
