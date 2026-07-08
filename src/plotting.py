@@ -546,7 +546,9 @@ def plot_c_discriminant_roc(all_probs, all_true, jet_class_names,
 def plot_track_vertex_assignment(vtx_weight, origin_full, mask_full, all_true,
                                  origin_class_names, vertex_leg_names,
                                  vertex_legs, n_vertex_legs, leg_owner_cls,
-                                 jet_class_names, colours, plot_dir):
+                                 jet_class_names, colours, plot_dir,
+                                 leg_origin_probs=None, gate=None,
+                                 refine=None):
     # origin_full: (N, K)  — true origin label per track (-1 = padding)
     # vtx_weight:  (N, K, L)
     # mask_full:   (N, K)  — valid track mask
@@ -579,6 +581,67 @@ def plot_track_vertex_assignment(vtx_weight, origin_full, mask_full, all_true,
 
         match_weights = jet_vtx_w[match_mask]
         other_weights = jet_vtx_w[other_mask]
+
+        # -- print gate / leg_origin_probs diagnostics --
+        _match_leg_p = None; _other_leg_p = None
+        _match_gate  = None; _other_gate  = None
+        if leg_origin_probs is not None:
+            jet_leg_p  = leg_origin_probs[owner_mask, :, leg]   # (N_owner, K)
+            _match_leg_p = jet_leg_p[match_mask]
+            _other_leg_p = jet_leg_p[other_mask]
+        if gate is not None:
+            jet_gate   = gate[owner_mask, :, leg]               # (N_owner, K)
+            _match_gate = jet_gate[match_mask]
+            _other_gate = jet_gate[other_mask]
+        if _match_leg_p is not None and len(_match_leg_p):
+            print(f"  {leg_name}  P_leg match:  "
+                  f"min={_match_leg_p.min():.4f}  mean={_match_leg_p.mean():.4f}  "
+                  f"P25={np.percentile(_match_leg_p,25):.4f}  "
+                  f"P50={np.percentile(_match_leg_p,50):.4f}  "
+                  f"P75={np.percentile(_match_leg_p,75):.4f}  "
+                  f"max={_match_leg_p.max():.4f}")
+            print(f"  {leg_name}  P_leg other:  "
+                  f"min={_other_leg_p.min():.4f}  mean={_other_leg_p.mean():.4f}  "
+                  f"P50={np.percentile(_other_leg_p,50):.4f}  "
+                  f"P90={np.percentile(_other_leg_p,90):.4f}  "
+                  f"max={_other_leg_p.max():.4f}")
+        if _match_gate is not None and len(_match_gate):
+            print(f"  {leg_name}  gate  match:  "
+                  f"min={_match_gate.min():.4f}  mean={_match_gate.mean():.4f}  "
+                  f"P25={np.percentile(_match_gate,25):.4f}  "
+                  f"P50={np.percentile(_match_gate,50):.4f}  "
+                  f"P75={np.percentile(_match_gate,75):.4f}  "
+                  f"max={_match_gate.max():.4f}")
+            print(f"  {leg_name}  gate  other:  "
+                  f"min={_other_gate.min():.4f}  mean={_other_gate.mean():.4f}  "
+                  f"P50={np.percentile(_other_gate,50):.4f}  "
+                  f"P90={np.percentile(_other_gate,90):.4f}  "
+                  f"max={_other_gate.max():.4f}")
+
+        _match_refine = None; _other_refine = None
+        if refine is not None:
+            jet_refine    = refine[owner_mask, :, leg]       # (N_owner, K)
+            _match_refine = jet_refine[match_mask]
+            _other_refine = jet_refine[other_mask]
+        if _match_refine is not None and len(_match_refine):
+            print(f"  {leg_name}  refine match:  "
+                  f"min={_match_refine.min():.4f}  mean={_match_refine.mean():.4f}  "
+                  f"P25={np.percentile(_match_refine,25):.4f}  "
+                  f"P50={np.percentile(_match_refine,50):.4f}  "
+                  f"P75={np.percentile(_match_refine,75):.4f}  "
+                  f"max={_match_refine.max():.4f}")
+            print(f"  {leg_name}  refine other:  "
+                  f"min={_other_refine.min():.4f}  mean={_other_refine.mean():.4f}  "
+                  f"P50={np.percentile(_other_refine,50):.4f}  "
+                  f"P90={np.percentile(_other_refine,90):.4f}  "
+                  f"max={_other_refine.max():.4f}")
+
+        _parts = [w for w in [match_weights, other_weights] if len(w)]
+        all_w = np.concatenate(_parts) if _parts else np.array([])
+        if len(all_w):
+            print(f"  {leg_name}  vtx_w range=[{all_w.min():.5f}, {all_w.max():.5f}]  "
+                  f"mean={all_w.mean():.5f}  median={np.median(all_w):.5f}  "
+                  f"P99={np.percentile(all_w, 99):.5f}")
 
         for thr in [0.5, 0.8]:
             eff = (match_weights > thr).mean() if len(match_weights) > 0 else 0.0

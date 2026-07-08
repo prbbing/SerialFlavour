@@ -87,6 +87,7 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
     # model: staged_origin_vertex_jet — Lxy/dz metrics buffers
     all_lxy_pred, all_lxy_true, all_dz_pred, all_dz_true, all_vtx_valid = [], [], [], [], []
     all_vtx_weight, all_origin_full, all_mask_full = [], [], []
+    all_leg_origin_probs, all_gate, all_refine = [], [], []
     # model: parallel_origin_vertex_jet — pair metrics buffers
     all_pair_logits, all_pair_target, all_pair_mask = [], [], []
 
@@ -153,6 +154,10 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
             all_vtx_weight.append(out["vtx_weight"].cpu())
             all_origin_full.append(origin_b.cpu())
             all_mask_full.append(mask_b.cpu())
+        if "leg_origin_probs" in out:
+            all_leg_origin_probs.append(out["leg_origin_probs"].cpu())
+            all_gate.append(out["gate"].cpu())
+            all_refine.append(out["refine"].cpu())
         if "pair_logits" in out:
             # model: parallel_origin_vertex_jet
             all_pair_logits.append(out["pair_logits"].cpu())
@@ -189,6 +194,10 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
         pred_arrays["vtx_weight"]  = torch.cat(all_vtx_weight).numpy()
         pred_arrays["origin_full"] = torch.cat(all_origin_full).numpy()
         pred_arrays["mask_full"]   = torch.cat(all_mask_full).numpy().astype(bool)
+    if all_leg_origin_probs:
+        pred_arrays["leg_origin_probs"] = torch.cat(all_leg_origin_probs).numpy()
+        pred_arrays["gate"]             = torch.cat(all_gate).numpy()
+        pred_arrays["refine"]           = torch.cat(all_refine).numpy()
     # model: parallel_origin_vertex_jet
     if all_pair_logits:
         pred_arrays["pair_logits"] = torch.cat(all_pair_logits).numpy()

@@ -32,6 +32,7 @@ _DEFAULTS = {
     "dropout":    0.1,   # dropout probability
     "gate_temp":  0.1,   # sigmoid temperature for vertex-leg origin gating
                          # smaller → sharper step at p=0.5
+    "delta_w_amp": 0.5,  # bounded residual amplitude for fix-refine Stage-2 weights
     # -- task sizes ---------------------------------------------------------
     "n_origin_classes": 8,
     "n_jet_classes":    3,   # b / c / light (tau excluded)
@@ -161,6 +162,7 @@ class Config:
         self.d_ffn              = cfg_dict["d_ffn"]
         self.dropout            = cfg_dict["dropout"]
         self.gate_temp          = cfg_dict["gate_temp"]
+        self.delta_w_amp        = cfg_dict["delta_w_amp"]
 
         # -- task sizes -----------------------------------------------------
         self.n_origin_classes   = cfg_dict["n_origin_classes"]

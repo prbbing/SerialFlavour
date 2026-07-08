@@ -52,6 +52,8 @@ parser.add_argument("--config", default=None,
                     help="Path to JSON config file. Keys override built-in defaults.")
 parser.add_argument("--eval-only", action="store_true",
                     help="Skip training; load saved weights and run evaluation only.")
+parser.add_argument("--output-dir", default=None,
+                    help="Override train_plot_dir from config. Timestamp is still appended.")
 args = parser.parse_args()
 
 config, cfg_dict = load_config(args.config)
@@ -132,7 +134,10 @@ def _run_evaluation(pred_arrays, cfg, plot_dir, history=None):
             cfg.origin_class_names, cfg.vertex_leg_names,
             cfg.vertex_legs, cfg.n_vertex_legs,
             cfg.leg_owner_cls, cfg.jet_class_names,
-            cfg.colours, plot_dir)
+            cfg.colours, plot_dir,
+            leg_origin_probs=pred_arrays.get("leg_origin_probs"),
+            gate=pred_arrays.get("gate"),
+            refine=pred_arrays.get("refine"))
     if "pair_logits" in pred_arrays:
         plot_pair_vertexing(pred_arrays["pair_logits"],
                             pred_arrays["pair_target"],
@@ -199,6 +204,9 @@ if args.eval_only:
 # Training mode
 # ══════════════════════════════════════════════════════════════════════
 
+if args.output_dir is not None:
+    config.plot_dir = args.output_dir
+    
 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 config.plot_dir = f"{config.plot_dir.rstrip('/')}_{ts}/"
 

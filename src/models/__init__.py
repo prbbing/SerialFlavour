@@ -7,12 +7,16 @@ a new module file + one line in _MODEL_REGISTRY.
 """
 from .staged_origin_vertex_jet import (
     StagedOriginVertexJetTransformer, build_staged_origin_vertex_jet)
+from .staged_origin_vertex_jet_fix_refine import (
+    StagedOriginVertexJetTransformer as FixRefineStagedOriginVertexJetTransformer,
+    build_staged_origin_vertex_jet_fix_refine)
 from .parallel_origin_vertex_jet import (
     ParallelOriginVertexJetTransformer, build_parallel_origin_vertex_jet)
 
 # Map model_type string → builder(config) → nn.Module
 _MODEL_REGISTRY = {
     "staged_origin_vertex_jet":    build_staged_origin_vertex_jet,
+    "staged_origin_vertex_jet_fix_refine": build_staged_origin_vertex_jet_fix_refine,
     "parallel_origin_vertex_jet":  build_parallel_origin_vertex_jet,
 }
 

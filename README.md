@@ -70,13 +70,13 @@ x → init_net → encoder ─┬── pool_attn → jet_head → jet_logits
 
 ### Model summary
 
-| | staged | parallel |
-|---|---|---|
-| Encoders | 3 independent (one per stage) | 1 shared |
-| Task organisation | Sequential (Stage 1 → 2 → 3) | Parallel (3 heads from shared backbone) |
-| Third task | Closed-form Lxy/dz vertex fit | Track-pair vertexing (binary BCE) |
-| Default config | d=32, heads=4, layers=2, d_ffn=64 | d=32, heads=4, layers=6, d_ffn=64 |
-| Parameters | ~55 k | ~55 k |
+|                   | staged                            | parallel                                |
+| ----------------- | --------------------------------- | --------------------------------------- |
+| Encoders          | 3 independent (one per stage)     | 1 shared                                |
+| Task organisation | Sequential (Stage 1 → 2 → 3)      | Parallel (3 heads from shared backbone) |
+| Third task        | Closed-form Lxy/dz vertex fit     | Track-pair vertexing (binary BCE)       |
+| Default config    | d=32, heads=4, layers=2, d_ffn=64 | d=32, heads=4, layers=6, d_ffn=64       |
+| Parameters        | ~55 k                             | ~55 k                                   |
 
 ## Configuration
 
@@ -87,3 +87,7 @@ Training outputs evaluation plots and classification reports under `train_plot_d
 ## Extending
 
 To add a new architecture, create a module under `src/models/`, register a builder in `src/models/__init__.py`, and provide a JSON config with `"model_type"`. If the model introduces new output keys, add the corresponding loss/metrics/plots following the existing annotation convention. No changes are needed to the training entry point or config system.
+
+
+## Issue
+Currently most value of vtx_weight in staged model is 0, though the training is going well. Detailed analysis shows that this because the `refine = torch.sigmoid(self.vertex_weight_head(h2))` becomes 0 in the training, which includes information from vertex encoder. This issue is under addressing.

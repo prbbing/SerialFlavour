@@ -1,0 +1,21 @@
+{
+    "model_type": "staged_origin_vertex_jet_fix_refine",
+    "d_model": 32,
+    "n_heads": 2,
+    "n_layers": 2,
+    "d_ffn": 64,
+    "dropout": 0.1,
+    "epochs": 100,
+    "lr": 0.001,
+    "gate_temp": 0.1,
+    "gpu_ids": [
+        "0"
+    ],
+    "train_file": "/data/yuyang/opendata/gn2_tt/mc-flavtag-ttbar-small.h5",
+    "n_train": 600000,
+    "n_test": 200000,
+    "batch_size": 2048,
+    "train_plot_dir": "./results/results_staged_fix_refine/",
+    "model_name": "staged_origin_vertex_jet_fix_refine.pt",
+    "train_cache_dir": ".track_cache/"
+}

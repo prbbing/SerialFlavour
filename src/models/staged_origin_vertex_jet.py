@@ -228,11 +228,14 @@ class StagedOriginVertexJetTransformer(nn.Module):
         jet_logits = self.jet_head(h3[:, 0])     # CLS position only
 
         return {
-            "jet_logits":    jet_logits,          # (B, 3)
-            "origin_logits": origin_logits,       # (B, K, 8)
-            "vtx_weight":    vtx_weight,          # (B, K, L)
-            "lxy_pred":      lxy_pred,            # (B, L)
-            "dz_pred":       dz_pred,             # (B, L)
+            "jet_logits":        jet_logits,          # (B, 3)
+            "origin_logits":     origin_logits,       # (B, K, 8)
+            "vtx_weight":        vtx_weight,          # (B, K, L)
+            "leg_origin_probs":  leg_origin_probs,    # (B, K, L)
+            "gate":              gate,                # (B, K, L)
+            "refine":            refine,              # (B, K, L)
+            "lxy_pred":          lxy_pred,            # (B, L)
+            "dz_pred":           dz_pred,             # (B, L)
         }
 
     def calibration_scales(self):
