@@ -15,7 +15,7 @@
     "n_train": 120000,
     "n_test": 40000,
     "batch_size": 2048,
-    "train_plot_dir": "./results_parallel/",
+    "train_plot_dir": "./results/results_parallel/",
     "model_name": "parallel_origin_vertex_jet.pt",
     "train_cache_dir": ".track_cache/"
 }
