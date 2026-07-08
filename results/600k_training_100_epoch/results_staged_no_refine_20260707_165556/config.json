@@ -1,0 +1,146 @@
+{
+    "model_type": "staged_origin_vertex_jet",
+    "gpu_ids": [
+        "0"
+    ],
+    "top_k": 40,
+    "batch_size": 2048,
+    "d_model": 32,
+    "n_heads": 2,
+    "n_layers": 2,
+    "d_ffn": 64,
+    "dropout": 0.1,
+    "gate_temp": 0.1,
+    "n_origin_classes": 8,
+    "n_jet_classes": 3,
+    "vertex_legs": {
+        "b_vertex": [
+            "From b",
+            "From b->c"
+        ],
+        "c_vertex": [
+            "From c"
+        ]
+    },
+    "vertex_targets": {
+        "b_vertex": {
+            "flavour": 5,
+            "slot": 0
+        },
+        "c_vertex": {
+            "flavour": 4,
+            "slot": 0
+        }
+    },
+    "vertex_fit_coords": [
+        "Lxy",
+        "dz"
+    ],
+    "calibrate_vertex_fit": true,
+    "stage3_extra_inputs": [
+        "origin_probs",
+        "vtx_weight"
+    ],
+    "vertex_fields": [
+        "qOverP",
+        "deta",
+        "dphi",
+        "d0",
+        "z0SinTheta",
+        "d0Uncertainty",
+        "z0SinThetaUncertainty",
+        "lifetimeSignedD0Significance",
+        "lifetimeSignedZ0SinThetaSignificance"
+    ],
+    "track_fields": [
+        "qOverP",
+        "deta",
+        "dphi",
+        "d0",
+        "z0SinTheta",
+        "d0Uncertainty",
+        "z0SinThetaUncertainty",
+        "qOverPUncertainty",
+        "thetaUncertainty",
+        "phiUncertainty",
+        "lifetimeSignedD0Significance",
+        "lifetimeSignedZ0SinThetaSignificance",
+        "numberOfPixelHits",
+        "numberOfSCTHits",
+        "numberOfInnermostPixelLayerHits",
+        "numberOfNextToInnermostPixelLayerHits",
+        "numberOfInnermostPixelLayerSharedHits",
+        "numberOfInnermostPixelLayerSplitHits",
+        "numberOfPixelSharedHits",
+        "numberOfPixelSplitHits",
+        "numberOfSCTSharedHits"
+    ],
+    "tagging_fields": [
+        "qOverP",
+        "deta",
+        "dphi",
+        "d0",
+        "z0SinTheta",
+        "d0Uncertainty",
+        "z0SinThetaUncertainty",
+        "qOverPUncertainty",
+        "thetaUncertainty",
+        "phiUncertainty",
+        "lifetimeSignedD0Significance",
+        "lifetimeSignedZ0SinThetaSignificance",
+        "numberOfPixelHits",
+        "numberOfSCTHits",
+        "numberOfInnermostPixelLayerHits",
+        "numberOfNextToInnermostPixelLayerHits",
+        "numberOfInnermostPixelLayerSharedHits",
+        "numberOfInnermostPixelLayerSplitHits",
+        "numberOfPixelSharedHits",
+        "numberOfPixelSplitHits",
+        "numberOfSCTSharedHits"
+    ],
+    "lambda_jet": 1.0,
+    "lambda_origin": 1.0,
+    "lambda_vertex": 1.0,
+    "flavour_to_label": {
+        "5": 0,
+        "4": 1,
+        "0": 2
+    },
+    "jet_class_names": [
+        "b-jet",
+        "c-jet",
+        "light-jet"
+    ],
+    "origin_class_names": [
+        "Pileup",
+        "Fake",
+        "Primary",
+        "From b",
+        "From b->c",
+        "From c",
+        "From tau",
+        "Other secondary"
+    ],
+    "colours": {
+        "b-jet": "#1f77b4",
+        "c-jet": "#ff7f0e",
+        "light-jet": "#2ca02c"
+    },
+    "disc_bkg_weights": {
+        "c-jet": 0.3,
+        "light-jet": 0.7
+    },
+    "c_disc_bkg_weights": {
+        "b-jet": 0.5,
+        "light-jet": 0.5
+    },
+    "train_file": "/data/yuyang/opendata/gn2_tt/mc-flavtag-ttbar-small.h5",
+    "n_train": 600000,
+    "n_test": 200000,
+    "epochs": 100,
+    "lr": 0.001,
+    "num_workers": 4,
+    "model_name": "staged_origin_vertex_jet.pt",
+    "train_plot_dir": "results/600k_training_100_epoch/results_staged_no_refine_20260707_165556/",
+    "train_cache_dir": ".track_cache/"
+}
