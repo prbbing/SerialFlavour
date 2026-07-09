@@ -22,6 +22,7 @@ def train_epoch(model, dataloader, optimiser, criterion_jet, criterion_origin,
                 fit_lxy, fit_dz, device):
     model.train()
     tot_loss = tot_jet = tot_origin = tot_vertex = 0.0
+    tot_refine = tot_vtx_weight = 0.0
     n_total = 0
 
     for X_b, mask_b, y_b, origin_b, lxy_b, dz_b, vvalid_b, pair_b in dataloader:
@@ -66,8 +67,15 @@ def train_epoch(model, dataloader, optimiser, criterion_jet, criterion_origin,
         tot_vertex += vtx_loss.item()    * len(y_b)
         n_total    += len(y_b)
 
+        # per-batch refine / vtx_weight diagnostics (valid tracks only)
+        if "refine" in out and "vtx_weight" in out:
+            valid_3d = mask_b.unsqueeze(-1).expand_as(out["refine"])
+            tot_refine      += out["refine"][valid_3d].float().mean().item()     * len(y_b)
+            tot_vtx_weight  += out["vtx_weight"][valid_3d].float().mean().item() * len(y_b)
+
     return (tot_loss / n_total, tot_jet / n_total,
-            tot_origin / n_total, tot_vertex / n_total)
+            tot_origin / n_total, tot_vertex / n_total,
+            tot_refine / max(n_total, 1), tot_vtx_weight / max(n_total, 1))
 
 
 # ===========================================================================
@@ -209,6 +217,50 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
 
 
 # ===========================================================================
+# _compute_epoch_refine_vtx_stats — per-leg match/other means from val data.
+# ===========================================================================
+def _compute_epoch_refine_vtx_stats(pred_arrays, config):
+    refine      = pred_arrays["refine"]       # (N, K, L)
+    vtx_weight  = pred_arrays["vtx_weight"]   # (N, K, L)
+    origin_full = pred_arrays["origin_full"]  # (N, K)
+    mask_full   = pred_arrays["mask_full"]    # (N, K)
+    all_true    = pred_arrays["all_true"]     # (N,)
+
+    origin_class_names = config.origin_class_names
+
+    stats = {}
+    for leg in range(config.n_vertex_legs):
+        leg_name  = config.vertex_leg_names[leg]
+        owner_cls = config.leg_owner_cls[leg_name]
+        leg_origin_names = config.vertex_legs[leg_name]
+        if isinstance(leg_origin_names, str):
+            leg_origin_names = [leg_origin_names]
+        leg_origin_ids = [origin_class_names.index(c) for c in leg_origin_names]
+
+        owner_mask = (all_true == owner_cls)
+        if not owner_mask.any():
+            continue
+
+        jet_vtx_w = vtx_weight[owner_mask, :, leg]
+        jet_ref   = refine[owner_mask, :, leg]
+        jet_orig  = origin_full[owner_mask]
+        jet_mask  = mask_full[owner_mask]
+
+        match_mask = np.isin(jet_orig, leg_origin_ids) & jet_mask
+        other_mask = ~np.isin(jet_orig, leg_origin_ids) & jet_mask & (jet_orig >= 0)
+
+        s = leg_name.replace("_vertex", "")
+        if match_mask.any():
+            stats[f"val_{s}_refine_match_mean"]      = jet_ref[match_mask].mean()
+            stats[f"val_{s}_vtx_weight_match_mean"]  = jet_vtx_w[match_mask].mean()
+        if other_mask.any():
+            stats[f"val_{s}_refine_other_mean"]      = jet_ref[other_mask].mean()
+            stats[f"val_{s}_vtx_weight_other_mean"]  = jet_vtx_w[other_mask].mean()
+
+    return stats
+
+
+# ===========================================================================
 # run_training — full training loop over *epochs*.
 # Prints per-epoch metrics and (if supported) vertex calibration scales.
 # ===========================================================================
@@ -221,10 +273,17 @@ def run_training(model, train_loader, val_loader, optimiser,
         "train_vertex_loss": [],
         "val_loss": [], "val_jet_loss": [], "val_origin_loss": [],
         "val_vertex_loss": [], "val_acc": [], "val_origin_acc": [],
+        # refine / vtx_weight diagnostics (train: overall mean; val: match/other per leg)
+        "train_refine_mean": [], "train_vtx_weight_mean": [],
+        "val_b_refine_match_mean": [], "val_b_refine_other_mean": [],
+        "val_b_vtx_weight_match_mean": [], "val_b_vtx_weight_other_mean": [],
+        "val_c_refine_match_mean": [], "val_c_refine_other_mean": [],
+        "val_c_vtx_weight_match_mean": [], "val_c_vtx_weight_other_mean": [],
     }
 
     for epoch in range(1, epochs + 1):
-        train_loss, train_jet_loss, train_origin_loss, train_vertex_loss = train_epoch(
+        (train_loss, train_jet_loss, train_origin_loss, train_vertex_loss,
+         train_refine, train_vtxw) = train_epoch(
             model, train_loader, optimiser, criterion_jet, criterion_origin,
             n_origin_classes, config.lambda_jet, config.lambda_origin,
             config.lambda_vertex, config.fit_lxy, config.fit_dz, device)
@@ -247,6 +306,25 @@ def run_training(model, train_loader, val_loader, optimiser,
         history["val_acc"].append(val_acc)
         history["val_origin_acc"].append(val_origin_acc)
 
+        history["train_refine_mean"].append(train_refine)
+        history["train_vtx_weight_mean"].append(train_vtxw)
+
+        # val per-leg match/other means — always fill all 8 keys per epoch
+        _vtx_stats = {}
+        _expected_val_keys = [
+            "val_b_refine_match_mean", "val_b_refine_other_mean",
+            "val_b_vtx_weight_match_mean", "val_b_vtx_weight_other_mean",
+            "val_c_refine_match_mean", "val_c_refine_other_mean",
+            "val_c_vtx_weight_match_mean", "val_c_vtx_weight_other_mean",
+        ]
+        if "refine" in pred_arrays:
+            _vtx_stats = _compute_epoch_refine_vtx_stats(pred_arrays, config)
+            for _k in _expected_val_keys:
+                history[_k].append(_vtx_stats.get(_k, 0.0))
+        else:
+            for _k in _expected_val_keys:
+                history[_k].append(0.0)
+
         # optional: log vertex calibration scale values
         _calib_str = ""
         if calibrate_vertex_fit and hasattr(model, "calibration_scales"):
@@ -265,5 +343,15 @@ def run_training(model, train_loader, val_loader, optimiser,
               f"val_loss={val_loss:.4f} (jet={val_jet_loss:.4f} "
               f"origin={val_origin_loss:.4f} vtx={val_vertex_loss:.4f})  "
               f"val_acc={val_acc:.4f}  origin_acc={val_origin_acc:.4f}{_calib_str}")
+        if _vtx_stats:
+            print(f"         refine train={train_refine:.4f}  "
+                  f"val b(m={_vtx_stats.get('val_b_refine_match_mean', 0):.4f} "
+                  f"o={_vtx_stats.get('val_b_refine_other_mean', 0):.4f})  "
+                  f"c(m={_vtx_stats.get('val_c_refine_match_mean', 0):.4f} "
+                  f"o={_vtx_stats.get('val_c_refine_other_mean', 0):.4f})  "
+                  f"vtx_w b(m={_vtx_stats.get('val_b_vtx_weight_match_mean', 0):.4f} "
+                  f"o={_vtx_stats.get('val_b_vtx_weight_other_mean', 0):.4f})  "
+                  f"c(m={_vtx_stats.get('val_c_vtx_weight_match_mean', 0):.4f} "
+                  f"o={_vtx_stats.get('val_c_vtx_weight_other_mean', 0):.4f})")
 
     return history, pred_arrays

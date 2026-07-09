@@ -668,3 +668,46 @@ def plot_track_vertex_assignment(vtx_weight, origin_full, mask_full, all_true,
                     dpi=150, bbox_inches="tight")
         plt.close(fig)
         print(f"Saved track_vtx_assignment_{leg_name}.png")
+
+
+# ===========================================================================
+# plot_refine_vtx_weight_history — per-epoch refine & vtx_weight curves.
+# ===========================================================================
+def plot_refine_vtx_weight_history(history, plot_dir):
+    has_refine = any(k.startswith("val_") and "refine" in k
+                     for k in history)
+    if not has_refine:
+        return
+
+    epochs = list(range(1, len(history["val_loss"]) + 1))
+
+    fig, (ax_r, ax_v) = plt.subplots(1, 2, figsize=(12, 5))
+    fig.suptitle("refine & vtx_weight per epoch", fontweight="bold")
+
+    for ax, prefix in [(ax_r, "refine"), (ax_v, "vtx_weight")]:
+        key_pairs = [
+            (f"val_b_{prefix}_match_mean", f"val_b_{prefix}_other_mean", "b", "#1f77b4"),
+            (f"val_c_{prefix}_match_mean", f"val_c_{prefix}_other_mean", "c", "#2ca02c"),
+        ]
+        for mkey, okey, label, color in key_pairs:
+            if (mkey in history and okey in history and
+                    len(history[mkey]) == len(epochs)):
+                ax.plot(epochs, history[mkey], color=color, linestyle="-",
+                        linewidth=1.5, label=f"{label} match")
+                ax.plot(epochs, history[okey], color=color, linestyle="--",
+                        linewidth=1.5, label=f"{label} other")
+        tk = f"train_{prefix}_mean"
+        if tk in history and len(history[tk]) == len(epochs):
+            ax.plot(epochs, history[tk], color="grey", linestyle=":",
+                    linewidth=1.0, label="train overall")
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel(prefix)
+        ax.set_ylim(0, 1)
+        ax.legend(fontsize=7)
+        ax.grid(True, linestyle="--", alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(plot_dir + "refine_vtx_weight_history.png",
+                dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved refine_vtx_weight_history.png")

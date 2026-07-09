@@ -39,6 +39,7 @@ from src.plotting import (
     plot_discriminant_roc,
     plot_c_discriminant_roc,
     plot_track_vertex_assignment,
+    plot_refine_vtx_weight_history,
 )
 
 from sklearn.metrics import classification_report, confusion_matrix
@@ -110,6 +111,7 @@ def _run_evaluation(pred_arrays, cfg, plot_dir, history=None):
         plot_training_summary(history, all_true, all_preds,
                               cfg.jet_class_names, plot_dir, cfg.epochs,
                               model_type=cfg.model_type)
+        plot_refine_vtx_weight_history(history, plot_dir)
 
     plot_output_probabilities(all_probs, all_true, cfg.jet_class_names,
                               cfg.colours, plot_dir)
