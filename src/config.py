@@ -128,6 +128,7 @@ _DEFAULTS = {
     "model_name":      "model.pt",
     "train_plot_dir":  "./results/",
     "train_cache_dir": ".track_cache/",
+    "tensorboard_log_dir": "results/tb_runs",  # null=disabled
 }
 
 # ===========================================================================
@@ -154,6 +155,7 @@ class Config:
         self.model_name         = cfg_dict["model_name"]
         self.plot_dir           = cfg_dict["train_plot_dir"]
         self.cache_dir          = cfg_dict["train_cache_dir"]
+        self.tensorboard_log_dir = cfg_dict["tensorboard_log_dir"]
 
         # -- transformer ----------------------------------------------------
         self.d_model            = cfg_dict["d_model"]

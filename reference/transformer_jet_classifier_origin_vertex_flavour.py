@@ -632,6 +632,7 @@ class StagedOriginVertexJetTransformer(nn.Module):
             "vtx_weight":    vtx_weight,    # (B, K, L)
             "lxy_pred":      lxy_pred,      # (B, L)
             "dz_pred":       dz_pred,       # (B, L)  signed
+            "refine":        refine,        # (B, K, L)
         }
 
     def calibration_scales(self):
@@ -795,15 +796,58 @@ def vertex_loss_fn(lxy_pred, dz_pred, vtx_lxy, vtx_dz, vtx_valid):
     return total
 
 
+def _compute_epoch_refine_vtx_stats(vtx_weight, refine, origin_full, mask_full, all_true):
+    norig  = ORIGIN_CLASS_NAMES
+    _leg_owner = {}
+    for lname in VERTEX_LEG_NAMES:
+        _flv = VERTEX_TARGETS[lname]["flavour"]
+        _leg_owner[lname] = JET_CLASS_NAMES.index(
+            {int(fl): name for name, fl in
+             {JET_CLASS_NAMES[i]: int(lbl)
+              for lbl, i in FLAVOUR_TO_LABEL.items()}.items()}[_flv])
+    stats = {}
+    for leg in range(N_VERTEX_LEGS):
+        leg_name  = VERTEX_LEG_NAMES[leg]
+        owner_cls = _leg_owner[leg_name]
+        leg_origin_names = VERTEX_LEGS[leg_name]
+        if isinstance(leg_origin_names, str):
+            leg_origin_names = [leg_origin_names]
+        leg_origin_ids = [norig.index(c) for c in leg_origin_names]
+
+        owner_mask = (all_true == owner_cls)
+        if not owner_mask.any():
+            continue
+        jet_vtx_w = vtx_weight[owner_mask, :, leg]
+        jet_ref   = refine[owner_mask, :, leg]
+        jet_orig  = origin_full[owner_mask]
+        jet_mask  = mask_full[owner_mask]
+        match_mask = np.isin(jet_orig, leg_origin_ids) & jet_mask
+        other_mask = ~np.isin(jet_orig, leg_origin_ids) & jet_mask & (jet_orig >= 0)
+        s = leg_name.replace("_vertex", "")
+        if match_mask.any():
+            stats[f"val_{s}_refine_match_mean"]      = jet_ref[match_mask].mean()
+            stats[f"val_{s}_vtx_weight_match_mean"]  = jet_vtx_w[match_mask].mean()
+        if other_mask.any():
+            stats[f"val_{s}_refine_other_mean"]      = jet_ref[other_mask].mean()
+            stats[f"val_{s}_vtx_weight_other_mean"]  = jet_vtx_w[other_mask].mean()
+    return stats
+
+
 # ── training loop ─────────────────────────────────────────────────────
 history = {
     "train_loss": [], "train_jet_loss": [], "train_origin_loss": [], "train_vertex_loss": [],
     "val_loss": [], "val_acc": [], "val_origin_acc": [],
+    "train_refine_mean": [], "train_vtx_weight_mean": [],
+    "val_b_refine_match_mean": [], "val_b_refine_other_mean": [],
+    "val_b_vtx_weight_match_mean": [], "val_b_vtx_weight_other_mean": [],
+    "val_c_refine_match_mean": [], "val_c_refine_other_mean": [],
+    "val_c_vtx_weight_match_mean": [], "val_c_vtx_weight_other_mean": [],
 }
 
 for epoch in range(1, EPOCHS + 1):
     model.train()
     tot_loss = tot_jet = tot_origin = tot_vertex = 0.0
+    tot_refine = tot_vtxw = 0.0
 
     for X_b, mask_b, y_b, origin_b, lxy_b, dz_b, vvalid_b in train_loader:
         X_b, mask_b, y_b   = X_b.to(DEVICE), mask_b.to(DEVICE), y_b.to(DEVICE)
@@ -829,10 +873,16 @@ for epoch in range(1, EPOCHS + 1):
         tot_origin += origin_loss.item() * len(y_b)
         tot_vertex += vtx_loss.item()    * len(y_b)
 
+        valid_3d = mask_b.unsqueeze(-1).expand_as(out["refine"])
+        tot_refine += out["refine"][valid_3d].float().mean().item()      * len(y_b)
+        tot_vtxw   += out["vtx_weight"][valid_3d].float().mean().item()  * len(y_b)
+
     train_loss        = tot_loss   / len(y_train)
     train_jet_loss    = tot_jet    / len(y_train)
     train_origin_loss = tot_origin / len(y_train)
     train_vertex_loss = tot_vertex / len(y_train)
+    train_refine      = tot_refine / len(y_train)
+    train_vtxw        = tot_vtxw   / len(y_train)
 
     # ── validation ──
     model.eval()
@@ -840,6 +890,7 @@ for epoch in range(1, EPOCHS + 1):
     all_preds, all_true, all_probs = [], [], []
     all_origin_preds, all_origin_true = [], []
     all_lxy_pred, all_lxy_true, all_dz_pred, all_dz_true, all_vtx_valid = [], [], [], [], []
+    all_vtx_weight, all_origin_full, all_mask_full, all_refine = [], [], [], []
     with torch.no_grad():
         for X_b, mask_b, y_b, origin_b, lxy_b, dz_b, vvalid_b in val_loader:
             X_b, mask_b, y_b = X_b.to(DEVICE), mask_b.to(DEVICE), y_b.to(DEVICE)
@@ -875,6 +926,11 @@ for epoch in range(1, EPOCHS + 1):
             all_dz_true.append(dz_b.cpu())
             all_vtx_valid.append(vvalid_b.cpu())
 
+            all_vtx_weight.append(out["vtx_weight"].cpu())
+            all_origin_full.append(origin_b.cpu())
+            all_mask_full.append(mask_b.cpu())
+            all_refine.append(out["refine"].cpu())
+
     val_loss       /= len(y_test)
     val_acc         = correct / len(y_test)
     val_origin_acc  = origin_correct / max(origin_total, 1)
@@ -886,6 +942,24 @@ for epoch in range(1, EPOCHS + 1):
     history["val_loss"].append(val_loss)
     history["val_acc"].append(val_acc)
     history["val_origin_acc"].append(val_origin_acc)
+
+    history["train_refine_mean"].append(train_refine)
+    history["train_vtx_weight_mean"].append(train_vtxw)
+
+    _v0 = torch.cat(all_vtx_weight).numpy()
+    _r0 = torch.cat(all_refine).numpy()
+    _of = torch.cat(all_origin_full).numpy()
+    _mf = torch.cat(all_mask_full).numpy().astype(bool)
+    _at = torch.cat(all_true).numpy()
+    _vtx_stats = _compute_epoch_refine_vtx_stats(_v0, _r0, _of, _mf, _at)
+    _expected_val_keys = [
+        "val_b_refine_match_mean", "val_b_refine_other_mean",
+        "val_b_vtx_weight_match_mean", "val_b_vtx_weight_other_mean",
+        "val_c_refine_match_mean", "val_c_refine_other_mean",
+        "val_c_vtx_weight_match_mean", "val_c_vtx_weight_other_mean",
+    ]
+    for _k in _expected_val_keys:
+        history[_k].append(_vtx_stats.get(_k, 0.0))
 
     _calib_str = ""
     if CALIBRATE_VERTEX_FIT:
@@ -902,6 +976,16 @@ for epoch in range(1, EPOCHS + 1):
           f"origin={train_origin_loss:.4f} vtx={train_vertex_loss:.4f})  "
           f"val_loss={val_loss:.4f}  val_acc={val_acc:.4f}  "
           f"origin_acc={val_origin_acc:.4f}{_calib_str}")
+    if _vtx_stats:
+        print(f"         refine train={train_refine:.4f}  "
+              f"val b(m={_vtx_stats.get('val_b_refine_match_mean', 0):.4f} "
+              f"o={_vtx_stats.get('val_b_refine_other_mean', 0):.4f})  "
+              f"c(m={_vtx_stats.get('val_c_refine_match_mean', 0):.4f} "
+              f"o={_vtx_stats.get('val_c_refine_other_mean', 0):.4f})  "
+              f"vtx_w b(m={_vtx_stats.get('val_b_vtx_weight_match_mean', 0):.4f} "
+              f"o={_vtx_stats.get('val_b_vtx_weight_other_mean', 0):.4f})  "
+              f"c(m={_vtx_stats.get('val_c_vtx_weight_match_mean', 0):.4f} "
+              f"o={_vtx_stats.get('val_c_vtx_weight_other_mean', 0):.4f})")
 
 # ── save model ────────────────────────────────────────────────────────
 torch.save(model.state_dict(), os.path.join(PLOT_DIR, MODEL_NAME))
@@ -918,6 +1002,10 @@ lxy_true   = torch.cat(all_lxy_true).numpy()
 dz_pred    = torch.cat(all_dz_pred).numpy()
 dz_true    = torch.cat(all_dz_true).numpy()
 vtx_valid  = torch.cat(all_vtx_valid).numpy().astype(bool)
+vtx_weight = torch.cat(all_vtx_weight).numpy()
+origin_full = torch.cat(all_origin_full).numpy()
+mask_full = torch.cat(all_mask_full).numpy().astype(bool)
+refine = torch.cat(all_refine).numpy()
 
 print("\nJet classification report:")
 print(classification_report(all_true, all_preds, target_names=JET_CLASS_NAMES))
@@ -959,6 +1047,35 @@ plt.colorbar(im, ax=axes[2])
 plt.tight_layout()
 plt.savefig(PLOT_DIR + "training_summary.png", dpi=150, bbox_inches="tight")
 print("Saved training_summary.png")
+
+# ── plot: refine & vtx_weight per epoch ──────────────────────────────
+if any(k.startswith("val_") and "refine" in k for k in history):
+    fig, (ax_r, ax_v) = plt.subplots(1, 2, figsize=(12, 5))
+    fig.suptitle("refine & vtx_weight per epoch", fontweight="bold")
+    ep = range(1, EPOCHS + 1)
+    for ax, prefix in [(ax_r, "refine"), (ax_v, "vtx_weight")]:
+        key_pairs = [
+            (f"val_b_{prefix}_match_mean", f"val_b_{prefix}_other_mean", "b", "#1f77b4"),
+            (f"val_c_{prefix}_match_mean", f"val_c_{prefix}_other_mean", "c", "#2ca02c"),
+        ]
+        for mkey, okey, label, color in key_pairs:
+            if (mkey in history and okey in history and
+                    len(history[mkey]) == len(ep)):
+                ax.plot(ep, history[mkey], color=color, linestyle="-",
+                        linewidth=1.5, label=f"{label} match")
+                ax.plot(ep, history[okey], color=color, linestyle="--",
+                        linewidth=1.5, label=f"{label} other")
+        tk = f"train_{prefix}_mean"
+        if tk in history and len(history[tk]) == len(ep):
+            ax.plot(ep, history[tk], color="grey", linestyle=":",
+                    linewidth=1.0, label="train overall")
+        ax.set_xlabel("Epoch"); ax.set_ylabel(prefix)
+        ax.set_ylim(0, 1)
+        ax.legend(fontsize=7); ax.grid(True, linestyle="--", alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(PLOT_DIR + "refine_vtx_weight_history.png",
+                dpi=150, bbox_inches="tight")
+    print("Saved refine_vtx_weight_history.png")
 
 # ── plot: track-origin confusion matrix (Stage 1) ─────────────────────
 fig, ax = plt.subplots(figsize=(7, 6))
@@ -1099,6 +1216,99 @@ for leg in range(N_VERTEX_LEGS):
         plt.tight_layout()
         plt.savefig(PLOT_DIR + f"vertex_fit_{leg_name}_dz.png", dpi=150, bbox_inches="tight")
         print(f"Saved vertex_fit_{leg_name}_dz.png")
+
+# ── plot: track-to-vertex assignment (Stage 2) ──────────────────────────
+print("\n=== Track-to-vertex assignment efficiency ===")
+_leg_owner_cls = {
+    lname: JET_CLASS_NAMES.index(
+        {int(fl): name for name, fl in
+         {JET_CLASS_NAMES[i]: int(lbl)
+          for lbl, i in FLAVOUR_TO_LABEL.items()}.items()}[VERTEX_TARGETS[lname]["flavour"]]
+    )
+    for lname in VERTEX_LEG_NAMES
+}
+for leg in range(N_VERTEX_LEGS):
+    leg_name  = VERTEX_LEG_NAMES[leg]
+    owner_cls = _leg_owner_cls[leg_name]
+    owner_name = JET_CLASS_NAMES[owner_cls]
+    leg_origin_names = VERTEX_LEGS[leg_name]
+    if isinstance(leg_origin_names, str):
+        leg_origin_names = [leg_origin_names]
+    leg_origin_ids = [ORIGIN_CLASS_NAMES.index(c) for c in leg_origin_names]
+
+    owner_mask = (all_true == owner_cls)
+    if not owner_mask.any():
+        print(f"  {leg_name}: no {owner_name} jets in test set")
+        continue
+
+    jet_vtx_w = vtx_weight[owner_mask, :, leg]
+    jet_ref   = refine[owner_mask, :, leg]
+    jet_orig  = origin_full[owner_mask]
+    jet_mask  = mask_full[owner_mask]
+
+    match_mask = np.isin(jet_orig, leg_origin_ids) & jet_mask
+    other_mask = (~np.isin(jet_orig, leg_origin_ids)) & jet_mask & (jet_orig >= 0)
+
+    match_weights = jet_vtx_w[match_mask]
+    other_weights = jet_vtx_w[other_mask]
+
+    if len(match_weights):
+        print(f"  {leg_name}  vtx_w match:  "
+              f"min={match_weights.min():.4f}  mean={match_weights.mean():.4f}  "
+              f"P25={np.percentile(match_weights,25):.4f}  "
+              f"P50={np.percentile(match_weights,50):.4f}  "
+              f"P75={np.percentile(match_weights,75):.4f}  "
+              f"max={match_weights.max():.4f}")
+    if len(other_weights):
+        print(f"  {leg_name}  vtx_w other:  "
+              f"min={other_weights.min():.4f}  mean={other_weights.mean():.4f}  "
+              f"P50={np.percentile(other_weights,50):.4f}  "
+              f"P90={np.percentile(other_weights,90):.4f}  "
+              f"max={other_weights.max():.4f}")
+
+    _match_ref = jet_ref[match_mask]
+    _other_ref = jet_ref[other_mask]
+    if len(_match_ref):
+        print(f"  {leg_name}  refine match:  "
+              f"min={_match_ref.min():.4f}  mean={_match_ref.mean():.4f}  "
+              f"P50={np.percentile(_match_ref,50):.4f}  "
+              f"max={_match_ref.max():.4f}")
+    if len(_other_ref):
+        print(f"  {leg_name}  refine other:  "
+              f"min={_other_ref.min():.4f}  mean={_other_ref.mean():.4f}  "
+              f"P50={np.percentile(_other_ref,50):.4f}  "
+              f"max={_other_ref.max():.4f}")
+
+    _parts = [w for w in [match_weights, other_weights] if len(w)]
+    all_w = np.concatenate(_parts) if _parts else np.array([])
+    if len(all_w):
+        print(f"  {leg_name}  vtx_w range=[{all_w.min():.5f}, {all_w.max():.5f}]  "
+              f"mean={all_w.mean():.5f}  median={np.median(all_w):.5f}  "
+              f"P99={np.percentile(all_w, 99):.5f}")
+
+    for thr in [0.5, 0.8]:
+        eff = (match_weights > thr).mean() if len(match_weights) > 0 else 0.0
+        fp  = (other_weights > thr).mean() if len(other_weights) > 0 else 0.0
+        print(f"  {leg_name} (thr>{thr:.1f}): assignment={eff:.3f}  "
+              f"false-positive={fp:.4f}  n_match={len(match_weights)}")
+
+    fig, ax = plt.subplots(figsize=(6.5, 4.5))
+    fig.suptitle(f"Track-to-vertex weight — {leg_name}  ({owner_name} jets only)",
+                 fontweight="bold")
+    if len(match_weights) > 0:
+        ax.hist(match_weights, bins=40, range=(0, 1), histtype="step",
+                color=COLOURS[owner_name], linewidth=1.5, density=True,
+                label=f"True {leg_name.replace('_','-')} origin  (n={len(match_weights)})")
+    if len(other_weights) > 0:
+        ax.hist(other_weights, bins=40, range=(0, 1), histtype="step",
+                color="grey", linestyle="--", linewidth=1.5, density=True,
+                label=f"Other origin  (n={len(other_weights)})")
+    ax.set_xlabel("vtx_weight"); ax.set_ylabel("Density")
+    ax.legend(fontsize=8); ax.grid(True, linestyle="--", alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(PLOT_DIR + f"track_vtx_assignment_{leg_name}.png",
+                dpi=150, bbox_inches="tight")
+    print(f"Saved track_vtx_assignment_{leg_name}.png")
 
 # ── plot: output probabilities (Stage 3) ──────────────────────────────
 fig, axes = plt.subplots(1, N_JET_CLASSES, figsize=(5 * N_JET_CLASSES, 4))

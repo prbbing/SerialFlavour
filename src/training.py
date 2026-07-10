@@ -10,6 +10,9 @@ parallel_origin_vertex_jet without modification.
 """
 import torch
 import numpy as np
+import os
+import csv
+from torch.utils.tensorboard import SummaryWriter
 
 from .losses import vertex_loss_fn, pair_vertex_loss
 
@@ -217,6 +220,117 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
 
 
 # ===========================================================================
+# _measure_task_gradients — per-task gradient norms & cosine conflicts.
+# ===========================================================================
+def _measure_task_gradients(model, X_b, mask_b, y_b, origin_b,
+                             lxy_b, dz_b, vvalid_b, pair_b,
+                             criterion_jet, criterion_origin,
+                             n_origin_classes, fit_lxy, fit_dz):
+    """Run 3 independent backward passes on a single forward graph and
+    record per-parameter-group gradient L2 norms, plus pairwise cosine
+    similarity on the shared encoder (encoder1 for staged, encoder
+    for parallel).
+
+    Returns a dict of measured values or {} for unsupported models.
+    """
+    _m = model.module if hasattr(model, "module") else model
+
+    out = _m(X_b, mask_b)
+
+    jet_loss = criterion_jet(out["jet_logits"], y_b)
+    origin_loss = criterion_origin(
+        out["origin_logits"].reshape(-1, n_origin_classes), origin_b.reshape(-1))
+
+    if "lxy_pred" in out:
+        from .losses import vertex_loss_fn
+        vtx_loss = vertex_loss_fn(out["lxy_pred"], out["dz_pred"],
+                                  lxy_b, dz_b, vvalid_b,
+                                  fit_lxy=fit_lxy, fit_dz=fit_dz)
+    elif "pair_logits" in out:
+        from .losses import pair_vertex_loss
+        vtx_loss = pair_vertex_loss(out["pair_logits"], pair_b, mask_b)
+    else:
+        return {}
+
+    # ── identify parameter groups ──────────────────────────────────────
+    # staged model groups
+    has_staged = hasattr(_m, "encoder1")
+    if has_staged:
+        enc1_params   = list(_m.input_proj1.parameters()) + list(_m.encoder1.parameters())
+        enc2_params   = list(_m.input_proj2.parameters()) + list(_m.encoder2.parameters())
+        enc3_params   = list(_m.input_proj3.parameters()) + list(_m.encoder3.parameters())
+        origin_head_p = list(_m.origin_head.parameters())
+        jet_head_p    = list(_m.jet_head.parameters())
+        vtxw_head_p   = list(_m.vertex_weight_head.parameters())
+    else:
+        # parallel model
+        enc1_params   = list(_m.init_net.parameters()) + list(_m.encoder.parameters())
+        enc2_params   = []
+        enc3_params   = []
+        origin_head_p = list(_m.origin_head.parameters())
+        jet_head_p    = list(_m.jet_head.parameters())
+        vtxw_head_p   = list(_m.pair_head.parameters())
+
+    def _grad_norm(params):
+        sq = 0.0
+        for p in params:
+            if p.grad is not None:
+                sq += p.grad.data.norm(2).item() ** 2
+        return sq ** 0.5
+
+    def _flatten_grad(params):
+        g = []
+        for p in params:
+            if p.grad is not None:
+                g.append(p.grad.data.flatten())
+        return torch.cat(g) if g else torch.zeros(1, device=X_b.device)
+
+    def _cos(g1, g2):
+        n1 = g1.norm(2)
+        n2 = g2.norm(2)
+        if n1 < 1e-12 or n2 < 1e-12:
+            return 0.0
+        return (g1 @ g2).item() / (n1.item() * n2.item())
+
+    results = {}
+
+    # ── measure task-specific gradients ────────────────────────────────
+    for _ in range(2):
+        _m.zero_grad()
+    jet_loss.backward(retain_graph=True)
+    results["grad_norm_shared_encoder_jet"]     = _grad_norm(enc1_params)
+    if enc3_params:
+        results["grad_norm_jet_encoder"] = _grad_norm(enc3_params)
+    results["grad_norm_head_jet"]     = _grad_norm(jet_head_p)
+    g_enc1_jet = _flatten_grad(enc1_params)
+
+    for _ in range(2):
+        _m.zero_grad()
+    origin_loss.backward(retain_graph=True)
+    results["grad_norm_shared_encoder_origin"]     = _grad_norm(enc1_params)
+    results["grad_norm_head_origin"]     = _grad_norm(origin_head_p)
+    g_enc1_origin = _flatten_grad(enc1_params)
+
+    for _ in range(2):
+        _m.zero_grad()
+    vtx_loss.backward(retain_graph=False)
+    results["grad_norm_shared_encoder_vertex"]     = _grad_norm(enc1_params)
+    if enc2_params:
+        results["grad_norm_vertex_encoder"] = _grad_norm(enc2_params)
+    results["grad_norm_head_vtxw"]       = _grad_norm(vtxw_head_p)
+    g_enc1_vtx = _flatten_grad(enc1_params)
+
+    # ── cosine similarities ────────────────────────────────────────────
+    results["grad_cos_origin_vertex"] = _cos(g_enc1_origin, g_enc1_vtx)
+    results["grad_cos_origin_jet"]    = _cos(g_enc1_origin, g_enc1_jet)
+    results["grad_cos_vertex_jet"]    = _cos(g_enc1_vtx, g_enc1_jet)
+
+    for _ in range(2):
+        _m.zero_grad()
+    return results
+
+
+# ===========================================================================
 # _compute_epoch_refine_vtx_stats — per-leg match/other means from val data.
 # ===========================================================================
 def _compute_epoch_refine_vtx_stats(pred_arrays, config):
@@ -279,7 +393,23 @@ def run_training(model, train_loader, val_loader, optimiser,
         "val_b_vtx_weight_match_mean": [], "val_b_vtx_weight_other_mean": [],
         "val_c_refine_match_mean": [], "val_c_refine_other_mean": [],
         "val_c_vtx_weight_match_mean": [], "val_c_vtx_weight_other_mean": [],
+        # gradient diagnostics
+        "grad_norm_shared_encoder_jet": [], "grad_norm_shared_encoder_origin": [], "grad_norm_shared_encoder_vertex": [],
+        "grad_norm_vertex_encoder": [], "grad_norm_jet_encoder": [],
+        "grad_norm_head_jet": [], "grad_norm_head_origin": [], "grad_norm_head_vtxw": [],
+        "grad_cos_origin_vertex": [], "grad_cos_origin_jet": [], "grad_cos_vertex_jet": [],
     }
+
+    _tb_dir = getattr(config, "tensorboard_log_dir", None)
+    if _tb_dir:
+        _tb_dir = os.path.join(_tb_dir.rstrip("/"),
+                               os.path.basename(config.plot_dir.rstrip("/")))
+    writer = SummaryWriter(_tb_dir) if _tb_dir else None
+
+    # grab one fixed batch for gradient diagnostics
+    _diag_batch = next(iter(val_loader))
+    _diag_X, _diag_mask, _diag_y, _diag_orig, _diag_lxy, _diag_dz, _diag_vv, _diag_pair = (
+        t.to(device) for t in _diag_batch)
 
     for epoch in range(1, epochs + 1):
         (train_loss, train_jet_loss, train_origin_loss, train_vertex_loss,
@@ -287,6 +417,22 @@ def run_training(model, train_loader, val_loader, optimiser,
             model, train_loader, optimiser, criterion_jet, criterion_origin,
             n_origin_classes, config.lambda_jet, config.lambda_origin,
             config.lambda_vertex, config.fit_lxy, config.fit_dz, device)
+
+        # ── gradient diagnostics (every epoch) ─────────────────────────
+        _grad_stats = _measure_task_gradients(
+                model, _diag_X, _diag_mask, _diag_y, _diag_orig,
+                _diag_lxy, _diag_dz, _diag_vv, _diag_pair,
+                criterion_jet, criterion_origin,
+                n_origin_classes, config.fit_lxy, config.fit_dz)
+
+        _expected_grad_keys = [
+            "grad_norm_shared_encoder_jet", "grad_norm_shared_encoder_origin", "grad_norm_shared_encoder_vertex",
+            "grad_norm_vertex_encoder", "grad_norm_jet_encoder",
+            "grad_norm_head_jet", "grad_norm_head_origin", "grad_norm_head_vtxw",
+            "grad_cos_origin_vertex", "grad_cos_origin_jet", "grad_cos_vertex_jet",
+        ]
+        for _k in _expected_grad_keys:
+            history[_k].append(_grad_stats.get(_k, float("nan")))
 
         (val_loss, val_jet_loss, val_origin_loss, val_vertex_loss,
          val_acc, val_origin_acc, pred_arrays) = validate_epoch(
@@ -353,5 +499,41 @@ def run_training(model, train_loader, val_loader, optimiser,
                   f"o={_vtx_stats.get('val_b_vtx_weight_other_mean', 0):.4f})  "
                   f"c(m={_vtx_stats.get('val_c_vtx_weight_match_mean', 0):.4f} "
                   f"o={_vtx_stats.get('val_c_vtx_weight_other_mean', 0):.4f})")
+        if _grad_stats:
+            print(f"    grad  shared: jet={_grad_stats.get('grad_norm_shared_encoder_jet', 0):.4f}  "
+                  f"origin={_grad_stats.get('grad_norm_shared_encoder_origin', 0):.4f}  "
+                  f"vertex={_grad_stats.get('grad_norm_shared_encoder_vertex', 0):.4f}")
+            if "grad_norm_vertex_encoder" in _grad_stats:
+                print(f"          vertex_enc={_grad_stats['grad_norm_vertex_encoder']:.4f}  "
+                      f"jet_enc={_grad_stats.get('grad_norm_jet_encoder', 0):.4f}")
+            print(f"          heads: jet={_grad_stats.get('grad_norm_head_jet', 0):.4f}  "
+                  f"origin={_grad_stats.get('grad_norm_head_origin', 0):.4f}  "
+                  f"vtxw={_grad_stats.get('grad_norm_head_vtxw', 0):.4f}")
+            print(f"          cos: orig-vtx={_grad_stats.get('grad_cos_origin_vertex', 0):.3f}  "
+                  f"orig-jet={_grad_stats.get('grad_cos_origin_jet', 0):.3f}  "
+                  f"vtx-jet={_grad_stats.get('grad_cos_vertex_jet', 0):.3f}")
+
+        if writer:
+            for key, values in history.items():
+                v = values[-1]
+                if v == v:  # skip NaN
+                    writer.add_scalar(key, v, epoch)
+            writer.flush()
+
+    if writer:
+        writer.close()
+
+    # ── export gradient diagnostics as CSV ────────────────────────────
+    _grad_keys = [k for k in history if k.startswith("grad_")]
+    if any(len(history[k]) > 0 for k in _grad_keys):
+        _csv_path = os.path.join(config.plot_dir, "gradient_diagnostics.csv")
+        _all_keys = ["epoch"] + _grad_keys
+        _n = len(history[_grad_keys[0]])
+        with open(_csv_path, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(_all_keys)
+            for i in range(_n):
+                w.writerow([i + 1] + [history[k][i] for k in _grad_keys])
+        print(f"Exported gradient_diagnostics.csv")
 
     return history, pred_arrays

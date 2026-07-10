@@ -711,3 +711,63 @@ def plot_refine_vtx_weight_history(history, plot_dir):
                 dpi=150, bbox_inches="tight")
     plt.close(fig)
     print("Saved refine_vtx_weight_history.png")
+
+
+# ===========================================================================
+# plot_gradient_diagnostics — per-task gradient norms & cosine conflicts.
+# ===========================================================================
+def plot_gradient_diagnostics(history, plot_dir):
+    has_grad = any(k.startswith("grad_norm_shared_encoder_") for k in history)
+    if not has_grad:
+        return
+
+    epochs = list(range(1, len(history["val_loss"]) + 1))
+
+    fig, (ax_norm, ax_cos) = plt.subplots(2, 1, figsize=(12, 9))
+    fig.suptitle("Per-task gradient diagnostics", fontweight="bold")
+
+    # ── Row 1: all gradient norms ──────────────────────────────────────
+    norm_keys = [
+        ("grad_norm_shared_encoder_jet",     "#1f77b4", "-",  "shared_enc jet",      1.8),
+        ("grad_norm_shared_encoder_origin",  "#d62728", "-",  "shared_enc origin",   1.8),
+        ("grad_norm_shared_encoder_vertex",  "#2ca02c", "-",  "shared_enc vertex",   1.8),
+        ("grad_norm_jet_encoder",            "#1f77b4", "--", "jet_enc jet",         1.0),
+        ("grad_norm_vertex_encoder",         "#2ca02c", "--", "vertex_enc vertex",   1.0),
+        ("grad_norm_head_jet",               "#1f77b4", ":",  "head jet",            0.8),
+        ("grad_norm_head_origin",            "#d62728", ":",  "head origin",         0.8),
+        ("grad_norm_head_vtxw",              "#2ca02c", ":",  "head vtxw",           0.8),
+    ]
+    for key, color, ls, label, lw in norm_keys:
+        if key in history and len(history[key]) == len(epochs):
+            ax_norm.plot(epochs, history[key], color=color, linestyle=ls,
+                         linewidth=lw, label=label, alpha=0.85)
+    ax_norm.set_yscale("log")
+    ax_norm.set_ylabel("Gradient L2 norm (log scale)")
+    ax_norm.set_xlabel("Epoch")
+    ax_norm.legend(fontsize=7, ncol=2)
+    ax_norm.grid(True, linestyle="--", alpha=0.3)
+    ax_norm.set_title("Per-parameter-group gradient norms")
+
+    # ── Row 2: cosine similarities on shared encoder ───────────────────
+    cos_keys = [
+        ("grad_cos_origin_vertex", "#d62728", "origin vs vertex"),
+        ("grad_cos_origin_jet",    "#1f77b4", "origin vs jet"),
+        ("grad_cos_vertex_jet",    "#2ca02c", "vertex vs jet"),
+    ]
+    for key, color, label in cos_keys:
+        if key in history and len(history[key]) == len(epochs):
+            ax_cos.plot(epochs, history[key], color=color, linewidth=1.5,
+                        label=label, alpha=0.85)
+    ax_cos.set_ylim(-1.0, 1.0)
+    ax_cos.axhline(y=0, color="grey", linestyle=":", linewidth=0.8)
+    ax_cos.set_ylabel("Cosine similarity")
+    ax_cos.set_xlabel("Epoch")
+    ax_cos.legend(fontsize=7)
+    ax_cos.grid(True, linestyle="--", alpha=0.3)
+    ax_cos.set_title("Gradient cosine similarity on shared encoder")
+
+    plt.tight_layout()
+    plt.savefig(plot_dir + "gradient_diagnostics.png",
+                dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved gradient_diagnostics.png")
