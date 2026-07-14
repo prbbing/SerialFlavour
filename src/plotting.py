@@ -714,6 +714,89 @@ def plot_refine_vtx_weight_history(history, plot_dir):
 
 
 # ===========================================================================
+# plot_vertex_metrics_history — per-epoch Lxy/dz MAE & Pearson r curves.
+# ===========================================================================
+def plot_vertex_metrics_history(history, plot_dir):
+    has_data = any(k.startswith("val_") and ("mae" in k or "pearson" in k)
+                   for k in history)
+    if not has_data:
+        return
+
+    epochs = list(range(1, len(history["val_loss"]) + 1))
+
+    leg_suffixes = set()
+    for k in history:
+        if k.startswith("val_") and (k.endswith("_mae") or k.endswith("_pearson")):
+            _s = k.replace("val_", "").split("_")[0]
+            leg_suffixes.add(_s)
+    leg_suffixes = sorted(leg_suffixes)
+
+    colors = {"b": "#1f77b4", "c": "#2ca02c"}
+
+    panels = [
+        ("lxy_mae",     "Lxy MAE [mm]"),
+        ("dz_mae",      "dz MAE [mm]"),
+        ("lxy_pearson", "Lxy Pearson r"),
+        ("dz_pearson",  "dz Pearson r"),
+    ]
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.suptitle("Vertex reconstruction metrics per epoch", fontweight="bold")
+
+    for (metric, ylabel), ax in zip(panels, axes.ravel()):
+        for s in leg_suffixes:
+            key = f"val_{s}_{metric}"
+            if key in history and len(history[key]) == len(epochs):
+                ax.plot(epochs, history[key], color=colors.get(s, "grey"),
+                        linewidth=1.5, label=f"{s}-vertex")
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel(ylabel)
+        ax.legend(fontsize=8)
+        ax.grid(True, linestyle="--", alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(plot_dir + "vertex_metrics_history.png",
+                dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved vertex_metrics_history.png")
+
+
+# ===========================================================================
+# plot_vertex_loss_components — per-epoch Lxy/dz loss decomposition.
+# ===========================================================================
+def plot_vertex_loss_components(history, plot_dir):
+    has_data = "train_lxy_loss" in history or "train_dz_loss" in history
+    if not has_data:
+        return
+
+    epochs = list(range(1, len(history["val_loss"]) + 1))
+
+    fig, (ax_lxy, ax_dz) = plt.subplots(1, 2, figsize=(12, 5))
+    fig.suptitle("Vertex loss by coordinate (log1p space)", fontweight="bold")
+
+    for ax, coord in [(ax_lxy, "lxy"), (ax_dz, "dz")]:
+        tkey = f"train_{coord}_loss"
+        vkey = f"val_{coord}_loss"
+        if tkey in history and len(history[tkey]) == len(epochs):
+            ax.plot(epochs, history[tkey], color="#1f77b4", linewidth=1.5,
+                    label="train")
+        if vkey in history and len(history[vkey]) == len(epochs):
+            ax.plot(epochs, history[vkey], color="#d62728", linewidth=1.5,
+                    label="val")
+        ax.set_title(f"{coord} vertex loss")
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel(f"{coord} smooth-L1 (log1p)")
+        ax.legend(fontsize=8)
+        ax.grid(True, linestyle="--", alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(plot_dir + "vertex_loss_components.png",
+                dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved vertex_loss_components.png")
+
+
+# ===========================================================================
 # plot_gradient_diagnostics — per-task gradient norms & cosine conflicts.
 # ===========================================================================
 def plot_gradient_diagnostics(history, plot_dir):

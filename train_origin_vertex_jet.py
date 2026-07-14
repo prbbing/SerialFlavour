@@ -41,6 +41,8 @@ from src.plotting import (
     plot_track_vertex_assignment,
     plot_refine_vtx_weight_history,
     plot_gradient_diagnostics,
+    plot_vertex_metrics_history,
+    plot_vertex_loss_components,
 )
 
 from sklearn.metrics import classification_report, confusion_matrix
@@ -118,6 +120,8 @@ def _run_evaluation(pred_arrays, cfg, plot_dir, history=None):
                               model_type=cfg.model_type)
         plot_refine_vtx_weight_history(history, plot_dir)
         plot_gradient_diagnostics(history, plot_dir)
+        plot_vertex_metrics_history(history, plot_dir)
+        plot_vertex_loss_components(history, plot_dir)
 
     plot_output_probabilities(all_probs, all_true, cfg.jet_class_names,
                               cfg.colours, plot_dir)

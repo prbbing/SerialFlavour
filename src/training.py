@@ -25,6 +25,7 @@ def train_epoch(model, dataloader, optimiser, criterion_jet, criterion_origin,
                 fit_lxy, fit_dz, device):
     model.train()
     tot_loss = tot_jet = tot_origin = tot_vertex = 0.0
+    tot_lxy_vtx = tot_dz_vtx = 0.0
     tot_refine = tot_vtx_weight = 0.0
     n_total = 0
 
@@ -49,9 +50,13 @@ def train_epoch(model, dataloader, optimiser, criterion_jet, criterion_origin,
         # ── model-specific vertex / pair loss ───────────────────────────
         # model: staged_origin_vertex_jet — Lxy/dz vertex-fit loss
         if "lxy_pred" in out:
-            vtx_loss = vertex_loss_fn(out["lxy_pred"], out["dz_pred"],
-                                      lxy_b, dz_b, vvalid_b,
-                                      fit_lxy=fit_lxy, fit_dz=fit_dz)
+            vtx_loss, lxy_vtx_loss, dz_vtx_loss = vertex_loss_fn(
+                out["lxy_pred"], out["dz_pred"],
+                lxy_b, dz_b, vvalid_b,
+                fit_lxy=fit_lxy, fit_dz=fit_dz,
+                return_components=True)
+            tot_lxy_vtx += lxy_vtx_loss.item() * len(y_b)
+            tot_dz_vtx  += dz_vtx_loss.item()  * len(y_b)
         # model: parallel_origin_vertex_jet — pair-vertexing BCE loss
         elif "pair_logits" in out:
             vtx_loss = pair_vertex_loss(out["pair_logits"], pair_b, mask_b)
@@ -78,6 +83,7 @@ def train_epoch(model, dataloader, optimiser, criterion_jet, criterion_origin,
 
     return (tot_loss / n_total, tot_jet / n_total,
             tot_origin / n_total, tot_vertex / n_total,
+            tot_lxy_vtx / max(n_total, 1), tot_dz_vtx / max(n_total, 1),
             tot_refine / max(n_total, 1), tot_vtx_weight / max(n_total, 1))
 
 
@@ -91,6 +97,7 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
                    fit_lxy, fit_dz, device):
     model.eval()
     val_loss, val_jet_loss, val_origin_loss, val_vertex_loss = 0.0, 0.0, 0.0, 0.0
+    val_lxy_vtx_loss, val_dz_vtx_loss = 0.0, 0.0
     correct, origin_correct, origin_total, n_total = 0, 0, 0, 0
     all_preds, all_true, all_probs = [], [], []
     all_origin_preds, all_origin_true = [], []
@@ -122,9 +129,13 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
         # ── model-specific vertex / pair loss ───────────────────────────
         if "lxy_pred" in out:
             # model: staged_origin_vertex_jet
-            vtx_loss = vertex_loss_fn(out["lxy_pred"], out["dz_pred"],
-                                      lxy_b, dz_b, vvalid_b,
-                                      fit_lxy=fit_lxy, fit_dz=fit_dz)
+            vtx_loss, lxy_vtx_loss, dz_vtx_loss = vertex_loss_fn(
+                out["lxy_pred"], out["dz_pred"],
+                lxy_b, dz_b, vvalid_b,
+                fit_lxy=fit_lxy, fit_dz=fit_dz,
+                return_components=True)
+            val_lxy_vtx_loss += lxy_vtx_loss.item() * len(y_b)
+            val_dz_vtx_loss  += dz_vtx_loss.item()  * len(y_b)
         elif "pair_logits" in out:
             # model: parallel_origin_vertex_jet
             vtx_loss = pair_vertex_loss(out["pair_logits"], pair_b, mask_b)
@@ -178,10 +189,12 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
         n_total += len(y_b)
 
     # ── aggregate metrics ────────────────────────────────────────────────
-    val_loss        /= n_total
-    val_jet_loss    /= n_total
-    val_origin_loss /= n_total
-    val_vertex_loss /= n_total
+    val_loss          /= n_total
+    val_jet_loss      /= n_total
+    val_origin_loss   /= n_total
+    val_vertex_loss   /= n_total
+    val_lxy_vtx_loss  /= n_total
+    val_dz_vtx_loss   /= n_total
     val_acc          = correct / n_total
     val_origin_acc   = origin_correct / max(origin_total, 1)
 
@@ -216,6 +229,7 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
         pred_arrays["pair_mask"]   = torch.cat(all_pair_mask).numpy().astype(bool)
 
     return (val_loss, val_jet_loss, val_origin_loss, val_vertex_loss,
+            val_lxy_vtx_loss, val_dz_vtx_loss,
             val_acc, val_origin_acc, pred_arrays)
 
 
@@ -381,6 +395,43 @@ def _compute_epoch_refine_vtx_stats(pred_arrays, config):
 
 
 # ===========================================================================
+# _compute_vertex_metrics — per-leg Lxy/dz MAE and Pearson r from val data.
+# ===========================================================================
+def _compute_vertex_metrics(pred_arrays, config):
+    lxy_pred  = pred_arrays["lxy_pred"]   # (N, L)
+    lxy_true  = pred_arrays["lxy_true"]   # (N, L)
+    dz_pred   = pred_arrays["dz_pred"]    # (N, L)
+    dz_true   = pred_arrays["dz_true"]    # (N, L)
+    vtx_valid = pred_arrays["vtx_valid"]  # (N, L)
+
+    stats = {}
+    for leg in range(config.n_vertex_legs):
+        leg_name = config.vertex_leg_names[leg]
+        s = leg_name.replace("_vertex", "")
+        v = vtx_valid[:, leg]
+        if not v.any():
+            continue
+
+        if config.fit_lxy:
+            pred = lxy_pred[v, leg]
+            true = lxy_true[v, leg]
+            stats[f"val_{s}_lxy_mae"] = float(np.mean(np.abs(pred - true)))
+            if len(pred) >= 2:
+                r = np.corrcoef(pred, true)[0, 1]
+                stats[f"val_{s}_lxy_pearson"] = float(r) if np.isfinite(r) else 0.0
+
+        if config.fit_dz:
+            pred = dz_pred[v, leg]
+            true = dz_true[v, leg]
+            stats[f"val_{s}_dz_mae"] = float(np.mean(np.abs(pred - true)))
+            if len(pred) >= 2:
+                r = np.corrcoef(pred, true)[0, 1]
+                stats[f"val_{s}_dz_pearson"] = float(r) if np.isfinite(r) else 0.0
+
+    return stats
+
+
+# ===========================================================================
 # run_training — full training loop over *epochs*.
 # Prints per-epoch metrics and (if supported) vertex calibration scales.
 # ===========================================================================
@@ -390,9 +441,10 @@ def run_training(model, train_loader, val_loader, optimiser,
                  vertex_leg_names, calibrate_vertex_fit):
     history = {
         "train_loss": [], "train_jet_loss": [], "train_origin_loss": [],
-        "train_vertex_loss": [],
+        "train_vertex_loss": [], "train_lxy_loss": [], "train_dz_loss": [],
         "val_loss": [], "val_jet_loss": [], "val_origin_loss": [],
-        "val_vertex_loss": [], "val_acc": [], "val_origin_acc": [],
+        "val_vertex_loss": [], "val_lxy_loss": [], "val_dz_loss": [],
+        "val_acc": [], "val_origin_acc": [],
         # refine / vtx_weight diagnostics (train: overall mean; val: match/other per leg)
         "train_refine_mean": [], "train_vtx_weight_mean": [],
         "val_b_refine_match_mean": [], "val_b_refine_other_mean": [],
@@ -404,6 +456,11 @@ def run_training(model, train_loader, val_loader, optimiser,
         "grad_norm_vertex_encoder": [], "grad_norm_jet_encoder": [],
         "grad_norm_head_jet": [], "grad_norm_head_origin": [], "grad_norm_head_vtxw": [],
         "grad_cos_origin_vertex": [], "grad_cos_origin_jet": [], "grad_cos_vertex_jet": [],
+        # vertex reconstruction metrics (Lxy/dz MAE & Pearson r)
+        "val_b_lxy_mae": [], "val_c_lxy_mae": [],
+        "val_b_dz_mae": [], "val_c_dz_mae": [],
+        "val_b_lxy_pearson": [], "val_c_lxy_pearson": [],
+        "val_b_dz_pearson": [], "val_c_dz_pearson": [],
     }
 
     _tb_dir = getattr(config, "tensorboard_log_dir", None)
@@ -428,6 +485,7 @@ def run_training(model, train_loader, val_loader, optimiser,
 
     for epoch in range(1, epochs + 1):
         (train_loss, train_jet_loss, train_origin_loss, train_vertex_loss,
+         train_lxy_loss, train_dz_loss,
          train_refine, train_vtxw) = train_epoch(
             model, train_loader, optimiser, criterion_jet, criterion_origin,
             n_origin_classes, config.lambda_jet, config.lambda_origin,
@@ -450,6 +508,7 @@ def run_training(model, train_loader, val_loader, optimiser,
             history[_k].append(_grad_stats.get(_k, float("nan")))
 
         (val_loss, val_jet_loss, val_origin_loss, val_vertex_loss,
+         val_lxy_loss, val_dz_loss,
          val_acc, val_origin_acc, pred_arrays) = validate_epoch(
             model, val_loader, criterion_jet, criterion_origin,
             n_origin_classes, config.lambda_jet, config.lambda_origin,
@@ -460,10 +519,14 @@ def run_training(model, train_loader, val_loader, optimiser,
         history["train_jet_loss"].append(train_jet_loss)
         history["train_origin_loss"].append(train_origin_loss)
         history["train_vertex_loss"].append(train_vertex_loss)
+        history["train_lxy_loss"].append(train_lxy_loss)
+        history["train_dz_loss"].append(train_dz_loss)
         history["val_loss"].append(val_loss)
         history["val_jet_loss"].append(val_jet_loss)
         history["val_origin_loss"].append(val_origin_loss)
         history["val_vertex_loss"].append(val_vertex_loss)
+        history["val_lxy_loss"].append(val_lxy_loss)
+        history["val_dz_loss"].append(val_dz_loss)
         history["val_acc"].append(val_acc)
         history["val_origin_acc"].append(val_origin_acc)
 
@@ -508,6 +571,19 @@ def run_training(model, train_loader, val_loader, optimiser,
             for _k in _expected_val_keys:
                 history[_k].append(0.0)
 
+        # vertex reconstruction metrics (staged model only)
+        _vtx_metrics = {}
+        _expected_vtx_keys = [
+            "val_b_lxy_mae", "val_c_lxy_mae",
+            "val_b_dz_mae", "val_c_dz_mae",
+            "val_b_lxy_pearson", "val_c_lxy_pearson",
+            "val_b_dz_pearson", "val_c_dz_pearson",
+        ]
+        if "lxy_pred" in pred_arrays:
+            _vtx_metrics = _compute_vertex_metrics(pred_arrays, config)
+        for _k in _expected_vtx_keys:
+            history[_k].append(_vtx_metrics.get(_k, 0.0))
+
         # optional: log vertex calibration scale values
         _calib_str = ""
         if calibrate_vertex_fit and hasattr(model, "calibration_scales"):
@@ -522,9 +598,9 @@ def run_training(model, train_loader, val_loader, optimiser,
 
         print(f"Epoch {epoch:02d}/{epochs}  "
               f"loss={train_loss:.4f} (jet={train_jet_loss:.4f} "
-              f"origin={train_origin_loss:.4f} vtx={train_vertex_loss:.4f})  "
+              f"origin={train_origin_loss:.4f} vtx={train_vertex_loss:.4f}(Lxy={train_lxy_loss:.4f},dz={train_dz_loss:.4f}))  "
               f"val_loss={val_loss:.4f} (jet={val_jet_loss:.4f} "
-              f"origin={val_origin_loss:.4f} vtx={val_vertex_loss:.4f})  "
+              f"origin={val_origin_loss:.4f} vtx={val_vertex_loss:.4f}(Lxy={val_lxy_loss:.4f},dz={val_dz_loss:.4f}))  "
               f"val_acc={val_acc:.4f}  origin_acc={val_origin_acc:.4f}{_calib_str}")
         if _vtx_stats:
             print(f"         refine train={train_refine:.4f}  "
@@ -536,6 +612,19 @@ def run_training(model, train_loader, val_loader, optimiser,
                   f"o={_vtx_stats.get('val_b_vtx_weight_other_mean', 0):.4f})  "
                   f"c(m={_vtx_stats.get('val_c_vtx_weight_match_mean', 0):.4f} "
                   f"o={_vtx_stats.get('val_c_vtx_weight_other_mean', 0):.4f})")
+        if _vtx_metrics:
+            _vtx_parts = []
+            for _lname in config.vertex_leg_names:
+                _s = _lname.replace("_vertex", "")
+                _sub = []
+                if config.fit_lxy:
+                    _sub.append(f"Lxy MAE={_vtx_metrics.get(f'val_{_s}_lxy_mae', 0):.4f} r={_vtx_metrics.get(f'val_{_s}_lxy_pearson', 0):.3f}")
+                if config.fit_dz:
+                    _sub.append(f"dz MAE={_vtx_metrics.get(f'val_{_s}_dz_mae', 0):.4f} r={_vtx_metrics.get(f'val_{_s}_dz_pearson', 0):.3f}")
+                if _sub:
+                    _vtx_parts.append(f"{_s}: " + "  ".join(_sub))
+            if _vtx_parts:
+                print(f"    vtx metrics  " + " | ".join(_vtx_parts))
         if _grad_stats:
             print(f"    grad  shared: jet={_grad_stats.get('grad_norm_shared_encoder_jet', 0):.4f}  "
                   f"origin={_grad_stats.get('grad_norm_shared_encoder_origin', 0):.4f}  "

@@ -33,21 +33,28 @@ def compute_origin_class_weights(train_data, n_origin_classes, device):
 # model: staged_origin_vertex_jet
 # ===========================================================================
 def vertex_loss_fn(lxy_pred, dz_pred, vtx_lxy, vtx_dz, vtx_valid,
-                   fit_lxy=True, fit_dz=True):
-    total = lxy_pred.new_tensor(0.0)
-    for leg in range(lxy_pred.shape[-1]):          # iterate over vertex legs
-        v = vtx_valid[:, leg]                       # jets valid for this leg
+                   fit_lxy=True, fit_dz=True, return_components=False):
+    total      = lxy_pred.new_tensor(0.0)
+    lxy_total  = lxy_pred.new_tensor(0.0)
+    dz_total   = lxy_pred.new_tensor(0.0)
+    for leg in range(lxy_pred.shape[-1]):
+        v = vtx_valid[:, leg]
         if not v.any():
             continue
         if fit_lxy:
             lp = torch.log1p(lxy_pred[v, leg].clamp(min=0))
             lt = torch.log1p(vtx_lxy[v, leg].clamp(min=0))
-            total = total + F.smooth_l1_loss(lp, lt)
+            loss = F.smooth_l1_loss(lp, lt)
+            total     = total + loss
+            lxy_total = lxy_total + loss
         if fit_dz:
-            # preserve sign: log1p(|dz|) * sign(dz)
             zp = torch.log1p(dz_pred[v, leg].abs()) * dz_pred[v, leg].sign()
             zt = torch.log1p(vtx_dz[v, leg].abs())  * vtx_dz[v, leg].sign()
-            total = total + F.smooth_l1_loss(zp, zt)
+            loss = F.smooth_l1_loss(zp, zt)
+            total    = total + loss
+            dz_total = dz_total + loss
+    if return_components:
+        return total, lxy_total, dz_total
     return total
 
 
