@@ -31,6 +31,17 @@ python train_origin_vertex_jet.py --config configs/staged.json
 python train_origin_vertex_jet.py --config configs/parallel.json
 ```
 
+Training runs for 100 epochs by default and keeps three checkpoints in the timestamped output directory: `best_jet.pt` (lowest validation jet loss), `best_total.pt` (lowest validation total loss), and `last.pt` (latest completed epoch, normally epoch 100). The configurable `checkpoint_interval` setting also writes periodic checkpoints such as `epoch_20.pt`, `epoch_40.pt`, and so on; its default value is 20.
+
+Evaluate any saved checkpoint with:
+
+```bash
+python train_origin_vertex_jet.py --config path/to/run/config.json \
+    --eval-only --weights path/to/run/best_jet.pt
+```
+
+Evaluation outputs are written beside the checkpoint under `eval_<pt_name>/` (for example, `eval_best_jet/`). Use `--output-dir` to override the parent directory.
+
 ## Available models
 
 ### `staged_origin_vertex_jet` — Staged 3-encoder pipeline

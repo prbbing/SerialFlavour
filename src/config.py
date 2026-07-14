@@ -122,7 +122,8 @@ _DEFAULTS = {
     "train_file":      "/data/yuyang/opendata/gn2_tt/mc-flavtag-ttbar-small.h5",
     "n_train":         120_000,       # balanced across classes
     "n_test":          40_000,        # natural distribution (last N)
-    "epochs":          40,
+    "epochs":          100,
+    "checkpoint_interval": 20,  # save epoch_N.pt every N epochs
     "lr":              1e-3,          # Adam learning rate
     "num_workers":     4,             # DataLoader workers
     "model_name":      "model.pt",
@@ -149,6 +150,7 @@ class Config:
         self.n_test             = cfg_dict["n_test"]
         self.batch_size         = cfg_dict["batch_size"]
         self.epochs             = cfg_dict["epochs"]
+        self.checkpoint_interval = cfg_dict["checkpoint_interval"]
         self.lr                 = cfg_dict["lr"]
         self.num_workers        = cfg_dict["num_workers"]
         self.top_k              = cfg_dict["top_k"]
@@ -211,6 +213,8 @@ class Config:
             "stage3_extra_inputs must be a subset of ['origin_probs', 'vtx_weight']"
         assert set(self.tagging_fields) <= set(self.track_fields) and len(self.tagging_fields) >= 1, \
             "tagging_fields must be a non-empty subset of track_fields"
+        assert type(self.checkpoint_interval) is int and self.checkpoint_interval > 0, \
+            "checkpoint_interval must be a positive integer"
 
         # -- derived quantities ---------------------------------------------
         self.n_feats = len(self.track_fields)   # total input dimensionality

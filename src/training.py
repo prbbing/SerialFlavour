@@ -261,7 +261,13 @@ def _measure_task_gradients(model, X_b, mask_b, y_b, origin_b,
         enc3_params   = list(_m.input_proj3.parameters()) + list(_m.encoder3.parameters())
         origin_head_p = list(_m.origin_head.parameters())
         jet_head_p    = list(_m.jet_head.parameters())
-        vtxw_head_p   = list(_m.vertex_weight_head.parameters())
+        if hasattr(_m, "vertex_weight_head"):
+            vtxw_head_p = list(_m.vertex_weight_head.parameters())
+        elif hasattr(_m, "vertex_delta_head_lxy"):
+            vtxw_head_p = (list(_m.vertex_delta_head_lxy.parameters()) +
+                           list(_m.vertex_delta_head_dz.parameters()))
+        else:
+            vtxw_head_p = []
     else:
         # parallel model
         enc1_params   = list(_m.init_net.parameters()) + list(_m.encoder.parameters())
@@ -406,6 +412,15 @@ def run_training(model, train_loader, val_loader, optimiser,
                                os.path.basename(config.plot_dir.rstrip("/")))
     writer = SummaryWriter(_tb_dir) if _tb_dir else None
 
+    best_jet_loss = float("inf")
+    best_total_loss = float("inf")
+    best_jet_epoch = None
+    best_total_epoch = None
+    best_jet_path = os.path.join(config.plot_dir, "best_jet.pt")
+    best_total_path = os.path.join(config.plot_dir, "best_total.pt")
+    last_path = os.path.join(config.plot_dir, "last.pt")
+    checkpoint_interval = config.checkpoint_interval
+
     # grab one fixed batch for gradient diagnostics
     _diag_batch = next(iter(val_loader))
     _diag_X, _diag_mask, _diag_y, _diag_orig, _diag_lxy, _diag_dz, _diag_vv, _diag_pair = (
@@ -451,6 +466,28 @@ def run_training(model, train_loader, val_loader, optimiser,
         history["val_vertex_loss"].append(val_vertex_loss)
         history["val_acc"].append(val_acc)
         history["val_origin_acc"].append(val_origin_acc)
+
+        if val_jet_loss < best_jet_loss:
+            best_jet_loss = val_jet_loss
+            best_jet_epoch = epoch
+            torch.save(model.state_dict(), best_jet_path)
+            print(f"Saved best_jet.pt (epoch={epoch}, val_jet_loss={val_jet_loss:.6f})")
+
+        if val_loss < best_total_loss:
+            best_total_loss = val_loss
+            best_total_epoch = epoch
+            torch.save(model.state_dict(), best_total_path)
+            print(f"Saved best_total.pt (epoch={epoch}, val_loss={val_loss:.6f})")
+
+        if epoch % checkpoint_interval == 0:
+            epoch_path = os.path.join(
+                config.plot_dir, f"epoch_{epoch}.pt")
+            torch.save(model.state_dict(), epoch_path)
+            print(f"Saved {os.path.basename(epoch_path)}")
+
+        # Overwrite on every completed epoch; at normal completion this is
+        # the final-epoch state.
+        torch.save(model.state_dict(), last_path)
 
         history["train_refine_mean"].append(train_refine)
         history["train_vtx_weight_mean"].append(train_vtxw)
@@ -522,6 +559,12 @@ def run_training(model, train_loader, val_loader, optimiser,
 
     if writer:
         writer.close()
+
+    print("Checkpoint summary:")
+    print(f"  best_jet.pt: epoch={best_jet_epoch}, val_jet_loss={best_jet_loss:.6f}")
+    print(f"  best_total.pt: epoch={best_total_epoch}, val_loss={best_total_loss:.6f}")
+    print(f"  last.pt: epoch={epochs}")
+    print(f"  periodic checkpoints: every {checkpoint_interval} epoch(s)")
 
     # ── export gradient diagnostics as CSV ────────────────────────────
     _grad_keys = [k for k in history if k.startswith("grad_")]

@@ -1,11 +1,12 @@
 {
     "model_type": "staged_origin_vertex_jet",
     "d_model": 32,
-    "n_heads": 4,
+    "n_heads": 2,
     "n_layers": 2,
     "d_ffn": 64,
     "dropout": 0.1,
-    "epochs": 40,
+    "epochs": 100,
+    "checkpoint_interval": 20,
     "lr": 0.001,
     "gate_temp": 0.1,
     "gpu_ids": [
@@ -14,8 +15,8 @@
     "train_file": "/data/yuyang/opendata/gn2_tt/mc-flavtag-ttbar-small.h5",
     "n_train": 120000,
     "n_test": 40000,
-    "batch_size": 2048,
-    "train_plot_dir": "./results/results_staged/",
+    "batch_size": 512,
+    "train_plot_dir": "/data/yuyang/results/results_staged/",
     "model_name": "staged_origin_vertex_jet.pt",
     "train_cache_dir": ".track_cache/"
 }

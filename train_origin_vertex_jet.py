@@ -54,8 +54,12 @@ parser.add_argument("--config", default=None,
                     help="Path to JSON config file. Keys override built-in defaults.")
 parser.add_argument("--eval-only", action="store_true",
                     help="Skip training; load saved weights and run evaluation only.")
+parser.add_argument("--weights", "--weights-path", dest="weights_path", default=None,
+                    help="Checkpoint .pt file for --eval-only. Defaults to "
+                         "<train_plot_dir>/last.pt.")
 parser.add_argument("--output-dir", default=None,
-                    help="Override train_plot_dir from config. Timestamp is still appended.")
+                    help="Override train_plot_dir in training mode, or the parent "
+                         "directory for eval_<pt_name> in eval-only mode.")
 args = parser.parse_args()
 
 config, cfg_dict = load_config(args.config)
@@ -156,7 +160,18 @@ def _run_evaluation(pred_arrays, cfg, plot_dir, history=None):
 # ══════════════════════════════════════════════════════════════════════
 if args.eval_only:
     os.makedirs(config.cache_dir, exist_ok=True)
-    eval_plot_dir = os.path.join(config.plot_dir, "eval/")
+
+    if args.weights_path is not None:
+        weights_path = os.path.abspath(os.path.expanduser(args.weights_path))
+    else:
+        weights_path = os.path.abspath(
+            os.path.join(config.plot_dir, "last.pt"))
+
+    pt_name = os.path.splitext(os.path.basename(weights_path))[0]
+    eval_parent_dir = (os.path.abspath(os.path.expanduser(args.output_dir))
+                       if args.output_dir is not None
+                       else os.path.dirname(weights_path))
+    eval_plot_dir = os.path.join(eval_parent_dir, f"eval_{pt_name}/")
     os.makedirs(eval_plot_dir, exist_ok=True)
 
     _orig_stdout = sys.stdout
@@ -164,7 +179,7 @@ if args.eval_only:
     sys.stdout = _Tee(_orig_stdout, log_file)
 
     print(f"Device: {gpu_ids}  |  DataParallel: {use_dp}")
-    print(f"Eval-only — weights: {config.plot_dir}/{config.model_name}")
+    print(f"Eval-only — weights: {weights_path}")
 
     print("Loading data...")
     _, val_loader, _, test_data, _, y_test = create_dataloaders(config, DEVICE)
@@ -173,7 +188,6 @@ if args.eval_only:
     if use_dp:
         model = torch.nn.DataParallel(model, device_ids=gpu_ids)
 
-    weights_path = os.path.join(config.plot_dir, config.model_name)
     if not os.path.exists(weights_path):
         raise FileNotFoundError(f"Model weights not found: {weights_path}")
     model.load_state_dict(
@@ -275,9 +289,6 @@ history, pred_arrays = run_training(
     criterion_jet, criterion_origin,
     config, DEVICE, config.epochs, config.n_origin_classes, len(y_train),
     config.vertex_leg_names, config.calibrate_vertex_fit)
-
-torch.save(model.state_dict(), os.path.join(config.plot_dir, config.model_name))
-print(f"Saved {config.model_name}")
 
 # ── run evaluation (training mode) ────────────────────────────────────
 _run_evaluation(pred_arrays, config, config.plot_dir, history=history)
