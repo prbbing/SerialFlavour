@@ -271,7 +271,8 @@ def _measure_task_gradients(model, X_b, mask_b, y_b, origin_b,
     has_staged = hasattr(_m, "encoder1")
     if has_staged:
         enc1_params   = list(_m.input_proj1.parameters()) + list(_m.encoder1.parameters())
-        enc2_params   = list(_m.input_proj2.parameters()) + list(_m.encoder2.parameters())
+        enc2_params   = (list(_m.input_proj2.parameters()) + list(_m.encoder2.parameters())
+                         if hasattr(_m, "input_proj2") else [])
         enc3_params   = list(_m.input_proj3.parameters()) + list(_m.encoder3.parameters())
         origin_head_p = list(_m.origin_head.parameters())
         jet_head_p    = list(_m.jet_head.parameters())

@@ -17,9 +17,10 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 
-def _cache_key(idx, cache_dir):
-    """MD5 hash of the numpy index array → deterministic cache filename."""
-    h = hashlib.md5(idx.tobytes()).hexdigest()[:12]
+def _cache_key(idx, track_fields, cache_dir):
+    """MD5 hash of index + field list → deterministic cache filename."""
+    fields_bytes = ",".join(track_fields).encode()
+    h = hashlib.md5(idx.tobytes() + fields_bytes).hexdigest()[:12]
     return os.path.join(cache_dir, f"tracks_{h}_nom.npz")
 
 
@@ -48,7 +49,7 @@ def load_tracks(path, idx, flavour_to_label, track_fields,
             vtx_valid  (N, L)    bool_    — truth validity per leg
             pair_target (N, K, K) float32 — pair-compatibility labels
     """
-    cp = _cache_key(idx, cache_dir)
+    cp = _cache_key(idx, track_fields, cache_dir)
     if os.path.exists(cp):
         d = np.load(cp)
         return {k: d[k] for k in d.files}

@@ -1,0 +1,32 @@
+{
+    "model_type": "staged_origin_vertex_jet_no_refine_fix_dz",
+    "d_model": 32,
+    "n_heads": 2,
+    "n_layers": 2,
+    "d_ffn": 64,
+    "dropout": 0.1,
+    "epochs": 100,
+    "checkpoint_interval": 20,
+    "lr": 0.001,
+    "gate_temp": 0.1,
+    "gpu_ids": ["0"],
+    "track_fields": [
+        "qOverP", "deta", "dphi", "d0", "z0SinTheta",
+        "d0Uncertainty", "z0SinThetaUncertainty",
+        "qOverPUncertainty", "thetaUncertainty", "phiUncertainty",
+        "lifetimeSignedD0Significance", "lifetimeSignedZ0SinThetaSignificance",
+        "numberOfPixelHits", "numberOfSCTHits",
+        "numberOfInnermostPixelLayerHits", "numberOfNextToInnermostPixelLayerHits",
+        "numberOfInnermostPixelLayerSharedHits", "numberOfInnermostPixelLayerSplitHits",
+        "numberOfPixelSharedHits", "numberOfPixelSplitHits", "numberOfSCTSharedHits",
+        "theta"
+    ],
+    "vertex_fit_method": "two_step",
+    "train_file": "/data/yuyang/opendata/gn2_tt/mc-flavtag-ttbar-small.h5",
+    "n_train": 120000,
+    "n_test": 40000,
+    "batch_size": 512,
+    "train_plot_dir": "/data/yuyang/results/results_staged_no_refine_fix_dz/",
+    "model_name": "staged_origin_vertex_jet_no_refine_fix_dz.pt",
+    "train_cache_dir": ".track_cache/"
+}

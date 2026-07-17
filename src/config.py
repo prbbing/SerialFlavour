@@ -54,6 +54,13 @@ _DEFAULTS = {
     # Coordinates to fit & supervise.  Non-empty subset of ["Lxy","dz"].
     "vertex_fit_coords": ["Lxy", "dz"],
 
+    # Vertex fitting algorithm for fix_dz models:
+    #   "two_step" — keep existing Lxy/flight_phi fit, replace dz with
+    #                two-step WLS using fitted Lxy geometry
+    #   "wls_3d"   — joint 3D WLS solving (X,Y,Z) from all tracks
+    "vertex_fit_method": "two_step",
+    "vertex_fit_reg": 1e-6,    # Tikhonov regularisation for 3D WLS
+
     # Learnable multiplicative calibration per leg & active coordinate.
     #   pred_calibrated = pred * exp(log_scale)
     # Absorbs systematic biases from the closed-form fit via cheap params.
@@ -182,6 +189,8 @@ class Config:
         self.fit_dz             = "dz"  in cfg_dict["vertex_fit_coords"]
         self.n_vtx_coords       = len(cfg_dict["vertex_fit_coords"])
         self.calibrate_vertex_fit = cfg_dict["calibrate_vertex_fit"]
+        self.vertex_fit_method  = cfg_dict["vertex_fit_method"]   # "two_step" or "wls_3d"
+        self.vertex_fit_reg     = cfg_dict["vertex_fit_reg"]       # λ for 3D WLS
 
         # -- stage-3 extra inputs -------------------------------------------
         self.stage3_extra_inputs  = cfg_dict["stage3_extra_inputs"]
@@ -239,6 +248,7 @@ class Config:
         self.dphi_idx        = self.track_fields.index("dphi")
         self.z0st_idx        = self.track_fields.index("z0SinTheta")
         self.z0st_unc_idx    = self.track_fields.index("z0SinThetaUncertainty")
+        self.theta_idx       = self.track_fields.index("theta") if "theta" in self.track_fields else -1
 
         # Mapping from vertex leg name → owner jet class index, for plotting.
         _flavour_to_class_name = {v: k for k, v in

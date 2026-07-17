@@ -10,6 +10,15 @@ from .staged_origin_vertex_jet import (
 from .staged_origin_vertex_jet_fix_refine import (
     StagedOriginVertexJetTransformer as FixRefineStagedOriginVertexJetTransformer,
     build_staged_origin_vertex_jet_fix_refine)
+from .staged_origin_vertex_jet_fix_dz import (
+    StagedOriginVertexJetTransformerFixDz,
+    build_staged_origin_vertex_jet_fix_dz)
+from .staged_origin_vertex_jet_fix_refine_fix_dz import (
+    StagedOriginVertexJetTransformerFixRefineFixDz,
+    build_staged_origin_vertex_jet_fix_refine_fix_dz)
+from .staged_origin_vertex_jet_no_refine_fix_dz import (
+    StagedOriginVertexJetTransformerNoRefineFixDz,
+    build_staged_origin_vertex_jet_no_refine_fix_dz)
 from .parallel_origin_vertex_jet import (
     ParallelOriginVertexJetTransformer, build_parallel_origin_vertex_jet)
 
@@ -17,6 +26,9 @@ from .parallel_origin_vertex_jet import (
 _MODEL_REGISTRY = {
     "staged_origin_vertex_jet":    build_staged_origin_vertex_jet,
     "staged_origin_vertex_jet_fix_refine": build_staged_origin_vertex_jet_fix_refine,
+    "staged_origin_vertex_jet_fix_dz": build_staged_origin_vertex_jet_fix_dz,
+    "staged_origin_vertex_jet_fix_refine_fix_dz": build_staged_origin_vertex_jet_fix_refine_fix_dz,
+    "staged_origin_vertex_jet_no_refine_fix_dz": build_staged_origin_vertex_jet_no_refine_fix_dz,
     "parallel_origin_vertex_jet":  build_parallel_origin_vertex_jet,
 }
 

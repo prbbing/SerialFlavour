@@ -171,6 +171,7 @@ class StagedOriginVertexJetTransformer(nn.Module):
             sum_sin    = (vtx_weight * sin_dphi).sum(1)       # (B, L)
             sum_cos    = (vtx_weight * cos_dphi).sum(1)
             flight_phi = torch.atan2(sum_sin, sum_cos).unsqueeze(1)  # (B, 1, L)
+            flight_phi = torch.nan_to_num(flight_phi, nan=0.0)
             delta_phi  = dphi - flight_phi
             sin_d      = torch.sin(delta_phi)
             inv_var_d0 = vtx_weight / d0_unc.pow(2)           # 1/σ² weights
