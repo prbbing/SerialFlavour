@@ -8,27 +8,29 @@ a new module file + one line in _MODEL_REGISTRY.
 from .staged_origin_vertex_jet import (
     StagedOriginVertexJetTransformer, build_staged_origin_vertex_jet)
 from .staged_origin_vertex_jet_fix_refine import (
-    StagedOriginVertexJetTransformer as FixRefineStagedOriginVertexJetTransformer,
+    StagedOriginVertexJetTransformerFixRefine,
     build_staged_origin_vertex_jet_fix_refine)
-from .staged_origin_vertex_jet_fix_dz import (
-    StagedOriginVertexJetTransformerFixDz,
-    build_staged_origin_vertex_jet_fix_dz)
-from .staged_origin_vertex_jet_fix_refine_fix_dz import (
-    StagedOriginVertexJetTransformerFixRefineFixDz,
-    build_staged_origin_vertex_jet_fix_refine_fix_dz)
-from .staged_origin_vertex_jet_no_refine_fix_dz import (
-    StagedOriginVertexJetTransformerNoRefineFixDz,
-    build_staged_origin_vertex_jet_no_refine_fix_dz)
+from .staged_origin_vertex_jet_no_refine import (
+    StagedOriginVertexJetTransformerNoRefine,
+    build_staged_origin_vertex_jet_no_refine)
 from .parallel_origin_vertex_jet import (
     ParallelOriginVertexJetTransformer, build_parallel_origin_vertex_jet)
 
-# Map model_type string → builder(config) → nn.Module
+# Map model_type string -> builder(config) -> nn.Module
 _MODEL_REGISTRY = {
-    "staged_origin_vertex_jet":    build_staged_origin_vertex_jet,
-    "staged_origin_vertex_jet_fix_refine": build_staged_origin_vertex_jet_fix_refine,
-    "staged_origin_vertex_jet_fix_dz": build_staged_origin_vertex_jet_fix_dz,
-    "staged_origin_vertex_jet_fix_refine_fix_dz": build_staged_origin_vertex_jet_fix_refine_fix_dz,
-    "staged_origin_vertex_jet_no_refine_fix_dz": build_staged_origin_vertex_jet_no_refine_fix_dz,
+    # -- staged (multiplicative refine) --
+    "staged_origin_vertex_jet":        build_staged_origin_vertex_jet,
+    "staged_origin_vertex_jet_fix_dz": build_staged_origin_vertex_jet,  # compat
+
+    # -- staged (additive refine) --
+    "staged_origin_vertex_jet_fix_refine":          build_staged_origin_vertex_jet_fix_refine,
+    "staged_origin_vertex_jet_fix_refine_fix_dz":   build_staged_origin_vertex_jet_fix_refine,  # compat
+
+    # -- staged (no refine) --
+    "staged_origin_vertex_jet_no_refine":           build_staged_origin_vertex_jet_no_refine,
+    "staged_origin_vertex_jet_no_refine_fix_dz":    build_staged_origin_vertex_jet_no_refine,  # compat
+
+    # -- parallel --
     "parallel_origin_vertex_jet":  build_parallel_origin_vertex_jet,
 }
 

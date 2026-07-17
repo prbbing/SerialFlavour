@@ -1,35 +1,29 @@
 """
-Staged three-encoder transformer jet-flavour classifier (fixed dz).
+Staged two-encoder transformer jet-flavour classifier (no refine).
 
-Two vertex-fitting methods, selected via `vertex_fit_method`:
+Differs from staged_origin_vertex_jet in two ways:
+  1. Encoder2 (refine head) is removed — vtx_weight = gate * mask_f only.
+  2. Vertex fitting uses selectable formulas (old_dz / two_step / wls_3d).
 
+Three vertex-fitting methods, selected via `vertex_fit_method`:
   "old_dz"    — original staged formula: Lxy closed-form fit, dz = Σ(w·z0st/σ²)/Σ(w/σ²)
   "two_step"  — keep existing Lxy/flight_phi fit, replace dz with
                 two-step WLS using the geometric relation
   "wls_3d"    — joint 3D WLS solving (X,Y,Z) from all tracks
-                 M = Σ A_i^T W_i A_i,  b = Σ A_i^T W_i y_i
-                 v̂ = solve(M + λI, b)
-                 L̂xy = sqrt(X²+Y²),  d̂z = Z
-
-Architecture (stages unchanged from staged_origin_vertex_jet):
-  Stage 1: track-origin prediction (encoder 1)
-  Stage 2: differentiable secondary-vertex fit (encoder 2)
-  Stage 3: jet-flavour classification (encoder 3)
 """
 import torch
 import torch.nn as nn
 
-MIN_SIN_THETA = 0.1   # tracks with |sinθ| below this are excluded from
-                       # longitudinal equations (same as reference pipeline)
+MIN_SIN_THETA = 0.1
 
 
-class StagedOriginVertexJetTransformerFixDz(nn.Module):
+class StagedOriginVertexJetTransformerNoRefine(nn.Module):
     def __init__(self, in_dim, d_model, n_heads, n_layers, d_ffn, dropout,
                  n_origin_classes, n_jet_classes,
                  vertex_feat_indices, d0_idx, d0_unc_idx, dphi_idx,
                  z0st_idx, z0st_unc_idx, theta_idx,
                  vertex_leg_origin_matrix, gate_temp=0.1,
-                 vertex_fit_method="two_step", vertex_fit_reg=1e-6,
+                 vertex_fit_method="wls_3d", vertex_fit_reg=1e-6,
                  fit_lxy=True, fit_dz=True,
                  stage3_use_origin_probs=False, stage3_use_vtx_weight=False,
                  tagging_feat_indices=None,
@@ -43,11 +37,10 @@ class StagedOriginVertexJetTransformerFixDz(nn.Module):
         self.stage3_use_origin_probs = stage3_use_origin_probs
         self.stage3_use_vtx_weight   = stage3_use_vtx_weight
         self.calibrate_vertex_fit    = calibrate_vertex_fit
-        self.vertex_fit_method = vertex_fit_method   # "two_step" | "wls_3d"
-        self.vertex_fit_reg    = vertex_fit_reg       # λ
+        self.vertex_fit_method = vertex_fit_method
+        self.vertex_fit_reg    = vertex_fit_reg
         n_vtx_coords          = int(fit_lxy) + int(fit_dz)
 
-        # -- learnable per-leg multiplicative calibration -----------------
         if calibrate_vertex_fit and fit_lxy:
             self.lxy_log_scale = nn.Parameter(torch.zeros(self.n_vertex_legs))
         if calibrate_vertex_fit and fit_dz:
@@ -64,20 +57,11 @@ class StagedOriginVertexJetTransformerFixDz(nn.Module):
         self.origin_head = nn.Sequential(
             nn.LayerNorm(d_model), nn.Linear(d_model, n_origin_classes))
 
-        self.class_embed = nn.Parameter(torch.zeros(n_origin_classes, d_model))
-        nn.init.trunc_normal_(self.class_embed, std=0.02)
-
         # ================================================================
-        # Stage 2 — differentiable secondary-vertex fit
+        # Stage 2 — no refine encoder; gate-only vertex weighting
         # ================================================================
-        n_vtx_feats = len(vertex_feat_indices)
-        self.input_proj2 = nn.Linear(n_vtx_feats, d_model)
-        _enc2_layer = nn.TransformerEncoderLayer(
-            d_model=d_model, nhead=n_heads, dim_feedforward=d_ffn,
-            dropout=dropout, batch_first=True, norm_first=True)
-        self.encoder2 = nn.TransformerEncoder(_enc2_layer, num_layers=n_layers)
-        self.vertex_weight_head = nn.Sequential(
-            nn.LayerNorm(d_model), nn.Linear(d_model, self.n_vertex_legs))
+        # No encoder2, class_embed, or vertex_weight_head.
+        # vtx_weight = gate * mask_f (gate from Stage 1 origin probs).
 
         # ================================================================
         # Stage 3 — jet-flavour classification
@@ -106,9 +90,6 @@ class StagedOriginVertexJetTransformerFixDz(nn.Module):
         self.jet_head = nn.Sequential(
             nn.LayerNorm(d_model), nn.Linear(d_model, n_jet_classes))
 
-        # non-trainable indices
-        self.register_buffer("vertex_feat_idx",
-            torch.tensor(vertex_feat_indices, dtype=torch.long))
         self.register_buffer("vertex_leg_origin_matrix",
             torch.tensor(vertex_leg_origin_matrix, dtype=torch.float32))
         self.d0_idx, self.d0_unc_idx, self.dphi_idx = d0_idx, d0_unc_idx, dphi_idx
@@ -119,19 +100,18 @@ class StagedOriginVertexJetTransformerFixDz(nn.Module):
     # _vertex_fit_two_step
     # ====================================================================
     def _vertex_fit_two_step(self, x, vtx_weight):
-        """Existing Lxy/flight_phi closed-form fit + two-step Z WLS."""
         B = x.shape[0]
         L = self.n_vertex_legs
 
         if self.fit_lxy:
-            d0      = x[..., self.d0_idx].unsqueeze(-1)          # (B, K, 1)
+            d0      = x[..., self.d0_idx].unsqueeze(-1)
             d0_unc  = x[..., self.d0_unc_idx].abs().clamp(min=1e-3).unsqueeze(-1)
             dphi    = x[..., self.dphi_idx].unsqueeze(-1)
             sin_dphi   = torch.sin(dphi)
             cos_dphi   = torch.cos(dphi)
-            sum_sin    = (vtx_weight * sin_dphi).sum(1)          # (B, L)
+            sum_sin    = (vtx_weight * sin_dphi).sum(1)
             sum_cos    = (vtx_weight * cos_dphi).sum(1)
-            flight_phi = torch.atan2(sum_sin, sum_cos).unsqueeze(1)  # (B,1,L)
+            flight_phi = torch.atan2(sum_sin, sum_cos).unsqueeze(1)
             flight_phi = torch.nan_to_num(flight_phi, nan=0.0)
             delta_phi  = dphi - flight_phi
             sin_d      = torch.sin(delta_phi)
@@ -147,18 +127,17 @@ class StagedOriginVertexJetTransformerFixDz(nn.Module):
             flight_phi = None
 
         if self.fit_dz:
-            theta   = x[..., self.theta_idx].unsqueeze(-1)          # (B, K, 1)
+            theta   = x[..., self.theta_idx].unsqueeze(-1)
             sin_th  = torch.sin(theta)
             cos_th  = torch.cos(theta)
             z0st     = x[..., self.z0st_idx].unsqueeze(-1)
             z0st_unc = x[..., self.z0st_unc_idx].abs().clamp(min=1e-3).unsqueeze(-1)
 
-            delta_phi_z = dphi - flight_phi          # Δφ = dphi - φ̂_vtx
-            # z0·sinθ + Lxy·cosθ·cosΔφ  →  estimated Z·sinθ
+            delta_phi_z = dphi - flight_phi
             residual = z0st + lxy_pred.unsqueeze(1) * cos_th * torch.cos(delta_phi_z)
 
             inv_var_z0 = vtx_weight / z0st_unc.pow(2)
-            num_dz     = (inv_var_z0 * sin_th * residual).sum(1)   # (B, L)
+            num_dz     = (inv_var_z0 * sin_th * residual).sum(1)
             den_dz     = (inv_var_z0 * sin_th.pow(2)).sum(1).clamp(min=1e-6)
             dz_pred    = num_dz / den_dz
             if self.calibrate_vertex_fit:
@@ -172,7 +151,6 @@ class StagedOriginVertexJetTransformerFixDz(nn.Module):
     # _vertex_fit_old_dz
     # ====================================================================
     def _vertex_fit_old_dz(self, x, vtx_weight):
-        """Original staged formula: Lxy closed-form fit, dz = simple IVW mean."""
         B = x.shape[0]
         L = self.n_vertex_legs
 
@@ -217,19 +195,10 @@ class StagedOriginVertexJetTransformerFixDz(nn.Module):
     # _vertex_fit_3dwls
     # ====================================================================
     def _vertex_fit_3dwls(self, x, vtx_weight):
-        """Direct 3D WLS solving (X, Y, Z) jointly from all tracks.
-
-        For each track i:
-          d0_i     = -X·sinφ_i + Y·cosφ_i
-          z0sinθ_i = -X·cosθ_i·cosφ_i - Y·cosθ_i·sinφ_i + Z·sinθ_i
-
-        Solve per-leg linear system:  M = Σ A^T W A,  b = Σ A^T W y
-                                      v̂ = solve(M + λI, b)
-        """
         B, K, L = vtx_weight.shape
         device  = x.device
 
-        dphi    = x[..., self.dphi_idx]                        # (B, K)
+        dphi    = x[..., self.dphi_idx]
         d0      = x[..., self.d0_idx]
         d0_unc  = x[..., self.d0_unc_idx].abs().clamp(min=1e-3)
         z0st    = x[..., self.z0st_idx]
@@ -238,11 +207,10 @@ class StagedOriginVertexJetTransformerFixDz(nn.Module):
         sin_th  = torch.sin(theta)
         cos_th  = torch.cos(theta)
 
-        # track direction (jet-relative, equivalent to absolute for Δφ)
-        sin_phi = torch.sin(dphi)                               # (B, K)
+        sin_phi = torch.sin(dphi)
         cos_phi = torch.cos(dphi)
 
-        I3 = torch.eye(3, device=device).unsqueeze(0)           # (1, 3, 3)
+        I3 = torch.eye(3, device=device).unsqueeze(0)
 
         lxy_pred = vtx_weight.new_zeros(B, L)
         dz_pred  = vtx_weight.new_zeros(B, L)
@@ -250,31 +218,23 @@ class StagedOriginVertexJetTransformerFixDz(nn.Module):
         delta_phi  = vtx_weight.new_zeros(B, K, L)
 
         for leg in range(L):
-            w = vtx_weight[:, :, leg]                           # (B, K)
+            w = vtx_weight[:, :, leg]
 
-            # transverse weight
-            w_d = w / d0_unc.pow(2)                             # (B, K)
-            # longitudinal weight: zero where |sinθ| is too small
+            w_d = w / d0_unc.pow(2)
             sin_mask = (sin_th.abs() >= MIN_SIN_THETA).float()
             w_z = w / z0st_unc.pow(2) * sin_mask
 
-            # rows of A_i (B, K, 3)
             a0 = torch.stack([-sin_phi, cos_phi,
                               torch.zeros_like(sin_phi)], dim=-1)
             a1 = torch.stack([-cos_th * cos_phi, -cos_th * sin_phi,
                               sin_th], dim=-1)
 
-            # M = Σ (w_d·a0⊗a0 + w_z·a1⊗a1)   (B, 3, 3)
             M = (torch.einsum('bk,bki,bkj->bij', w_d, a0, a0) +
                  torch.einsum('bk,bki,bkj->bij', w_z, a1, a1))
-
-            # b = Σ (w_d·a0·d0 + w_z·a1·z0st)  (B, 3)
             b = (torch.einsum('bk,bki,bk->bi', w_d, a0, d0) +
                  torch.einsum('bk,bki,bk->bi', w_z, a1, z0st))
 
-            # regularise & solve
-            v = torch.linalg.solve(M + self.vertex_fit_reg * I3, b)  # (B, 3)
-
+            v = torch.linalg.solve(M + self.vertex_fit_reg * I3, b)
             X, Y, Z = v[:, 0], v[:, 1], v[:, 2]
 
             if self.fit_lxy:
@@ -303,21 +263,15 @@ class StagedOriginVertexJetTransformerFixDz(nn.Module):
         # ---- Stage 1: track-origin prediction ----
         h1 = self.input_proj1(x)
         h1 = self.encoder1(h1, src_key_padding_mask=track_padding_mask)
-        origin_logits = self.origin_head(h1)                   # (B, K, 8)
+        origin_logits = self.origin_head(h1)
         soft_probs = torch.softmax(origin_logits, dim=-1) * mask_f
 
-        # ---- Stage 2: differentiable vertex fit ----
-        soft_embed = soft_probs @ self.class_embed
-        vtx_feats  = x.index_select(-1, self.vertex_feat_idx)
-        h2 = self.input_proj2(vtx_feats) + soft_embed
-        h2 = self.encoder2(h2, src_key_padding_mask=track_padding_mask)
-
-        refine = torch.sigmoid(self.vertex_weight_head(h2))
+        # ---- Stage 2: gate-only vertex weighting (no refine) ----
         leg_origin_probs = soft_probs @ self.vertex_leg_origin_matrix
         gate = torch.sigmoid((leg_origin_probs - 0.5) / self.gate_temp)
-        vtx_weight = refine * gate * mask_f
+        refine = torch.zeros_like(gate)
+        vtx_weight = gate * mask_f
 
-        # dispatch vertex fitting method
         if self.vertex_fit_method == "wls_3d":
             lxy_pred, dz_pred, flight_phi, delta_phi = \
                 self._vertex_fit_3dwls(x, vtx_weight)
@@ -327,7 +281,6 @@ class StagedOriginVertexJetTransformerFixDz(nn.Module):
         else:
             lxy_pred, dz_pred, flight_phi, delta_phi = \
                 self._vertex_fit_two_step(x, vtx_weight)
-
 
         # ---- Stage 3: jet-flavour classification ----
         _vtx_parts = []
@@ -377,8 +330,8 @@ class StagedOriginVertexJetTransformerFixDz(nn.Module):
         return out
 
 
-def build_staged_origin_vertex_jet_fix_dz(config):
-    return StagedOriginVertexJetTransformerFixDz(
+def build_staged_origin_vertex_jet_no_refine(config):
+    return StagedOriginVertexJetTransformerNoRefine(
         in_dim=config.n_feats, d_model=config.d_model,
         n_heads=config.n_heads, n_layers=config.n_layers,
         d_ffn=config.d_ffn, dropout=config.dropout,

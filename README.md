@@ -1,27 +1,27 @@
 # SerialFlavour
 
-Modular transformer-based jet flavour tagging with multi-model support. Train and compare different neural architectures on the ATLAS open dataset, all through a single entry point and JSON config files.
+Modular transformer-based jet flavour tagging on ATLAS open data. One entry point, JSON config files,
+multi-model comparison.
 
 ## Project structure
 
 ```
 SerialFlavour/
-├── train_origin_vertex_jet.py          Single entry point for all models
-├── configs/
-│   ├── staged.json                     Config for staged 3-encoder model
-│   └── parallel.json                   Config for parallel 3-task model (GN2-inspired)
+├── train_origin_vertex_jet.py      CLI entry point
+├── configs/                        JSON experiment configs
 ├── src/
-│   ├── config.py                       _DEFAULTS dictionary, Config class, load_config()
-│   ├── data.py                         HDF5 I/O, track pre-processing, caching, PyTorch Dataset
-│   ├── losses.py                       Loss functions (vertex-fit, pair-vertex, class weights)
-│   ├── training.py                     Training & validation loops with model-agnostic dispatch
-│   ├── plotting.py                     Evaluation plots for all models
-│   └── models/
-│       ├── __init__.py                 Model registry + build_model() factory
-│       ├── staged_origin_vertex_jet.py Staged 3-encoder architecture
-│       └── parallel_origin_vertex_jet.py Shared-encoder + 3 parallel heads (GN2-inspired)
-├── reference/                          Original single-file scripts (for reference)
-└── local/                              Scratch space: notebooks, notes (gitignored)
+│   ├── config.py                   _DEFAULTS + Config class
+│   ├── data.py                     HDF5 loading, caching, PyTorch Dataset
+│   ├── losses.py                   Vertex-fit, pair-vertex, class-weighted losses
+│   ├── training.py                 Training & validation loops
+│   ├── plotting.py                 Evaluation and diagnostic plots
+│   └── models/                     Model implementations + registry
+│       ├── staged_origin_vertex_jet.py           Staged (multiplicative refine)
+│       ├── staged_origin_vertex_jet_fix_refine.py Staged (additive refine)
+│       ├── staged_origin_vertex_jet_no_refine.py  Staged (no refine)
+│       └── parallel_origin_vertex_jet.py          Parallel (GN2-inspired)
+├── reference/                      Original single-file reference scripts
+└── local/                          Notebooks, notes, scratch (gitignored)
 ```
 
 ## Quick start
@@ -31,45 +31,58 @@ python train_origin_vertex_jet.py --config configs/staged.json
 python train_origin_vertex_jet.py --config configs/parallel.json
 ```
 
-Training runs for 100 epochs by default and keeps three checkpoints in the timestamped output directory: `best_jet.pt` (lowest validation jet loss), `best_total.pt` (lowest validation total loss), and `last.pt` (latest completed epoch, normally epoch 100). The configurable `checkpoint_interval` setting also writes periodic checkpoints such as `epoch_20.pt`, `epoch_40.pt`, and so on; its default value is 20.
+Training writes checkpoints to a timestamped output directory: `best_jet.pt`, `best_total.pt`, `last.pt`, plus
+periodic `epoch_N.pt` snapshots (interval configurable via `checkpoint_interval`, default 20).
 
-Evaluate any saved checkpoint with:
+Evaluate a checkpoint:
 
 ```bash
 python train_origin_vertex_jet.py --config path/to/run/config.json \
     --eval-only --weights path/to/run/best_jet.pt
 ```
 
-Evaluation outputs are written beside the checkpoint under `eval_<pt_name>/` (for example, `eval_best_jet/`). Use `--output-dir` to override the parent directory.
+Outputs land in `eval_<pt_name>/`. Override with `--output-dir`.
 
 ## Available models
 
-### `staged_origin_vertex_jet` — Staged 3-encoder pipeline
+### `staged_origin_vertex_jet` — Staged pipeline
 
-Three dedicated transformer encoders connected in sequence through differentiable intermediate quantities. Gradients flow end-to-end through all three stages.
-
-- **Stage 1** — Track-origin prediction (8 classes, per-track, no CLS token).
-- **Stage 2** — Origin-gated differentiable secondary-vertex fit. Stage 1's soft origin probabilities gate track selection for each vertex leg (b-vertex, c-vertex). A closed-form weighted least-squares fit produces Lxy and dz predictions.
-- **Stage 3** — Jet-flavour classification (b / c / light). Fitted vertex coordinates are embedded as vertex tokens, prepended with a CLS token before the track sequence, and fed through encoder 3.
+Three transformer encoders connected sequentially through differentiable intermediates:
 
 ```
-x → encoder1 → origin_logits ──┐
-       soft_probs               ↓ (gate)
+x → encoder1 → origin_logits ─┐
+       soft_probs              ↓
                                encoder2 → vtx_weight → Lxy, dz
                                                          │
                                encoder3 → CLS → jet_logits
 ```
 
-~55 k params. Outputs: `jet_logits`, `origin_logits`, `vtx_weight`, `lxy_pred`, `dz_pred`.
+- **Stage 1** — Track-origin classification (8 classes, per-track).
+- **Stage 2** — Origin-gated vertex fit. `vtx_weight` selects tracks per leg (b/c vertex). A closed-form
+  weighted fit produces Lxy and dz predictions.
+- **Stage 3** — Jet-flavour classification (b / c / light) with vertex tokens prepended to the sequence.
 
-### `parallel_origin_vertex_jet` — Parallel 3-task transformer (GN2-inspired)
+Three staged variants share this architecture with different Stage 2 weighting:
 
-A single shared transformer encoder drives three parallel task heads, inspired by the ATLAS GN2 architecture. No sequential dependency between tasks.
+| model_type                               | Stage 2 weighting                  | Params |
+|------------------------------------------|------------------------------------|--------|
+| `staged_origin_vertex_jet`               | `refine * gate` (multiplicative)   | ~55 k  |
+| `staged_origin_vertex_jet_fix_refine`    | `clamp(gate + Δw, 0, 1)` per coord | ~56 k  |
+| `staged_origin_vertex_jet_no_refine`     | encoder2 removed; `gate` only       | ~38 k  |
 
-- **Per-track init network** — 2-layer MLP with ReLU.
-- **Shared TransformerEncoder** — Multi-layer self-attention over all tracks.
-- **Attention pooling** — Learned weighted sum of track embeddings produces a global jet representation.
-- **Three parallel heads** — jet-flavour classification (pooled → b/c/light), track-origin classification (per-track → 8 classes), and track-pair vertexing (pairwise Bilinear → same vertex or not).
+#### Vertex fitting methods
+
+Selectable via `vertex_fit_method` (default `"wls_3d"`):
+
+| Method       | Description                                                   |
+|-------------|---------------------------------------------------------------|
+| `"wls_3d"`  | Joint 3D WLS solve for (X,Y,Z); Lxy = √(X²+Y²). **Recommended.** |
+| `"two_step"`| WLS Lxy + flight-phi, then two-step Z from Lxy geometry.       |
+| `"old_dz"`  | WLS Lxy, dz = Σ(w·z0st/σ²)/Σ(w/σ²). Historical, not recommended. |
+
+### `parallel_origin_vertex_jet` — Parallel pipeline (GN2-inspired)
+
+Single shared encoder with three parallel heads, no sequential dependency:
 
 ```
 x → init_net → encoder ─┬── pool_attn → jet_head → jet_logits
@@ -81,24 +94,43 @@ x → init_net → encoder ─┬── pool_attn → jet_head → jet_logits
 
 ### Model summary
 
-|                   | staged                            | parallel                                |
-| ----------------- | --------------------------------- | --------------------------------------- |
-| Encoders          | 3 independent (one per stage)     | 1 shared                                |
-| Task organisation | Sequential (Stage 1 → 2 → 3)      | Parallel (3 heads from shared backbone) |
-| Third task        | Closed-form Lxy/dz vertex fit     | Track-pair vertexing (binary BCE)       |
-| Default config    | d=32, heads=4, layers=2, d_ffn=64 | d=32, heads=4, layers=6, d_ffn=64       |
-| Parameters        | ~55 k                             | ~55 k                                   |
+|               | staged               | fix_refine          | no_refine           | parallel               |
+|--------------|----------------------|---------------------|---------------------|------------------------|
+| Encoders     | 3 (one per stage)    | 3                   | 2 (no encoder2)      | 1 shared               |
+| Vertex task  | closed-form WLS      | closed-form WLS     | closed-form WLS     | track-pair BCE         |
+| Params       | ~55 k                | ~56 k               | ~38 k               | ~55 k                   |
 
 ## Configuration
 
-All parameters are defined in `src/config.py:_DEFAULTS`. A JSON file passed via `--config` overrides any subset; the rest inherit defaults. Key fields include `model_type`, `d_model`, `n_heads`, `n_layers`, `d_ffn`, `dropout`, `epochs`, `lr`, `batch_size`, `n_train`, `n_test`, `train_file`, `gpu_ids`, `train_plot_dir`, and `model_name`. See `configs/staged.json` and `configs/parallel.json` for complete examples. Both models share the same track cache — data is processed once.
+All parameters live in `src/config.py:_DEFAULTS`. A JSON file via `--config` overrides any subset.
+Key fields: `model_type`, `d_model`, `n_heads`, `n_layers`, `d_ffn`, `dropout`, `epochs`, `lr`,
+`batch_size`, `n_train`, `n_test`, `train_file`, `gpu_ids`.
 
-Training outputs evaluation plots and classification reports under `train_plot_dir`; each model type generates its own diagnostic figures (vertex-fit comparisons for staged, pair-vertexing ROC for parallel).
+Vertex-fit options shared by all staged models:
+
+- `vertex_fit_method` — `"wls_3d"` (default), `"two_step"`, `"old_dz"`
+- `vertex_fit_reg` — Tikhonov regularisation for 3D WLS (default `1e-6`)
+- `vertex_fit_coords` — subset of `["Lxy", "dz"]`
+- `calibrate_vertex_fit` — per-leg learned calibration (default `true`)
+- `stage3_extra_inputs` — subset of `["origin_probs", "vtx_weight"]`
+- `delta_w_amp` — additive delta-weight amplitude for fix_refine (default `0.5`)
 
 ## Extending
 
-To add a new architecture, create a module under `src/models/`, register a builder in `src/models/__init__.py`, and provide a JSON config with `"model_type"`. If the model introduces new output keys, add the corresponding loss/metrics/plots following the existing annotation convention. No changes are needed to the training entry point or config system.
+Create a module under `src/models/`, register a builder in `src/models/__init__.py`, add a JSON config
+with `"model_type"`. New output keys need corresponding loss/metrics/plots. No changes to the entry point
+or config system required.
 
+## Known findings (2026-07-17)
 
-## Issue
-Currently most value of vtx_weight in staged model is 0, though the training is going well. Detailed analysis shows that this because the `refine = torch.sigmoid(self.vertex_weight_head(h2))` becomes 0 in the training, which includes information from vertex encoder. This issue is under addressing.
+- **Dz formula corrected.** The original `"old_dz"` method (`dz = Σ(w·z0st/σ²)/Σ(w/σ²)`) ignored the
+  Lxy projection, inflating the dz calibration scale to 14–37×. The corrected `"wls_3d"` achieves
+  b-vertex dz Pearson r = 0.92 (up from 0.51) and is now the default.
+- **Refine has limited effect.** The multiplicative refine weight tends toward small values; only
+  `staged_3dwls` shows a weak positive signal/background ratio (4×). The gate (from Stage 1 origin
+  probabilities) drives most of the vertex-weighting signal.
+- **No-refine model competitive.** Removing encoder2 and matching parameters (3 encoder layers) yields
+  the best jet accuracy (0.786) among all variants, consistent with GN2's finding that one auxiliary
+  task can be dropped with limited impact.
+
+Detailed tables and figures in `results/update_2026-7-17.pdf`.

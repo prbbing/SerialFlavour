@@ -58,7 +58,7 @@ _DEFAULTS = {
     #   "two_step" — keep existing Lxy/flight_phi fit, replace dz with
     #                two-step WLS using fitted Lxy geometry
     #   "wls_3d"   — joint 3D WLS solving (X,Y,Z) from all tracks
-    "vertex_fit_method": "two_step",
+    "vertex_fit_method": "wls_3d",
     "vertex_fit_reg": 1e-6,    # Tikhonov regularisation for 3D WLS
 
     # Learnable multiplicative calibration per leg & active coordinate.
@@ -81,7 +81,7 @@ _DEFAULTS = {
     "track_fields": [
         "qOverP", "deta", "dphi", "d0", "z0SinTheta",
         "d0Uncertainty", "z0SinThetaUncertainty",
-        "qOverPUncertainty", "thetaUncertainty", "phiUncertainty",
+        "qOverPUncertainty", "theta", "thetaUncertainty", "phiUncertainty",
         "lifetimeSignedD0Significance", "lifetimeSignedZ0SinThetaSignificance",
         "numberOfPixelHits", "numberOfSCTHits",
         "numberOfInnermostPixelLayerHits", "numberOfNextToInnermostPixelLayerHits",
@@ -94,7 +94,7 @@ _DEFAULTS = {
     "tagging_fields": [
         "qOverP", "deta", "dphi", "d0", "z0SinTheta",
         "d0Uncertainty", "z0SinThetaUncertainty",
-        "qOverPUncertainty", "thetaUncertainty", "phiUncertainty",
+        "qOverPUncertainty", "theta", "thetaUncertainty", "phiUncertainty",
         "lifetimeSignedD0Significance", "lifetimeSignedZ0SinThetaSignificance",
         "numberOfPixelHits", "numberOfSCTHits",
         "numberOfInnermostPixelLayerHits", "numberOfNextToInnermostPixelLayerHits",
