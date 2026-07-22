@@ -15,6 +15,9 @@ from .staged_origin_vertex_jet_no_refine import (
     build_staged_origin_vertex_jet_no_refine)
 from .parallel_origin_vertex_jet import (
     ParallelOriginVertexJetTransformer, build_parallel_origin_vertex_jet)
+from .staged_origin_vertex_jet_residual_refine import (
+    StagedOriginVertexJetResidualRefine,
+    build_staged_origin_vertex_jet_residual_refine)
 
 # Map model_type string -> builder(config) -> nn.Module
 _MODEL_REGISTRY = {
@@ -29,6 +32,9 @@ _MODEL_REGISTRY = {
     # -- staged (no refine) --
     "staged_origin_vertex_jet_no_refine":           build_staged_origin_vertex_jet_no_refine,
     "staged_origin_vertex_jet_no_refine_fix_dz":    build_staged_origin_vertex_jet_no_refine,  # compat
+
+    # -- staged (two-pass 3D WLS + small residual MLP) --
+    "staged_origin_vertex_jet_residual_refine": build_staged_origin_vertex_jet_residual_refine,
 
     # -- parallel --
     "parallel_origin_vertex_jet":  build_parallel_origin_vertex_jet,

@@ -33,6 +33,14 @@ _DEFAULTS = {
     "gate_temp":  0.1,   # sigmoid temperature for vertex-leg origin gating
                          # smaller → sharper step at p=0.5
     "delta_w_amp": 0.5,  # bounded residual amplitude for fix-refine Stage-2 weights
+    # -- residual-refine Stage 2 -------------------------------------------
+    # Per-track MLP inputs. "geometry" contributes 4 values per vertex leg:
+    # [r_d0, r_z, r_d0^2+r_z^2, initial_gate]. Optional additions are the
+    # full origin-probability vector and raw q/p.
+    "residual_refine_inputs": ["geometry", "origin_probs"],
+    "residual_refine_hidden_dims": [32, 16],
+    "residual_refine_alpha": 1.0,
+    "residual_vertex_detach": True,
     # -- task sizes ---------------------------------------------------------
     "n_origin_classes": 8,
     "n_jet_classes":    3,   # b / c / light (tau excluded)
@@ -69,6 +77,9 @@ _DEFAULTS = {
     # Extra per-track signals from Stages 1/2 to feed into encoder 3.
     # Subset of ["origin_probs", "vtx_weight"]; [] = raw track features only.
     "stage3_extra_inputs": ["origin_probs", "vtx_weight"],
+    # Whether fitted per-leg vertex coordinates are embedded as Stage-3 tokens.
+    # True preserves the original [CLS] + vertex tokens + track tokens sequence.
+    "stage3_use_vertex_tokens": True,
 
     # -- feature field sets ------------------------------------------------
     # Stage-2 vertexing input features (impact parameters + uncertainties).
@@ -174,6 +185,10 @@ class Config:
         self.dropout            = cfg_dict["dropout"]
         self.gate_temp          = cfg_dict["gate_temp"]
         self.delta_w_amp        = cfg_dict["delta_w_amp"]
+        self.residual_refine_inputs = cfg_dict["residual_refine_inputs"]
+        self.residual_refine_hidden_dims = cfg_dict["residual_refine_hidden_dims"]
+        self.residual_refine_alpha = cfg_dict["residual_refine_alpha"]
+        self.residual_vertex_detach = cfg_dict["residual_vertex_detach"]
 
         # -- task sizes -----------------------------------------------------
         self.n_origin_classes   = cfg_dict["n_origin_classes"]
@@ -196,6 +211,7 @@ class Config:
         self.stage3_extra_inputs  = cfg_dict["stage3_extra_inputs"]
         self.stage3_use_origin_probs = "origin_probs" in cfg_dict["stage3_extra_inputs"]
         self.stage3_use_vtx_weight   = "vtx_weight"   in cfg_dict["stage3_extra_inputs"]
+        self.stage3_use_vertex_tokens = cfg_dict["stage3_use_vertex_tokens"]
 
         # -- feature fields & indices --------------------------------------
         self.vertex_fields      = cfg_dict["vertex_fields"]
@@ -220,6 +236,19 @@ class Config:
             "vertex_fit_coords must be a non-empty subset of ['Lxy', 'dz']"
         assert set(self.stage3_extra_inputs) <= {"origin_probs", "vtx_weight"}, \
             "stage3_extra_inputs must be a subset of ['origin_probs', 'vtx_weight']"
+        assert type(self.stage3_use_vertex_tokens) is bool, \
+            "stage3_use_vertex_tokens must be a boolean"
+        assert set(self.residual_refine_inputs) <= {"geometry", "origin_probs", "qoverp"}, \
+            "residual_refine_inputs must be a subset of ['geometry', 'origin_probs', 'qoverp']"
+        assert "geometry" in self.residual_refine_inputs, \
+            "residual_refine_inputs must include 'geometry'"
+        assert (len(self.residual_refine_hidden_dims) == 2
+                and all(type(v) is int and v > 0 for v in self.residual_refine_hidden_dims)), \
+            "residual_refine_hidden_dims must contain two positive integers"
+        assert self.residual_refine_alpha > 0, \
+            "residual_refine_alpha must be positive"
+        assert type(self.residual_vertex_detach) is bool, \
+            "residual_vertex_detach must be a boolean"
         assert set(self.tagging_fields) <= set(self.track_fields) and len(self.tagging_fields) >= 1, \
             "tagging_fields must be a non-empty subset of track_fields"
         assert type(self.checkpoint_interval) is int and self.checkpoint_interval > 0, \
@@ -249,6 +278,7 @@ class Config:
         self.z0st_idx        = self.track_fields.index("z0SinTheta")
         self.z0st_unc_idx    = self.track_fields.index("z0SinThetaUncertainty")
         self.theta_idx       = self.track_fields.index("theta") if "theta" in self.track_fields else -1
+        self.qoverp_idx      = self.track_fields.index("qOverP") if "qOverP" in self.track_fields else -1
 
         # Mapping from vertex leg name → owner jet class index, for plotting.
         _flavour_to_class_name = {v: k for k, v in

@@ -26,6 +26,7 @@ class StagedOriginVertexJetTransformerNoRefine(nn.Module):
                  vertex_fit_method="wls_3d", vertex_fit_reg=1e-6,
                  fit_lxy=True, fit_dz=True,
                  stage3_use_origin_probs=False, stage3_use_vtx_weight=False,
+                 stage3_use_vertex_tokens=True,
                  tagging_feat_indices=None,
                  calibrate_vertex_fit=True):
         super().__init__()
@@ -36,6 +37,7 @@ class StagedOriginVertexJetTransformerNoRefine(nn.Module):
         self.fit_dz           = fit_dz
         self.stage3_use_origin_probs = stage3_use_origin_probs
         self.stage3_use_vtx_weight   = stage3_use_vtx_weight
+        self.stage3_use_vertex_tokens = stage3_use_vertex_tokens
         self.calibrate_vertex_fit    = calibrate_vertex_fit
         self.vertex_fit_method = vertex_fit_method
         self.vertex_fit_reg    = vertex_fit_reg
@@ -79,9 +81,10 @@ class StagedOriginVertexJetTransformerNoRefine(nn.Module):
         self.cls_token   = nn.Parameter(torch.zeros(1, 1, d_model))
         nn.init.trunc_normal_(self.cls_token, std=0.02)
 
-        self.vertex_embed = nn.Sequential(
-            nn.Linear(n_vtx_coords, d_model), nn.ReLU(),
-            nn.Linear(d_model, d_model))
+        if stage3_use_vertex_tokens:
+            self.vertex_embed = nn.Sequential(
+                nn.Linear(n_vtx_coords, d_model), nn.ReLU(),
+                nn.Linear(d_model, d_model))
 
         _enc3_layer = nn.TransformerEncoderLayer(
             d_model=d_model, nhead=n_heads, dim_feedforward=d_ffn,
@@ -283,13 +286,14 @@ class StagedOriginVertexJetTransformerNoRefine(nn.Module):
                 self._vertex_fit_two_step(x, vtx_weight)
 
         # ---- Stage 3: jet-flavour classification ----
-        _vtx_parts = []
-        if self.fit_lxy:
-            _vtx_parts.append(torch.log1p(lxy_pred.clamp(min=0)))
-        if self.fit_dz:
-            _vtx_parts.append(torch.log1p(dz_pred.abs()))
-        vtx_summary = torch.stack(_vtx_parts, dim=-1)
-        vtx_tokens  = self.vertex_embed(vtx_summary)
+        if self.stage3_use_vertex_tokens:
+            _vtx_parts = []
+            if self.fit_lxy:
+                _vtx_parts.append(torch.log1p(lxy_pred.clamp(min=0)))
+            if self.fit_dz:
+                _vtx_parts.append(torch.log1p(dz_pred.abs()))
+            vtx_summary = torch.stack(_vtx_parts, dim=-1)
+            vtx_tokens = self.vertex_embed(vtx_summary)
 
         x_tag = x.index_select(-1, self.tagging_feat_idx)
         _h3_input_parts = [x_tag]
@@ -301,9 +305,14 @@ class StagedOriginVertexJetTransformerNoRefine(nn.Module):
         h3_tracks = self.input_proj3(h3_input)
 
         cls_tok = self.cls_token.expand(B, -1, -1)
-        h3_in   = torch.cat([cls_tok, vtx_tokens, h3_tracks], dim=1)
+        h3_parts = [cls_tok]
+        if self.stage3_use_vertex_tokens:
+            h3_parts.append(vtx_tokens)
+        h3_parts.append(h3_tracks)
+        h3_in = torch.cat(h3_parts, dim=1)
 
-        extra_valid = torch.ones(B, 1 + self.n_vertex_legs, dtype=torch.bool,
+        n_extra_tokens = 1 + (self.n_vertex_legs if self.stage3_use_vertex_tokens else 0)
+        extra_valid = torch.ones(B, n_extra_tokens, dtype=torch.bool,
                                  device=x.device)
         src_key_padding_mask3 = ~torch.cat([extra_valid, mask], dim=1)
 
@@ -349,6 +358,7 @@ def build_staged_origin_vertex_jet_no_refine(config):
         fit_lxy=config.fit_lxy, fit_dz=config.fit_dz,
         stage3_use_origin_probs=config.stage3_use_origin_probs,
         stage3_use_vtx_weight=config.stage3_use_vtx_weight,
+        stage3_use_vertex_tokens=config.stage3_use_vertex_tokens,
         tagging_feat_indices=config.tagging_feat_idx,
         calibrate_vertex_fit=config.calibrate_vertex_fit,
     )

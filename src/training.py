@@ -281,6 +281,8 @@ def _measure_task_gradients(model, X_b, mask_b, y_b, origin_b,
         elif hasattr(_m, "vertex_delta_head_lxy"):
             vtxw_head_p = (list(_m.vertex_delta_head_lxy.parameters()) +
                            list(_m.vertex_delta_head_dz.parameters()))
+        elif hasattr(_m, "residual_mlp"):
+            vtxw_head_p = list(_m.residual_mlp.parameters())
         else:
             vtxw_head_p = []
     else:

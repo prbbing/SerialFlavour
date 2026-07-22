@@ -25,7 +25,7 @@ import torch.nn as nn
 import numpy as np
 
 from src.config import load_config, _DEFAULTS
-from src.data import create_dataloaders
+from src.data_fast import create_dataloaders
 from src.models import build_model
 from src.losses import compute_origin_class_weights
 from src.training import run_training, validate_epoch
