@@ -51,6 +51,13 @@ _MODEL_REGISTRY = {
     "parallel_origin_vertex_jet":  build_parallel_origin_vertex_jet,
 }
 
+# Models listed here consume the dense (K, K) pair-supervision target during
+# training or validation. Keep this capability explicit: loading that target
+# for staged models costs several GiB for the production dataset.
+_PAIR_TARGET_MODEL_TYPES = {
+    "parallel_origin_vertex_jet",
+}
+
 
 def get_builder(model_type: str):
     """Look up the builder callable for a named model type."""
@@ -59,6 +66,12 @@ def get_builder(model_type: str):
             f"Unknown model_type '{model_type}'. "
             f"Available: {list(_MODEL_REGISTRY.keys())}")
     return _MODEL_REGISTRY[model_type]
+
+
+def model_requires_pair_target(model_type: str) -> bool:
+    """Return whether ``model_type`` consumes dense pair supervision."""
+    get_builder(model_type)  # Validate the model name through the registry.
+    return model_type in _PAIR_TARGET_MODEL_TYPES
 
 
 def build_model(config):

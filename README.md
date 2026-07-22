@@ -31,6 +31,10 @@ python train_origin_vertex_jet.py --config configs/staged.json
 python train_origin_vertex_jet.py --config configs/parallel.json
 ```
 
+Dense pair-supervision targets are controlled by `use_pair_target`, which
+defaults to `false`. Parallel model configs must set it to `true`; staged
+models leave it disabled and avoid materialising the dense `(N, K, K)` array.
+
 Training writes checkpoints to a timestamped output directory: `best_jet.pt`, `best_total.pt`, `last.pt`, plus
 periodic `epoch_N.pt` snapshots (interval configurable via `checkpoint_interval`, default 20).
 

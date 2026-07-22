@@ -1,5 +1,6 @@
 {
     "model_type": "parallel_origin_vertex_jet",
+    "use_pair_target": true,
     "d_model": 32, "n_heads": 2, "n_layers": 6, "d_ffn": 64, "dropout": 0.1,
     "epochs": 100, "checkpoint_interval": 20, "lr": 0.001, "gpu_ids": [-1],
     "lambda_jet": 1.0, "lambda_origin": 1.0, "lambda_vertex": 0.0, "lambda_pair": 1.0,

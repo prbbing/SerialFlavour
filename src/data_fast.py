@@ -148,19 +148,24 @@ def _save_cache_atomic(path: str, arrays: dict[str, np.ndarray]) -> None:
 def load_tracks(path, idx, flavour_to_label, track_fields,
                 vertex_leg_names, vertex_targets, top_k, cache_dir,
                 *, force: bool = False, block_rows: int | None = None,
-                progress: bool = False):
+                progress: bool = False, include_pair_target: bool = True):
     """Accelerated drop-in equivalent of :func:`src.data.load_tracks`.
 
     Output keys, shapes, dtypes, row order, top-K ordering, padding semantics,
     pair targets and cache filenames match the original implementation.
     ``idx`` must be strictly increasing, which is how ``create_dataloaders``
-    constructs both train and test indices.
+    constructs both train and test indices. When ``include_pair_target`` is
+    false, the dense member is omitted from the returned mapping but remains
+    present in newly written caches for compatibility with pair models.
     """
     idx_for_key = np.asarray(idx)
     cp = _cache_key(idx_for_key, track_fields, cache_dir)
     if os.path.exists(cp) and not force:
         with np.load(cp) as cached:
-            return {key: cached[key] for key in cached.files}
+            keys = cached.files
+            if not include_pair_target:
+                keys = [key for key in keys if key != "pair_target"]
+            return {key: cached[key] for key in keys}
 
     track_fields = list(track_fields)
     vertex_leg_names = list(vertex_leg_names)
@@ -289,13 +294,17 @@ def load_tracks(path, idx, flavour_to_label, track_fields,
 
     result = {key: value[:out_pos] for key, value in outputs.items()}
     _save_cache_atomic(cp, result)
+    if not include_pair_target:
+        # The on-disk cache remains output-compatible with pair models, but
+        # staged callers must not retain the dense target after cache creation.
+        result.pop("pair_target", None)
     return result
 
 
 class JetDataset(Dataset):
     """Same eight-item dataset interface as :class:`src.data.JetDataset`."""
 
-    def __init__(self, data):
+    def __init__(self, data, *, include_pair_target: bool | None = None):
         self.X = torch.from_numpy(data["X"])
         self.mask = torch.from_numpy(data["mask"])
         self.y = torch.from_numpy(data["y"])
@@ -303,18 +312,30 @@ class JetDataset(Dataset):
         self.vtx_lxy = torch.from_numpy(data["vtx_lxy"])
         self.vtx_dz = torch.from_numpy(data["vtx_dz"])
         self.vtx_valid = torch.from_numpy(data["vtx_valid"])
-        self.pair_target = torch.from_numpy(data.get(
-            "pair_target",
-            np.full((data["mask"].shape[0], data["mask"].shape[1],
-                     data["mask"].shape[1]), -1.0, dtype=np.float32)))
+        if include_pair_target is None:
+            include_pair_target = "pair_target" in data
+        if include_pair_target:
+            if "pair_target" not in data:
+                raise KeyError("pair_target is required but missing from dataset data")
+            self.pair_target = torch.from_numpy(data["pair_target"])
+            self.empty_pair_target = None
+        else:
+            self.pair_target = None
+            # DataLoader collates one empty vector per sample into shape (B, 0),
+            # preserving the existing eight-item batch contract at negligible
+            # memory cost. Staged loss branches never inspect its contents.
+            self.empty_pair_target = torch.empty(0, dtype=torch.float32)
 
     def __len__(self):
         return len(self.y)
 
     def __getitem__(self, index):
+        pair_target = (self.pair_target[index]
+                       if self.pair_target is not None
+                       else self.empty_pair_target)
         return (self.X[index], self.mask[index], self.y[index], self.origin[index],
                 self.vtx_lxy[index], self.vtx_dz[index], self.vtx_valid[index],
-                self.pair_target[index])
+                pair_target)
 
 
 def _load_all_flavours(config):
@@ -404,6 +425,15 @@ def generate_cache_from_config(config_path=None, *, train_file=None,
 def create_dataloaders(config, device, *, force=False, block_rows=None,
                        progress=False):
     """Build loaders with the same return contract as ``src.data``."""
+    from .models import model_requires_pair_target
+
+    pair_target_required = model_requires_pair_target(config.model_type)
+    include_pair_target = config.use_pair_target
+    if not include_pair_target and pair_target_required:
+        raise ValueError(
+            f"model_type '{config.model_type}' requires pair_target; set "
+            "use_pair_target=true in its config")
+
     all_flavours = _load_all_flavours(config)
     train_idx, test_idx = _split_indices(config, all_flavours)
     print("  [2/3] Loading training tracks ...")
@@ -411,23 +441,27 @@ def create_dataloaders(config, device, *, force=False, block_rows=None,
         config.train_file, train_idx, config.flavour_to_label,
         config.track_fields, config.vertex_leg_names, config.vertex_targets,
         config.top_k, config.cache_dir, force=force, block_rows=block_rows,
-        progress=progress)
+        progress=progress, include_pair_target=include_pair_target)
     print("  [3/3] Loading test tracks ...")
     test_data = load_tracks(
         config.train_file, test_idx, config.flavour_to_label,
         config.track_fields, config.vertex_leg_names, config.vertex_targets,
         config.top_k, config.cache_dir, force=force, block_rows=block_rows,
-        progress=progress)
+        progress=progress, include_pair_target=include_pair_target)
     y_train, y_test = train_data["y"], test_data["y"]
 
     pin_memory = str(device).startswith("cuda")
     persistent_workers = config.num_workers > 0
+    pair_status = "loaded" if include_pair_target else "skipped"
+    print(f"  Pair targets: {pair_status} for model_type={config.model_type}")
     train_loader = DataLoader(
-        JetDataset(train_data), batch_size=config.batch_size, shuffle=True,
+        JetDataset(train_data, include_pair_target=include_pair_target),
+        batch_size=config.batch_size, shuffle=True,
         pin_memory=pin_memory, num_workers=config.num_workers,
         persistent_workers=persistent_workers)
     val_loader = DataLoader(
-        JetDataset(test_data), batch_size=config.batch_size,
+        JetDataset(test_data, include_pair_target=include_pair_target),
+        batch_size=config.batch_size,
         pin_memory=pin_memory, num_workers=config.num_workers,
         persistent_workers=persistent_workers)
     return train_loader, val_loader, train_data, test_data, y_train, y_test

@@ -24,6 +24,7 @@ _DEFAULTS = {
     # -- data pre-processing ------------------------------------------------
     "top_k":      40,    # tracks per jet (ranked by |d0 significance|)
     "batch_size": 600,
+    "use_pair_target": False,  # load dense (K, K) pair supervision
     # -- transformer hyper-parameters ---------------------------------------
     "d_model":    32,    # embedding dimension (all sub-layers)
     "n_heads":    2,     # attention heads (must divide d_model)
@@ -184,6 +185,7 @@ class Config:
         self.n_train            = cfg_dict["n_train"]
         self.n_test             = cfg_dict["n_test"]
         self.batch_size         = cfg_dict["batch_size"]
+        self.use_pair_target    = cfg_dict["use_pair_target"]
         self.epochs             = cfg_dict["epochs"]
         self.checkpoint_interval = cfg_dict["checkpoint_interval"]
         self.lr                 = cfg_dict["lr"]
@@ -289,6 +291,8 @@ class Config:
             "tagging_fields must be a non-empty subset of track_fields"
         assert type(self.checkpoint_interval) is int and self.checkpoint_interval > 0, \
             "checkpoint_interval must be a positive integer"
+        assert type(self.use_pair_target) is bool, \
+            "use_pair_target must be a boolean"
 
         # -- derived quantities ---------------------------------------------
         self.n_feats = len(self.track_fields)   # total input dimensionality

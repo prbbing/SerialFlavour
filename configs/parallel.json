@@ -1,5 +1,6 @@
 {
     "model_type": "parallel_origin_vertex_jet",
+    "use_pair_target": true,
     "d_model": 32,
     "n_heads": 2,
     "n_layers": 6,
