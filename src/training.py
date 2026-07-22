@@ -12,7 +12,10 @@ import torch
 import numpy as np
 import os
 import csv
-from torch.utils.tensorboard import SummaryWriter
+try:
+    from torch.utils.tensorboard import SummaryWriter
+except ImportError:  # TensorBoard logging is optional for training correctness.
+    SummaryWriter = None
 
 from .losses import vertex_loss_fn, pair_vertex_loss
 
@@ -43,9 +46,12 @@ def train_epoch(model, dataloader, optimiser, criterion_jet, criterion_origin,
 
         # ── core losses (shared by all models) ──────────────────────────
         jet_loss    = criterion_jet(out["jet_logits"], y_b)
-        origin_loss = criterion_origin(
-            out["origin_logits"].reshape(-1, n_origin_classes),
-            origin_b.reshape(-1))
+        if "origin_logits" in out:
+            origin_loss = criterion_origin(
+                out["origin_logits"].reshape(-1, n_origin_classes),
+                origin_b.reshape(-1))
+        else:
+            origin_loss = out["jet_logits"].new_tensor(0.0)
 
         # ── model-specific vertex / pair loss ───────────────────────────
         # model: staged_origin_vertex_jet — Lxy/dz vertex-fit loss
@@ -101,6 +107,7 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
     correct, origin_correct, origin_total, n_total = 0, 0, 0, 0
     all_preds, all_true, all_probs = [], [], []
     all_origin_preds, all_origin_true = [], []
+    all_assignment_probs = []
 
     # model: staged_origin_vertex_jet — Lxy/dz metrics buffers
     all_lxy_pred, all_lxy_true, all_dz_pred, all_dz_true, all_vtx_valid = [], [], [], [], []
@@ -122,9 +129,12 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
 
         # ── core losses ─────────────────────────────────────────────────
         jet_loss    = criterion_jet(out["jet_logits"], y_b)
-        origin_loss = criterion_origin(
-            out["origin_logits"].reshape(-1, n_origin_classes),
-            origin_b.reshape(-1))
+        if "origin_logits" in out:
+            origin_loss = criterion_origin(
+                out["origin_logits"].reshape(-1, n_origin_classes),
+                origin_b.reshape(-1))
+        else:
+            origin_loss = out["jet_logits"].new_tensor(0.0)
 
         # ── model-specific vertex / pair loss ───────────────────────────
         if "lxy_pred" in out:
@@ -156,12 +166,15 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
         all_probs.append(torch.softmax(out["jet_logits"], dim=1).cpu())
 
         # ── track-origin predictions (valid tracks only) ────────────────
-        origin_preds = out["origin_logits"].argmax(dim=-1)
-        origin_mask  = origin_b >= 0   # true tracks only
-        origin_correct += ((origin_preds == origin_b) & origin_mask).sum().item()
-        origin_total   += origin_mask.sum().item()
-        all_origin_preds.append(origin_preds[origin_mask].cpu())
-        all_origin_true.append(origin_b[origin_mask].cpu())
+        if "origin_logits" in out:
+            origin_preds = out["origin_logits"].argmax(dim=-1)
+            origin_mask  = origin_b >= 0   # true tracks only
+            origin_correct += ((origin_preds == origin_b) & origin_mask).sum().item()
+            origin_total   += origin_mask.sum().item()
+            all_origin_preds.append(origin_preds[origin_mask].cpu())
+            all_origin_true.append(origin_b[origin_mask].cpu())
+        if "assignment_probs" in out:
+            all_assignment_probs.append(out["assignment_probs"].cpu())
 
         # ── model-specific metric collection ────────────────────────────
         if "lxy_pred" in out:
@@ -196,15 +209,20 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
     val_lxy_vtx_loss  /= n_total
     val_dz_vtx_loss   /= n_total
     val_acc          = correct / n_total
-    val_origin_acc   = origin_correct / max(origin_total, 1)
+    val_origin_acc   = (origin_correct / origin_total
+                        if origin_total else float("nan"))
 
     pred_arrays = {
         "all_preds":       torch.cat(all_preds).numpy(),
         "all_true":        torch.cat(all_true).numpy(),
         "all_probs":       torch.cat(all_probs).numpy(),
-        "origin_preds":    torch.cat(all_origin_preds).numpy(),
-        "origin_true":     torch.cat(all_origin_true).numpy(),
     }
+    if all_origin_preds:
+        pred_arrays["origin_preds"] = torch.cat(all_origin_preds).numpy()
+        pred_arrays["origin_true"] = torch.cat(all_origin_true).numpy()
+    if all_assignment_probs:
+        pred_arrays["assignment_probs"] = torch.cat(
+            all_assignment_probs).numpy()
 
     # ── attach model-specific metrics to pred_arrays ────────────────────
     # model: staged_origin_vertex_jet
@@ -245,6 +263,10 @@ def _measure_task_gradients(model, X_b, mask_b, y_b, origin_b,
     similarity on the shared encoder (encoder1 for staged, encoder
     for parallel).
 
+    For origin-free assignment models, the "shared encoder" keys refer to
+    the assignment input projection and assignment Transformer. This makes
+    the O3a/O3b jet-gradient isolation directly auditable in training logs.
+
     Returns a dict of measured values or {} for unsupported models.
     """
     _m = model.module if hasattr(model, "module") else model
@@ -252,8 +274,11 @@ def _measure_task_gradients(model, X_b, mask_b, y_b, origin_b,
     out = _m(X_b, mask_b)
 
     jet_loss = criterion_jet(out["jet_logits"], y_b)
-    origin_loss = criterion_origin(
-        out["origin_logits"].reshape(-1, n_origin_classes), origin_b.reshape(-1))
+    origin_loss = None
+    if "origin_logits" in out:
+        origin_loss = criterion_origin(
+            out["origin_logits"].reshape(-1, n_origin_classes),
+            origin_b.reshape(-1))
 
     if "lxy_pred" in out:
         from .losses import vertex_loss_fn
@@ -267,9 +292,19 @@ def _measure_task_gradients(model, X_b, mask_b, y_b, origin_b,
         return {}
 
     # ── identify parameter groups ──────────────────────────────────────
-    # staged model groups
+    # origin-free assignment model groups
+    has_assignment = hasattr(_m, "assignment_encoder")
     has_staged = hasattr(_m, "encoder1")
-    if has_staged:
+    if has_assignment:
+        enc1_params = (list(_m.assignment_input_proj.parameters())
+                       + list(_m.assignment_encoder.parameters()))
+        enc2_params = []
+        enc3_params = list(_m.input_proj3.parameters()) + list(_m.encoder3.parameters())
+        origin_head_p = []
+        jet_head_p = list(_m.jet_head.parameters())
+        vtxw_head_p = list(_m.assignment_head.parameters())
+    # staged model groups
+    elif has_staged:
         enc1_params   = list(_m.input_proj1.parameters()) + list(_m.encoder1.parameters())
         enc2_params   = (list(_m.input_proj2.parameters()) + list(_m.encoder2.parameters())
                          if hasattr(_m, "input_proj2") else [])
@@ -327,12 +362,14 @@ def _measure_task_gradients(model, X_b, mask_b, y_b, origin_b,
     results["grad_norm_head_jet"]     = _grad_norm(jet_head_p)
     g_enc1_jet = _flatten_grad(enc1_params)
 
-    for _ in range(2):
-        _m.zero_grad()
-    origin_loss.backward(retain_graph=True)
-    results["grad_norm_shared_encoder_origin"]     = _grad_norm(enc1_params)
-    results["grad_norm_head_origin"]     = _grad_norm(origin_head_p)
-    g_enc1_origin = _flatten_grad(enc1_params)
+    g_enc1_origin = None
+    if origin_loss is not None:
+        for _ in range(2):
+            _m.zero_grad()
+        origin_loss.backward(retain_graph=True)
+        results["grad_norm_shared_encoder_origin"] = _grad_norm(enc1_params)
+        results["grad_norm_head_origin"] = _grad_norm(origin_head_p)
+        g_enc1_origin = _flatten_grad(enc1_params)
 
     for _ in range(2):
         _m.zero_grad()
@@ -344,8 +381,9 @@ def _measure_task_gradients(model, X_b, mask_b, y_b, origin_b,
     g_enc1_vtx = _flatten_grad(enc1_params)
 
     # ── cosine similarities ────────────────────────────────────────────
-    results["grad_cos_origin_vertex"] = _cos(g_enc1_origin, g_enc1_vtx)
-    results["grad_cos_origin_jet"]    = _cos(g_enc1_origin, g_enc1_jet)
+    if g_enc1_origin is not None:
+        results["grad_cos_origin_vertex"] = _cos(g_enc1_origin, g_enc1_vtx)
+        results["grad_cos_origin_jet"] = _cos(g_enc1_origin, g_enc1_jet)
     results["grad_cos_vertex_jet"]    = _cos(g_enc1_vtx, g_enc1_jet)
 
     for _ in range(2):
@@ -470,7 +508,9 @@ def run_training(model, train_loader, val_loader, optimiser,
     if _tb_dir:
         _tb_dir = os.path.join(_tb_dir.rstrip("/"),
                                os.path.basename(config.plot_dir.rstrip("/")))
-    writer = SummaryWriter(_tb_dir) if _tb_dir else None
+    if _tb_dir and SummaryWriter is None:
+        print("TensorBoard is unavailable; continuing without SummaryWriter")
+    writer = SummaryWriter(_tb_dir) if (_tb_dir and SummaryWriter is not None) else None
 
     best_jet_loss = float("inf")
     best_total_loss = float("inf")
@@ -629,18 +669,27 @@ def run_training(model, train_loader, val_loader, optimiser,
             if _vtx_parts:
                 print(f"    vtx metrics  " + " | ".join(_vtx_parts))
         if _grad_stats:
-            print(f"    grad  shared: jet={_grad_stats.get('grad_norm_shared_encoder_jet', 0):.4f}  "
-                  f"origin={_grad_stats.get('grad_norm_shared_encoder_origin', 0):.4f}  "
-                  f"vertex={_grad_stats.get('grad_norm_shared_encoder_vertex', 0):.4f}")
+            if "grad_norm_shared_encoder_origin" in _grad_stats:
+                print(f"    grad  shared: jet={_grad_stats.get('grad_norm_shared_encoder_jet', 0):.4f}  "
+                      f"origin={_grad_stats['grad_norm_shared_encoder_origin']:.4f}  "
+                      f"vertex={_grad_stats.get('grad_norm_shared_encoder_vertex', 0):.4f}")
+            else:
+                print(f"    grad  assignment: jet={_grad_stats.get('grad_norm_shared_encoder_jet', 0):.4f}  "
+                      f"vertex={_grad_stats.get('grad_norm_shared_encoder_vertex', 0):.4f}")
             if "grad_norm_vertex_encoder" in _grad_stats:
                 print(f"          vertex_enc={_grad_stats['grad_norm_vertex_encoder']:.4f}  "
                       f"jet_enc={_grad_stats.get('grad_norm_jet_encoder', 0):.4f}")
-            print(f"          heads: jet={_grad_stats.get('grad_norm_head_jet', 0):.4f}  "
-                  f"origin={_grad_stats.get('grad_norm_head_origin', 0):.4f}  "
-                  f"vtxw={_grad_stats.get('grad_norm_head_vtxw', 0):.4f}")
-            print(f"          cos: orig-vtx={_grad_stats.get('grad_cos_origin_vertex', 0):.3f}  "
-                  f"orig-jet={_grad_stats.get('grad_cos_origin_jet', 0):.3f}  "
-                  f"vtx-jet={_grad_stats.get('grad_cos_vertex_jet', 0):.3f}")
+            if "grad_norm_head_origin" in _grad_stats:
+                print(f"          heads: jet={_grad_stats.get('grad_norm_head_jet', 0):.4f}  "
+                      f"origin={_grad_stats['grad_norm_head_origin']:.4f}  "
+                      f"vtxw={_grad_stats.get('grad_norm_head_vtxw', 0):.4f}")
+                print(f"          cos: orig-vtx={_grad_stats.get('grad_cos_origin_vertex', 0):.3f}  "
+                      f"orig-jet={_grad_stats.get('grad_cos_origin_jet', 0):.3f}  "
+                      f"vtx-jet={_grad_stats.get('grad_cos_vertex_jet', 0):.3f}")
+            else:
+                print(f"          heads: jet={_grad_stats.get('grad_norm_head_jet', 0):.4f}  "
+                      f"assignment={_grad_stats.get('grad_norm_head_vtxw', 0):.4f}")
+                print(f"          cos: vertex-jet={_grad_stats.get('grad_cos_vertex_jet', 0):.3f}")
 
         if writer:
             for key, values in history.items():

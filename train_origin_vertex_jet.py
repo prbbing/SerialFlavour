@@ -99,8 +99,6 @@ def _run_evaluation(pred_arrays, cfg, plot_dir, history=None):
     all_preds    = pred_arrays["all_preds"]
     all_true     = pred_arrays["all_true"]
     all_probs    = pred_arrays["all_probs"]
-    origin_preds = pred_arrays["origin_preds"]
-    origin_true  = pred_arrays["origin_true"]
 
     print("\nJet classification report:")
     print(classification_report(all_true, all_preds,
@@ -108,11 +106,40 @@ def _run_evaluation(pred_arrays, cfg, plot_dir, history=None):
     print("Jet confusion matrix (rows=true, cols=pred):")
     print(confusion_matrix(all_true, all_preds))
 
-    print("\nTrack-origin classification report:")
-    print(classification_report(origin_true, origin_preds,
-                                target_names=cfg.origin_class_names,
-                                labels=list(range(cfg.n_origin_classes)),
-                                zero_division=0))
+    if "origin_preds" in pred_arrays:
+        origin_preds = pred_arrays["origin_preds"]
+        origin_true = pred_arrays["origin_true"]
+        print("\nTrack-origin classification report:")
+        print(classification_report(origin_true, origin_preds,
+                                    target_names=cfg.origin_class_names,
+                                    labels=list(range(cfg.n_origin_classes)),
+                                    zero_division=0))
+
+    if "assignment_probs" in pred_arrays:
+        assignment_probs = pred_arrays["assignment_probs"]
+        origin_full = pred_arrays["origin_full"]
+        mask_full = pred_arrays["mask_full"]
+        assignment_true = np.full(
+            origin_full.shape, cfg.n_vertex_legs, dtype=np.int64)
+        for leg, leg_name in enumerate(cfg.vertex_leg_names):
+            origin_names = cfg.vertex_legs[leg_name]
+            if isinstance(origin_names, str):
+                origin_names = [origin_names]
+            origin_ids = [cfg.origin_class_names.index(name)
+                          for name in origin_names]
+            assignment_true[np.isin(origin_full, origin_ids)] = leg
+        valid = mask_full & (origin_full >= 0)
+        assignment_pred = assignment_probs.argmax(axis=-1)
+        assignment_names = [*cfg.vertex_leg_names, "other"]
+        print("\nVertex-assignment classification report:")
+        print(classification_report(
+            assignment_true[valid], assignment_pred[valid],
+            target_names=assignment_names,
+            labels=list(range(cfg.n_vertex_legs + 1)), zero_division=0))
+        print("Vertex-assignment confusion matrix (rows=true, cols=pred):")
+        print(confusion_matrix(
+            assignment_true[valid], assignment_pred[valid],
+            labels=list(range(cfg.n_vertex_legs + 1))))
 
     if history is not None:
         plot_training_summary(history, all_true, all_preds,
@@ -126,8 +153,10 @@ def _run_evaluation(pred_arrays, cfg, plot_dir, history=None):
     plot_output_probabilities(all_probs, all_true, cfg.jet_class_names,
                               cfg.colours, plot_dir)
 
-    plot_origin_confusion_matrix(origin_true, origin_preds,
-                                 cfg.origin_class_names, plot_dir)
+    if "origin_preds" in pred_arrays:
+        plot_origin_confusion_matrix(
+            pred_arrays["origin_true"], pred_arrays["origin_preds"],
+            cfg.origin_class_names, plot_dir)
 
     plot_discriminant_roc(all_probs, all_true, cfg.jet_class_names,
                           cfg.disc_bkg_weights, cfg.colours, plot_dir)

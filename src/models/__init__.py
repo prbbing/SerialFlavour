@@ -18,6 +18,9 @@ from .parallel_origin_vertex_jet import (
 from .staged_origin_vertex_jet_residual_refine import (
     StagedOriginVertexJetResidualRefine,
     build_staged_origin_vertex_jet_residual_refine)
+from .staged_origin_vertex_jet_track_ablation import (
+    StagedOriginVertexJetTrackAblation,
+    build_staged_origin_vertex_jet_track_ablation)
 
 # Map model_type string -> builder(config) -> nn.Module
 _MODEL_REGISTRY = {
@@ -35,6 +38,9 @@ _MODEL_REGISTRY = {
 
     # -- staged (two-pass 3D WLS + small residual MLP) --
     "staged_origin_vertex_jet_residual_refine": build_staged_origin_vertex_jet_residual_refine,
+
+    # -- track-origin ablation (learned assignment without origin path) --
+    "staged_origin_vertex_jet_track_ablation": build_staged_origin_vertex_jet_track_ablation,
 
     # -- parallel --
     "parallel_origin_vertex_jet":  build_parallel_origin_vertex_jet,
