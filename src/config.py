@@ -48,6 +48,12 @@ _DEFAULTS = {
         "theta", "dphi", "qOverP",
     ],
     "track_assignment_n_layers": 2,
+    # -- unified jet-only architecture ------------------------------------
+    # "mlp" matches Parallel.init_net exactly; "linear" matches the
+    # projection used by a Staged Stage-3 track path.
+    "jet_only_track_init": "mlp",
+    # "attention" matches Parallel pooling; "cls" matches Staged Stage 3.
+    "jet_only_pooling": "attention",
     # -- task sizes ---------------------------------------------------------
     "n_origin_classes": 8,
     "n_jet_classes":    3,   # b / c / light (tau excluded)
@@ -128,6 +134,7 @@ _DEFAULTS = {
     "lambda_jet":    1.0,
     "lambda_origin": 1.0,
     "lambda_vertex": 1.0,
+    "lambda_pair":   1.0,
 
     # -- label mapping ------------------------------------------------------
     # HadronConeExclTruthLabelID values: 5=b, 4=c, 0=light, 15=tau (excluded)
@@ -201,6 +208,8 @@ class Config:
         self.residual_vertex_detach = cfg_dict["residual_vertex_detach"]
         self.track_assignment_fields = cfg_dict["track_assignment_fields"]
         self.track_assignment_n_layers = cfg_dict["track_assignment_n_layers"]
+        self.jet_only_track_init = cfg_dict["jet_only_track_init"]
+        self.jet_only_pooling = cfg_dict["jet_only_pooling"]
 
         # -- task sizes -----------------------------------------------------
         self.n_origin_classes   = cfg_dict["n_origin_classes"]
@@ -235,6 +244,7 @@ class Config:
         self.lambda_jet         = cfg_dict["lambda_jet"]
         self.lambda_origin      = cfg_dict["lambda_origin"]
         self.lambda_vertex      = cfg_dict["lambda_vertex"]
+        self.lambda_pair        = cfg_dict["lambda_pair"]
 
         # -- label / display ------------------------------------------------
         self.flavour_to_label   = {int(k): v for k, v in cfg_dict["flavour_to_label"].items()}
@@ -270,6 +280,11 @@ class Config:
                 "track_assignment_fields must be a non-empty subset of track_fields"
             assert type(self.track_assignment_n_layers) is int and self.track_assignment_n_layers > 0, \
                 "track_assignment_n_layers must be a positive integer"
+        if self.model_type == "jet_only_transformer":
+            assert self.jet_only_track_init in {"mlp", "linear"}, \
+                "jet_only_track_init must be 'mlp' or 'linear'"
+            assert self.jet_only_pooling in {"attention", "cls"}, \
+                "jet_only_pooling must be 'attention' or 'cls'"
         assert set(self.tagging_fields) <= set(self.track_fields) and len(self.tagging_fields) >= 1, \
             "tagging_fields must be a non-empty subset of track_fields"
         assert type(self.checkpoint_interval) is int and self.checkpoint_interval > 0, \

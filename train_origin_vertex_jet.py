@@ -243,7 +243,7 @@ if args.eval_only:
         model, val_loader, criterion_jet, criterion_origin,
         config.n_origin_classes, config.lambda_jet,
         config.lambda_origin, config.lambda_vertex,
-        config.fit_lxy, config.fit_dz, DEVICE)
+        config.lambda_pair, config.fit_lxy, config.fit_dz, DEVICE)
 
     _run_evaluation(pred_arrays, config, eval_plot_dir)
 

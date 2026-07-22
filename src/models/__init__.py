@@ -21,6 +21,8 @@ from .staged_origin_vertex_jet_residual_refine import (
 from .staged_origin_vertex_jet_track_ablation import (
     StagedOriginVertexJetTrackAblation,
     build_staged_origin_vertex_jet_track_ablation)
+from .jet_only_transformer import (
+    JetOnlyTransformer, build_jet_only_transformer)
 
 # Map model_type string -> builder(config) -> nn.Module
 _MODEL_REGISTRY = {
@@ -41,6 +43,9 @@ _MODEL_REGISTRY = {
 
     # -- track-origin ablation (learned assignment without origin path) --
     "staged_origin_vertex_jet_track_ablation": build_staged_origin_vertex_jet_track_ablation,
+
+    # -- unified jet-only backbone ablations --
+    "jet_only_transformer": build_jet_only_transformer,
 
     # -- parallel --
     "parallel_origin_vertex_jet":  build_parallel_origin_vertex_jet,

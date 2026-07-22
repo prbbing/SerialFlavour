@@ -25,7 +25,7 @@ from .losses import vertex_loss_fn, pair_vertex_loss
 # ===========================================================================
 def train_epoch(model, dataloader, optimiser, criterion_jet, criterion_origin,
                 n_origin_classes, lambda_jet, lambda_origin, lambda_vertex,
-                fit_lxy, fit_dz, device):
+                lambda_pair, fit_lxy, fit_dz, device):
     model.train()
     tot_loss = tot_jet = tot_origin = tot_vertex = 0.0
     tot_lxy_vtx = tot_dz_vtx = 0.0
@@ -56,6 +56,7 @@ def train_epoch(model, dataloader, optimiser, criterion_jet, criterion_origin,
         # ── model-specific vertex / pair loss ───────────────────────────
         # model: staged_origin_vertex_jet — Lxy/dz vertex-fit loss
         if "lxy_pred" in out:
+            auxiliary_weight = lambda_vertex
             vtx_loss, lxy_vtx_loss, dz_vtx_loss = vertex_loss_fn(
                 out["lxy_pred"], out["dz_pred"],
                 lxy_b, dz_b, vvalid_b,
@@ -65,12 +66,15 @@ def train_epoch(model, dataloader, optimiser, criterion_jet, criterion_origin,
             tot_dz_vtx  += dz_vtx_loss.item()  * len(y_b)
         # model: parallel_origin_vertex_jet — pair-vertexing BCE loss
         elif "pair_logits" in out:
+            auxiliary_weight = lambda_pair
             vtx_loss = pair_vertex_loss(out["pair_logits"], pair_b, mask_b)
         else:
+            auxiliary_weight = 0.0
             vtx_loss = out["jet_logits"].new_tensor(0.0)
 
         # ── weighted sum & step ────────────────────────────────────────
-        loss = lambda_jet * jet_loss + lambda_origin * origin_loss + lambda_vertex * vtx_loss
+        loss = (lambda_jet * jet_loss + lambda_origin * origin_loss
+                + auxiliary_weight * vtx_loss)
         loss.backward()
         optimiser.step()
 
@@ -100,7 +104,7 @@ def train_epoch(model, dataloader, optimiser, criterion_jet, criterion_origin,
 @torch.no_grad()
 def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
                    n_origin_classes, lambda_jet, lambda_origin, lambda_vertex,
-                   fit_lxy, fit_dz, device):
+                   lambda_pair, fit_lxy, fit_dz, device):
     model.eval()
     val_loss, val_jet_loss, val_origin_loss, val_vertex_loss = 0.0, 0.0, 0.0, 0.0
     val_lxy_vtx_loss, val_dz_vtx_loss = 0.0, 0.0
@@ -138,6 +142,7 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
 
         # ── model-specific vertex / pair loss ───────────────────────────
         if "lxy_pred" in out:
+            auxiliary_weight = lambda_vertex
             # model: staged_origin_vertex_jet
             vtx_loss, lxy_vtx_loss, dz_vtx_loss = vertex_loss_fn(
                 out["lxy_pred"], out["dz_pred"],
@@ -147,12 +152,15 @@ def validate_epoch(model, dataloader, criterion_jet, criterion_origin,
             val_lxy_vtx_loss += lxy_vtx_loss.item() * len(y_b)
             val_dz_vtx_loss  += dz_vtx_loss.item()  * len(y_b)
         elif "pair_logits" in out:
+            auxiliary_weight = lambda_pair
             # model: parallel_origin_vertex_jet
             vtx_loss = pair_vertex_loss(out["pair_logits"], pair_b, mask_b)
         else:
+            auxiliary_weight = 0.0
             vtx_loss = out["jet_logits"].new_tensor(0.0)
 
-        loss = lambda_jet * jet_loss + lambda_origin * origin_loss + lambda_vertex * vtx_loss
+        loss = (lambda_jet * jet_loss + lambda_origin * origin_loss
+                + auxiliary_weight * vtx_loss)
         val_loss        += loss.item()        * len(y_b)
         val_jet_loss    += jet_loss.item()    * len(y_b)
         val_origin_loss += origin_loss.item() * len(y_b)
@@ -532,7 +540,8 @@ def run_training(model, train_loader, val_loader, optimiser,
          train_refine, train_vtxw) = train_epoch(
             model, train_loader, optimiser, criterion_jet, criterion_origin,
             n_origin_classes, config.lambda_jet, config.lambda_origin,
-            config.lambda_vertex, config.fit_lxy, config.fit_dz, device)
+            config.lambda_vertex, config.lambda_pair,
+            config.fit_lxy, config.fit_dz, device)
 
         # ── gradient diagnostics (every epoch) ─────────────────────────
         _grad_stats = _measure_task_gradients(
@@ -555,7 +564,8 @@ def run_training(model, train_loader, val_loader, optimiser,
          val_acc, val_origin_acc, pred_arrays) = validate_epoch(
             model, val_loader, criterion_jet, criterion_origin,
             n_origin_classes, config.lambda_jet, config.lambda_origin,
-            config.lambda_vertex, config.fit_lxy, config.fit_dz, device)
+            config.lambda_vertex, config.lambda_pair,
+            config.fit_lxy, config.fit_dz, device)
 
         # record metrics
         history["train_loss"].append(train_loss)

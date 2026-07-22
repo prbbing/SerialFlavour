@@ -1,0 +1,11 @@
+{
+    "model_type": "jet_only_transformer",
+    "jet_only_track_init": "linear", "jet_only_pooling": "cls",
+    "d_model": 32, "n_heads": 2, "n_layers": 6, "d_ffn": 64, "dropout": 0.1,
+    "epochs": 100, "checkpoint_interval": 20, "lr": 0.001, "gpu_ids": [-1],
+    "lambda_jet": 1.0, "lambda_origin": 0.0, "lambda_vertex": 0.0, "lambda_pair": 0.0,
+    "train_file": "/data/yuyang/opendata/gn2_tt/mc-flavtag-ttbar-small.h5",
+    "n_train": 1000000, "n_test": 200000, "batch_size": 1024,
+    "train_plot_dir": "/data/yuyang/results/jet_encoder_ablation/s2_jet_only_matched/",
+    "model_name": "s2_jet_only_matched.pt", "train_cache_dir": ".track_cache/"
+}
