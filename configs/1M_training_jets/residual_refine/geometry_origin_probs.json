@@ -33,7 +33,7 @@
     "n_train": 1000000,
     "n_test": 200000,
     "batch_size": 1024,
-    "train_plot_dir": "/data/yuyang/results/residual_refine/geometry_origin_probs/",
+    "train_plot_dir": "/data/yuyang/SerialFlavour/results/1M_training_and_ablation/residual_refine/geometry_origin_probs/",
     "model_name": "residual_refine_geometry_origin_probs.pt",
-    "train_cache_dir": ".track_cache/"
+    "train_cache_dir": "/data/yuyang/SerialFlavour/.track_cache/"
 }

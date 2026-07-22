@@ -30,7 +30,7 @@
     "n_train": 1000000,
     "n_test": 200000,
     "batch_size": 1024,
-    "train_plot_dir": "/data/yuyang/results/track_origin_ablation/o1_no_origin_loss/",
+    "train_plot_dir": "/data/yuyang/SerialFlavour/results/1M_training_and_ablation/track_origin_ablation/o1_no_origin_loss/",
     "model_name": "o1_no_origin_loss.pt",
-    "train_cache_dir": ".track_cache/"
+    "train_cache_dir": "/data/yuyang/SerialFlavour/.track_cache/"
 }

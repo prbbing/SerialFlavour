@@ -104,3 +104,5 @@ config.ini
 # ===========================
 local/
 .track_cache/
+tests/
+tmp/

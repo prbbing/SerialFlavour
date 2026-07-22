@@ -30,7 +30,7 @@
     "n_train": 1000000,
     "n_test": 200000,
     "batch_size": 1024,
-    "train_plot_dir": "/data/yuyang/results/vertex_ablation/a6_vertex_loss_only/",
+    "train_plot_dir": "/data/yuyang/SerialFlavour/results/1M_training_and_ablation/vertex_ablation/a6_vertex_loss_only/",
     "model_name": "a6_vertex_loss_only.pt",
-    "train_cache_dir": ".track_cache/"
+    "train_cache_dir": "/data/yuyang/SerialFlavour/.track_cache/"
 }
