@@ -16,16 +16,22 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 
+from .config import dataloader_generator, seed_dataloader_worker
 
-def _cache_key(idx, track_fields, cache_dir):
-    """MD5 hash of index + field list → deterministic cache filename."""
+
+def _cache_key(idx, track_fields, cache_dir, data_seed=42):
+    """Hash indices, fields and data seed into a deterministic cache name."""
     fields_bytes = ",".join(track_fields).encode()
-    h = hashlib.md5(idx.tobytes() + fields_bytes).hexdigest()[:12]
+    seed_bytes = f"\0data_seed={data_seed}".encode()
+    h = hashlib.md5(
+        np.asarray(idx).tobytes() + fields_bytes + seed_bytes
+    ).hexdigest()[:12]
     return os.path.join(cache_dir, f"tracks_{h}_nom.npz")
 
 
 def load_tracks(path, idx, flavour_to_label, track_fields,
-                vertex_leg_names, vertex_targets, top_k, cache_dir):
+                vertex_leg_names, vertex_targets, top_k, cache_dir,
+                data_seed=42):
     """Load and pre-process tracks for the jets specified by *idx*.
 
     Processing pipeline:
@@ -49,7 +55,7 @@ def load_tracks(path, idx, flavour_to_label, track_fields,
             vtx_valid  (N, L)    bool_    — truth validity per leg
             pair_target (N, K, K) float32 — pair-compatibility labels
     """
-    cp = _cache_key(idx, track_fields, cache_dir)
+    cp = _cache_key(idx, track_fields, cache_dir, data_seed)
     if os.path.exists(cp):
         d = np.load(cp)
         return {k: d[k] for k in d.files}
@@ -219,7 +225,7 @@ def create_dataloaders(config, device):
     Returns:
         train_loader, val_loader, train_data, test_data, y_train, y_test
     """
-    rng = np.random.default_rng(42)
+    rng = np.random.default_rng(config.data_seed)
 
     # ── flavour labels (cached on disk) ──────────────────────────────────
     _flavour_cache = os.path.join(config.cache_dir, "all_flavours.npy")
@@ -257,12 +263,12 @@ def create_dataloaders(config, device):
     train_data = load_tracks(config.train_file, train_idx,
                              config.flavour_to_label, config.track_fields,
                              config.vertex_leg_names, config.vertex_targets,
-                             config.top_k, config.cache_dir)
+                             config.top_k, config.cache_dir, config.data_seed)
     print("  [3/3] Loading test tracks ...")
     test_data  = load_tracks(config.train_file, test_idx,
                              config.flavour_to_label, config.track_fields,
                              config.vertex_leg_names, config.vertex_targets,
-                             config.top_k, config.cache_dir)
+                             config.top_k, config.cache_dir, config.data_seed)
     y_train, y_test = train_data["y"], test_data["y"]
 
     print("Train — " + "  ".join(f"{name}:{(y_train==i).sum():,}"
@@ -271,13 +277,17 @@ def create_dataloaders(config, device):
                                   for i, name in enumerate(config.jet_class_names)))
 
     # ── DataLoaders ──────────────────────────────────────────────────────
-    _pin = device == "cuda"        # pin_memory speeds up CPU→GPU transfer
+    _pin = str(device).startswith("cuda")
     _pw  = config.num_workers > 0  # persistent_workers avoids respawning
     train_loader = DataLoader(
         JetDataset(train_data), batch_size=config.batch_size, shuffle=True,
-        pin_memory=_pin, num_workers=config.num_workers, persistent_workers=_pw)
+        pin_memory=_pin, num_workers=config.num_workers, persistent_workers=_pw,
+        generator=dataloader_generator(config.seed),
+        worker_init_fn=seed_dataloader_worker)
     val_loader = DataLoader(
         JetDataset(test_data), batch_size=config.batch_size,
-        pin_memory=_pin, num_workers=config.num_workers, persistent_workers=_pw)
+        pin_memory=_pin, num_workers=config.num_workers, persistent_workers=_pw,
+        generator=dataloader_generator(config.seed + 1),
+        worker_init_fn=seed_dataloader_worker)
 
     return train_loader, val_loader, train_data, test_data, y_train, y_test

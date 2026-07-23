@@ -24,7 +24,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from src.config import load_config, _DEFAULTS
+from src.config import load_config, _DEFAULTS, seed_everything
 from src.data_fast import create_dataloaders
 from src.models import build_model
 from src.losses import compute_origin_class_weights
@@ -44,7 +44,6 @@ from src.plotting import (
     plot_vertex_metrics_history,
     plot_vertex_loss_components,
 )
-
 from sklearn.metrics import classification_report, confusion_matrix
 
 parser = argparse.ArgumentParser(
@@ -81,6 +80,11 @@ else:
     use_dp   = False
     gpu_ids  = [0]
 # ----------------------------------------------------------------
+
+seed_everything(
+    config.seed,
+    cuda_devices=gpu_ids if str(DEVICE).startswith("cuda") else (),
+)
 
 # ── _Tee utility (shared) ──────────────────────────────────────────
 class _Tee:
@@ -212,6 +216,7 @@ if args.eval_only:
     sys.stdout = _Tee(_orig_stdout, log_file)
 
     print(f"Device: {gpu_ids}  |  DataParallel: {use_dp}")
+    print(f"Seed: {config.seed}  |  Data seed: {config.data_seed}")
     print(f"Eval-only — weights: {weights_path}")
 
     print("Loading data...")
@@ -269,6 +274,7 @@ log_file = open(os.path.join(config.plot_dir, "training_log.md"), "w")
 sys.stdout = _Tee(_orig_stdout, log_file)
 
 print(f"Device: {gpu_ids}  |  DataParallel: {use_dp}")
+print(f"Seed: {config.seed}  |  Data seed: {config.data_seed}")
 
 cfg_dict["train_plot_dir"] = config.plot_dir
 _cfg_save_path = os.path.join(config.plot_dir, "config.json")

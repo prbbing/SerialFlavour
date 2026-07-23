@@ -110,6 +110,11 @@ All parameters live in `src/config.py:_DEFAULTS`. A JSON file via `--config` ove
 Key fields: `model_type`, `d_model`, `n_heads`, `n_layers`, `d_ffn`, `dropout`, `epochs`, `lr`,
 `batch_size`, `n_train`, `n_test`, `train_file`, `gpu_ids`.
 
+Reproducibility uses two independent config values (both default to `42`):
+
+- `seed` controls model initialisation, training RNG and DataLoader shuffling.
+- `data_seed` controls the train/test sample selection and is included in each track-cache ID.
+
 Vertex-fit options shared by all staged models:
 
 - `vertex_fit_method` — `"wls_3d"` (default), `"two_step"`, `"old_dz"`

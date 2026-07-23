@@ -169,6 +169,7 @@ def _data_signature(config) -> dict[str, Any]:
         "cache_dir": os.path.abspath(os.path.expanduser(config.cache_dir)),
         "n_train": config.n_train,
         "n_test": config.n_test,
+        "data_seed": config.data_seed,
         "batch_size": config.batch_size,
         "top_k": config.top_k,
         "track_fields": list(config.track_fields),
@@ -1015,9 +1016,11 @@ def _build_runs(entries, train_data, device, timestamp, seed):
         name = Path(path).stem
         config.plot_dir = output_dir
         config.num_workers = 0
+        config.seed = seed
         config_dict = dict(config_dict)
         config_dict["train_plot_dir"] = output_dir
         config_dict["num_workers"] = 0
+        config_dict["seed"] = seed
         os.makedirs(output_dir, exist_ok=False)
         with open(os.path.join(output_dir, "config.json"), "w", encoding="utf-8") as handle:
             json.dump(config_dict, handle, indent=4)

@@ -9,8 +9,11 @@ derived quantities (feature indices, projection matrices, etc.).
 import argparse
 import json
 import os
+import random
+from collections.abc import Iterable
 
 import numpy as np
+import torch
 
 # ---------------------------------------------------------------------------
 # All tunable parameters live here.  Keys present in a JSON config file
@@ -155,6 +158,8 @@ _DEFAULTS = {
     "c_disc_bkg_weights": {"b-jet": 0.5, "light-jet": 0.5},
 
     # -- training -----------------------------------------------------------
+    "seed":            42,            # model, optimiser and DataLoader RNG
+    "data_seed":       42,            # train/test sampling and cache identity
     "train_file":      "/data/yuyang/opendata/gn2_tt/mc-flavtag-ttbar-small.h5",
     "n_train":         120_000,       # balanced across classes
     "n_test":          40_000,        # natural distribution (last N)
@@ -167,6 +172,32 @@ _DEFAULTS = {
     "train_cache_dir": ".track_cache/",
     "tensorboard_log_dir": "results/tb_runs",  # null=disabled
 }
+
+
+def seed_everything(seed: int, cuda_devices: Iterable[int] = ()) -> None:
+    """Seed Python, NumPy, CPU PyTorch and only the selected CUDA devices."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.random.default_generator.manual_seed(seed)
+
+    if not torch.cuda.is_available():
+        return
+    for device_index in dict.fromkeys(cuda_devices):
+        with torch.cuda.device(device_index):
+            torch.cuda.manual_seed(seed)
+
+
+def seed_dataloader_worker(worker_id: int) -> None:
+    """Seed Python and NumPy from the worker seed assigned by DataLoader."""
+    del worker_id
+    worker_seed = torch.initial_seed() % (2 ** 32)
+    random.seed(worker_seed)
+    np.random.seed(worker_seed)
+
+
+def dataloader_generator(seed: int) -> torch.Generator:
+    """Return an isolated CPU generator for reproducible sampler order."""
+    return torch.Generator().manual_seed(seed)
 
 # ===========================================================================
 # Config — validated, typed container for every parameter derived from
@@ -181,6 +212,8 @@ class Config:
         self.gpu_ids            = cfg_dict["gpu_ids"]
 
         # -- data & training ------------------------------------------------
+        self.seed               = cfg_dict["seed"]
+        self.data_seed          = cfg_dict["data_seed"]
         self.train_file         = cfg_dict["train_file"]
         self.n_train            = cfg_dict["n_train"]
         self.n_test             = cfg_dict["n_test"]
@@ -293,6 +326,10 @@ class Config:
             "checkpoint_interval must be a positive integer"
         assert type(self.use_pair_target) is bool, \
             "use_pair_target must be a boolean"
+        assert type(self.seed) is int and 0 <= self.seed < 2 ** 32, \
+            "seed must be an integer in [0, 2**32)"
+        assert type(self.data_seed) is int and 0 <= self.data_seed < 2 ** 32, \
+            "data_seed must be an integer in [0, 2**32)"
 
         # -- derived quantities ---------------------------------------------
         self.n_feats = len(self.track_fields)   # total input dimensionality

@@ -22,6 +22,8 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
+from .config import dataloader_generator, seed_dataloader_worker
+
 
 _JET_FLAVOUR_FIELD = "HadronConeExclTruthLabelID"
 _TRACK_AUX_FIELDS = (
@@ -34,10 +36,13 @@ _TRACK_AUX_FIELDS = (
 _TRUTH_FIELDS = ("valid", "Lxy", "decayVertexZ")
 
 
-def _cache_key(idx, track_fields, cache_dir):
-    """Return exactly the same cache path as ``src.data._cache_key``."""
+def _cache_key(idx, track_fields, cache_dir, data_seed=42):
+    """Return exactly the same seeded cache path as ``src.data._cache_key``."""
     fields_bytes = ",".join(track_fields).encode()
-    h = hashlib.md5(np.asarray(idx).tobytes() + fields_bytes).hexdigest()[:12]
+    seed_bytes = f"\0data_seed={data_seed}".encode()
+    h = hashlib.md5(
+        np.asarray(idx).tobytes() + fields_bytes + seed_bytes
+    ).hexdigest()[:12]
     return os.path.join(cache_dir, f"tracks_{h}_nom.npz")
 
 
@@ -148,7 +153,8 @@ def _save_cache_atomic(path: str, arrays: dict[str, np.ndarray]) -> None:
 def load_tracks(path, idx, flavour_to_label, track_fields,
                 vertex_leg_names, vertex_targets, top_k, cache_dir,
                 *, force: bool = False, block_rows: int | None = None,
-                progress: bool = False, include_pair_target: bool = True):
+                progress: bool = False, include_pair_target: bool = True,
+                data_seed: int = 42):
     """Accelerated drop-in equivalent of :func:`src.data.load_tracks`.
 
     Output keys, shapes, dtypes, row order, top-K ordering, padding semantics,
@@ -159,7 +165,7 @@ def load_tracks(path, idx, flavour_to_label, track_fields,
     present in newly written caches for compatibility with pair models.
     """
     idx_for_key = np.asarray(idx)
-    cp = _cache_key(idx_for_key, track_fields, cache_dir)
+    cp = _cache_key(idx_for_key, track_fields, cache_dir, data_seed)
     if os.path.exists(cp) and not force:
         with np.load(cp) as cached:
             keys = cached.files
@@ -360,7 +366,7 @@ def _load_all_flavours(config):
 
 def _split_indices(config, all_flavours):
     """Reproduce ``src.data.create_dataloaders`` index selection exactly."""
-    rng = np.random.default_rng(42)
+    rng = np.random.default_rng(config.data_seed)
     valid_mask = np.isin(all_flavours, list(config.flavour_to_label.keys()))
     valid_idx = rng.permutation(np.where(valid_mask)[0])
     test_idx = np.sort(valid_idx[-config.n_test:])
@@ -394,7 +400,8 @@ def generate_cache_from_config(config_path=None, *, train_file=None,
     train_idx, test_idx = _split_indices(config, all_flavours)
 
     def build_one(indices):
-        cache_path = _cache_key(indices, config.track_fields, config.cache_dir)
+        cache_path = _cache_key(
+            indices, config.track_fields, config.cache_dir, config.data_seed)
         if os.path.exists(cache_path) and not force:
             # NPZ members are lazy. Read only the small label array when a
             # cache already exists instead of materialising a multi-GiB cache.
@@ -404,7 +411,7 @@ def generate_cache_from_config(config_path=None, *, train_file=None,
             config.train_file, indices, config.flavour_to_label,
             config.track_fields, config.vertex_leg_names, config.vertex_targets,
             config.top_k, config.cache_dir, force=force, block_rows=block_rows,
-            progress=progress)
+            progress=progress, data_seed=config.data_seed)
         return cache_path, len(data["y"])
 
     print("  [2/3] Building training-track cache ...")
@@ -441,13 +448,15 @@ def create_dataloaders(config, device, *, force=False, block_rows=None,
         config.train_file, train_idx, config.flavour_to_label,
         config.track_fields, config.vertex_leg_names, config.vertex_targets,
         config.top_k, config.cache_dir, force=force, block_rows=block_rows,
-        progress=progress, include_pair_target=include_pair_target)
+        progress=progress, include_pair_target=include_pair_target,
+        data_seed=config.data_seed)
     print("  [3/3] Loading test tracks ...")
     test_data = load_tracks(
         config.train_file, test_idx, config.flavour_to_label,
         config.track_fields, config.vertex_leg_names, config.vertex_targets,
         config.top_k, config.cache_dir, force=force, block_rows=block_rows,
-        progress=progress, include_pair_target=include_pair_target)
+        progress=progress, include_pair_target=include_pair_target,
+        data_seed=config.data_seed)
     y_train, y_test = train_data["y"], test_data["y"]
 
     pin_memory = str(device).startswith("cuda")
@@ -458,12 +467,16 @@ def create_dataloaders(config, device, *, force=False, block_rows=None,
         JetDataset(train_data, include_pair_target=include_pair_target),
         batch_size=config.batch_size, shuffle=True,
         pin_memory=pin_memory, num_workers=config.num_workers,
-        persistent_workers=persistent_workers)
+        persistent_workers=persistent_workers,
+        generator=dataloader_generator(config.seed),
+        worker_init_fn=seed_dataloader_worker)
     val_loader = DataLoader(
         JetDataset(test_data, include_pair_target=include_pair_target),
         batch_size=config.batch_size,
         pin_memory=pin_memory, num_workers=config.num_workers,
-        persistent_workers=persistent_workers)
+        persistent_workers=persistent_workers,
+        generator=dataloader_generator(config.seed + 1),
+        worker_init_fn=seed_dataloader_worker)
     return train_loader, val_loader, train_data, test_data, y_train, y_test
 
 
