@@ -12,12 +12,56 @@ import torch
 import numpy as np
 import os
 import csv
+import json
+import time
 try:
     from torch.utils.tensorboard import SummaryWriter
 except ImportError:  # TensorBoard logging is optional for training correctness.
     SummaryWriter = None
 
 from .losses import vertex_loss_fn, pair_vertex_loss
+
+
+def _synchronize_for_timing(device):
+    if torch.cuda.is_available() and str(device).startswith("cuda"):
+        torch.cuda.synchronize(device)
+
+
+def _format_duration(seconds):
+    total_seconds = int(round(seconds))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def _export_training_history(history, output_dir):
+    serializable = {
+        key: [
+            value.item() if isinstance(value, np.generic) else value
+            for value in values
+        ]
+        for key, values in history.items()
+    }
+    json_path = os.path.join(output_dir, "training_history.json")
+    with open(json_path, "w") as handle:
+        json.dump(serializable, handle, indent=2, allow_nan=True)
+
+    csv_path = os.path.join(output_dir, "training_history.csv")
+    keys = list(history)
+    n_epochs = max((len(values) for values in history.values()), default=0)
+    with open(csv_path, "w", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["epoch", *keys])
+        for index in range(n_epochs):
+            writer.writerow([
+                index + 1,
+                *[
+                    history[key][index] if index < len(history[key]) else ""
+                    for key in keys
+                ],
+            ])
+
+    print("Exported training_history.json and training_history.csv")
 
 
 # ===========================================================================
@@ -494,6 +538,7 @@ def run_training(model, train_loader, val_loader, optimiser,
         "val_loss": [], "val_jet_loss": [], "val_origin_loss": [],
         "val_vertex_loss": [], "val_lxy_loss": [], "val_dz_loss": [],
         "val_acc": [], "val_origin_acc": [],
+        "epoch_seconds": [],
         # refine / vtx_weight diagnostics (train: overall mean; val: match/other per leg)
         "train_refine_mean": [], "train_vtx_weight_mean": [],
         "val_b_refine_match_mean": [], "val_b_refine_other_mean": [],
@@ -534,7 +579,11 @@ def run_training(model, train_loader, val_loader, optimiser,
     _diag_X, _diag_mask, _diag_y, _diag_orig, _diag_lxy, _diag_dz, _diag_vv, _diag_pair = (
         t.to(device) for t in _diag_batch)
 
+    _synchronize_for_timing(device)
+    _training_started = time.perf_counter()
     for epoch in range(1, epochs + 1):
+        _synchronize_for_timing(device)
+        _epoch_started = time.perf_counter()
         (train_loss, train_jet_loss, train_origin_loss, train_vertex_loss,
          train_lxy_loss, train_dz_loss,
          train_refine, train_vtxw) = train_epoch(
@@ -649,12 +698,16 @@ def run_training(model, train_loader, val_loader, optimiser,
             if _parts:
                 _calib_str = "  " + "  ".join(_parts)
 
+        _synchronize_for_timing(device)
+        _epoch_seconds = time.perf_counter() - _epoch_started
+        history["epoch_seconds"].append(_epoch_seconds)
         print(f"Epoch {epoch:02d}/{epochs}  "
               f"loss={train_loss:.4f} (jet={train_jet_loss:.4f} "
               f"origin={train_origin_loss:.4f} vtx={train_vertex_loss:.4f}(Lxy={train_lxy_loss:.4f},dz={train_dz_loss:.4f}))  "
               f"val_loss={val_loss:.4f} (jet={val_jet_loss:.4f} "
               f"origin={val_origin_loss:.4f} vtx={val_vertex_loss:.4f}(Lxy={val_lxy_loss:.4f},dz={val_dz_loss:.4f}))  "
-              f"val_acc={val_acc:.4f}  origin_acc={val_origin_acc:.4f}{_calib_str}")
+              f"val_acc={val_acc:.4f}  origin_acc={val_origin_acc:.4f}{_calib_str}  "
+              f"epoch_seconds={_epoch_seconds:.2f}")
         if _vtx_stats:
             print(f"         refine train={train_refine:.4f}  "
                   f"val b(m={_vtx_stats.get('val_b_refine_match_mean', 0):.4f} "
@@ -711,11 +764,23 @@ def run_training(model, train_loader, val_loader, optimiser,
     if writer:
         writer.close()
 
+    _synchronize_for_timing(device)
+    _training_seconds = time.perf_counter() - _training_started
+    _mean_epoch_seconds = (
+        sum(history["epoch_seconds"]) / len(history["epoch_seconds"])
+        if history["epoch_seconds"] else 0.0)
+    print(
+        f"Training time (epochs only): {_format_duration(_training_seconds)}  "
+        f"total_seconds={_training_seconds:.2f}  "
+        f"mean_epoch_seconds={_mean_epoch_seconds:.2f}")
+
     print("Checkpoint summary:")
     print(f"  best_jet.pt: epoch={best_jet_epoch}, val_jet_loss={best_jet_loss:.6f}")
     print(f"  best_total.pt: epoch={best_total_epoch}, val_loss={best_total_loss:.6f}")
     print(f"  last.pt: epoch={epochs}")
     print(f"  periodic checkpoints: every {checkpoint_interval} epoch(s)")
+
+    _export_training_history(history, config.plot_dir)
 
     # ── export gradient diagnostics as CSV ────────────────────────────
     _grad_keys = [k for k in history if k.startswith("grad_")]

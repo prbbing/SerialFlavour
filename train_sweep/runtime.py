@@ -66,7 +66,7 @@ _HISTORY_KEYS = [
     "train_vertex_loss", "train_lxy_loss", "train_dz_loss",
     "val_loss", "val_jet_loss", "val_origin_loss",
     "val_vertex_loss", "val_lxy_loss", "val_dz_loss",
-    "val_acc", "val_origin_acc",
+    "val_acc", "val_origin_acc", "epoch_seconds",
     "train_refine_mean", "train_vtx_weight_mean",
     "val_b_refine_match_mean", "val_b_refine_other_mean",
     "val_b_vtx_weight_match_mean", "val_b_vtx_weight_other_mean",
@@ -95,6 +95,13 @@ _VERTEX_METRIC_KEYS = [
     "val_c_dz_mae", "val_b_lxy_pearson", "val_c_lxy_pearson",
     "val_b_dz_pearson", "val_c_dz_pearson",
 ]
+
+
+def _format_duration(seconds):
+    total_seconds = int(round(seconds))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
 class _Tee:
@@ -800,7 +807,8 @@ def _log_epoch(
         f"vtx={val_metrics['vertex']:.4f}"
         f"(Lxy={val_metrics['lxy']:.4f},dz={val_metrics['dz']:.4f}))  "
         f"val_acc={val_metrics['acc']:.4f}  "
-        f"origin_acc={val_metrics['origin_acc']:.4f}{calibration}")
+        f"origin_acc={val_metrics['origin_acc']:.4f}{calibration}  "
+        f"epoch_seconds={elapsed_seconds:.2f}")
 
     if "refine" in pred_arrays:
         history = run.history
@@ -1105,9 +1113,11 @@ def run_sweep(config_paths, max_concurrent=None, seed=42, gpu=None):
         "gpu_selection": gpu_selection,
         "max_concurrent": max_concurrent, "num_workers": 0,
         "epoch_times_seconds": [],
+        "run_training_seconds": {run.name: 0.0 for run in runs},
     }
     _write_manifest(manifest, runs)
     started = time.perf_counter()
+    run_training_seconds = {run.name: 0.0 for run in runs}
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
 
@@ -1155,6 +1165,10 @@ def run_sweep(config_paths, max_concurrent=None, seed=42, gpu=None):
             manifest["epoch_times_seconds"].append(elapsed)
 
             for run in active:
+                run.history["epoch_seconds"].append(elapsed)
+                run_training_seconds[run.name] += elapsed
+                manifest["run_training_seconds"][run.name] = (
+                    run_training_seconds[run.name])
                 val_metrics, arrays = validation_results[run.name]
                 _append_epoch(
                     run, train_results[run.name], val_metrics, arrays,
@@ -1173,6 +1187,14 @@ def run_sweep(config_paths, max_concurrent=None, seed=42, gpu=None):
             _write_manifest(manifest, runs)
 
         for run in runs:
+            mean_epoch_seconds = (
+                run_training_seconds[run.name] / run.config.epochs
+                if run.config.epochs else 0.0)
+            run.log(
+                "Training time (epochs only): "
+                f"{_format_duration(run_training_seconds[run.name])}  "
+                f"total_seconds={run_training_seconds[run.name]:.2f}  "
+                f"mean_epoch_seconds={mean_epoch_seconds:.2f}")
             _log_checkpoint_summary(run)
             _write_history(run)
             with redirect_stdout(_Tee(sys.stdout, run.log_handle)):

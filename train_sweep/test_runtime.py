@@ -137,7 +137,7 @@ def test_training_log_keeps_legacy_epoch_format_without_console_prefix(capsys):
         "Epoch 02/7  loss=1.0000 (jet=0.4000 origin=0.5000 "
         "vtx=0.1000(Lxy=0.0600,dz=0.0400))  val_loss=0.9000 "
         "(jet=0.3000 origin=0.5000 vtx=0.1000(Lxy=0.0600,dz=0.0400))  "
-        "val_acc=0.7500  origin_acc=0.6000\n")
+        "val_acc=0.7500  origin_acc=0.6000  epoch_seconds=3.21\n")
     assert run.log_handle.getvalue() == expected
     assert capsys.readouterr().out == f"[model_a] {expected}"
 
@@ -171,6 +171,7 @@ def test_middle_epochs_are_compact_and_last_five_are_detailed():
     final_line = run.log_handle.getvalue()
     assert final_line.startswith("Epoch 16/20  loss=1.0000 (jet=0.4000")
     assert "vtx=0.1000(Lxy=0.0600,dz=0.0400)" in final_line
+    assert "epoch_seconds=5.67" in final_line
 
 
 def test_single_model_cpu_path_matches_existing_epoch_functions():

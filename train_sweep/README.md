@@ -8,6 +8,8 @@ The original batch-experiment workflow starts one independent Python process for
 
 This approach primarily reduces duplicated dataset memory and Python-process overhead. Every model still has independent weights, gradients, Adam state, and activations, so the maximum concurrency remains limited by GPU memory. Actual speedup from CUDA streams also depends on the resource usage of the individual kernels.
 
+**But it will be much SLOWER!**
+
 ## Usage
 
 ```bash
