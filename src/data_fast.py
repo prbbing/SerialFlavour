@@ -23,9 +23,16 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 
 from .config import dataloader_generator, seed_dataloader_worker
+from .data_split import (
+    DataSplits,
+    JET_EVENT_FIELD,
+    SPLIT_VERSION,
+    split_indices_by_event,
+)
 
 
 _JET_FLAVOUR_FIELD = "HadronConeExclTruthLabelID"
+_JET_EVENT_FIELD = JET_EVENT_FIELD
 _TRACK_AUX_FIELDS = (
     "valid",
     "lifetimeSignedD0",
@@ -37,9 +44,10 @@ _TRUTH_FIELDS = ("valid", "Lxy", "decayVertexZ")
 
 
 def _cache_key(idx, track_fields, cache_dir, data_seed=42):
-    """Return exactly the same seeded cache path as ``src.data._cache_key``."""
+    """Return the event-split-versioned track-cache path."""
     fields_bytes = ",".join(track_fields).encode()
-    seed_bytes = f"\0data_seed={data_seed}".encode()
+    seed_bytes = (
+        f"\0data_seed={data_seed}\0split_version={SPLIT_VERSION}").encode()
     h = hashlib.md5(
         np.asarray(idx).tobytes() + fields_bytes + seed_bytes
     ).hexdigest()[:12]
@@ -344,44 +352,45 @@ class JetDataset(Dataset):
                 pair_target)
 
 
-def _load_all_flavours(config):
-    os.makedirs(config.cache_dir, exist_ok=True)
-    flavour_cache = os.path.join(config.cache_dir, "all_flavours.npy")
-    if os.path.exists(flavour_cache):
-        print("  [1/3] Loading flavour labels (cached)")
-        return np.load(flavour_cache)
+def _split_metadata_cache_path(config):
+    source_path = os.path.abspath(os.path.expanduser(config.train_file))
+    stat = os.stat(source_path)
+    identity = (
+        f"{source_path}\0{stat.st_size}\0{stat.st_mtime_ns}\0"
+        f"{_JET_FLAVOUR_FIELD}\0{_JET_EVENT_FIELD}\0{SPLIT_VERSION}")
+    digest = hashlib.sha256(identity.encode()).hexdigest()[:16]
+    return os.path.join(config.cache_dir, f"split_metadata_{digest}.npz")
 
-    print("  [1/3] Reading flavour labels from HDF5 ...")
+
+def _load_split_metadata(config):
+    os.makedirs(config.cache_dir, exist_ok=True)
+    metadata_cache = _split_metadata_cache_path(config)
+    if os.path.exists(metadata_cache):
+        print("  [1/4] Loading flavour and event metadata (cached)")
+        with np.load(metadata_cache) as cached:
+            return cached["flavours"], cached["event_numbers"]
+
+    print("  [1/4] Reading flavour and event metadata from HDF5 ...")
     with h5py.File(config.train_file, "r") as f:
         jets = f["jets"]
-        _require_fields(jets, [_JET_FLAVOUR_FIELD], "jets")
+        _require_fields(jets, [_JET_FLAVOUR_FIELD, _JET_EVENT_FIELD], "jets")
         if isinstance(jets, h5py.Group):
             all_flavours = jets[_JET_FLAVOUR_FIELD][:]
+            event_numbers = jets[_JET_EVENT_FIELD][:]
         else:
-            all_flavours = jets.fields(_JET_FLAVOUR_FIELD)[:]
-    np.save(flavour_cache, all_flavours)
-    print("  [1/3] Cached flavour labels")
-    return all_flavours
+            metadata = jets.fields(
+                [_JET_FLAVOUR_FIELD, _JET_EVENT_FIELD])[:]
+            all_flavours = metadata[_JET_FLAVOUR_FIELD]
+            event_numbers = metadata[_JET_EVENT_FIELD]
+    np.savez(
+        metadata_cache, flavours=all_flavours, event_numbers=event_numbers)
+    print("  [1/4] Cached flavour and event metadata")
+    return all_flavours, event_numbers
 
 
-def _split_indices(config, all_flavours):
-    """Reproduce ``src.data.create_dataloaders`` index selection exactly."""
-    rng = np.random.default_rng(config.data_seed)
-    valid_mask = np.isin(all_flavours, list(config.flavour_to_label.keys()))
-    valid_idx = rng.permutation(np.where(valid_mask)[0])
-    test_idx = np.sort(valid_idx[-config.n_test:])
-    pool_idx = valid_idx[:-config.n_test]
-    pool_labels = np.array([
-        config.flavour_to_label[value] for value in all_flavours[pool_idx]
-    ])
-    n_per_class = config.n_train // len(config.jet_class_names)
-    train_idx = np.sort(np.concatenate([
-        rng.choice(pool_idx[pool_labels == cls],
-                   size=min(n_per_class, (pool_labels == cls).sum()),
-                   replace=False)
-        for cls in range(len(config.jet_class_names))
-    ]))
-    return train_idx, test_idx
+def _split_indices(config, all_flavours, event_numbers):
+    """Compatibility wrapper for the shared event-level split implementation."""
+    return split_indices_by_event(config, all_flavours, event_numbers)
 
 
 def generate_cache_from_config(config_path=None, *, train_file=None,
@@ -396,8 +405,8 @@ def generate_cache_from_config(config_path=None, *, train_file=None,
     if cache_dir is not None:
         config.cache_dir = cache_dir
 
-    all_flavours = _load_all_flavours(config)
-    train_idx, test_idx = _split_indices(config, all_flavours)
+    all_flavours, event_numbers = _load_split_metadata(config)
+    split = _split_indices(config, all_flavours, event_numbers)
 
     def build_one(indices):
         cache_path = _cache_key(
@@ -414,17 +423,23 @@ def generate_cache_from_config(config_path=None, *, train_file=None,
             progress=progress, data_seed=config.data_seed)
         return cache_path, len(data["y"])
 
-    print("  [2/3] Building training-track cache ...")
-    train_path, n_train = build_one(train_idx)
-    print("  [3/3] Building test-track cache ...")
-    test_path, n_test = build_one(test_idx)
+    print("  [2/4] Building training-track cache ...")
+    train_path, n_train = build_one(split.train)
+    print("  [3/4] Building validation-track cache ...")
+    validation_path, n_validation = build_one(split.validation)
+    print("  [4/4] Building test-track cache ...")
+    test_path, n_test = build_one(split.test)
 
     paths = {
         "train": train_path,
+        "validation": validation_path,
         "test": test_path,
-        "flavours": os.path.join(config.cache_dir, "all_flavours.npy"),
+        "split_metadata": _split_metadata_cache_path(config),
     }
     print(f"  train cache: {paths['train']} ({n_train:,} jets)")
+    print(
+        f"  validation cache: {paths['validation']} "
+        f"({n_validation:,} jets)")
     print(f"  test cache:  {paths['test']} ({n_test:,} jets)")
     return paths
 
@@ -441,23 +456,39 @@ def create_dataloaders(config, device, *, force=False, block_rows=None,
             f"model_type '{config.model_type}' requires pair_target; set "
             "use_pair_target=true in its config")
 
-    all_flavours = _load_all_flavours(config)
-    train_idx, test_idx = _split_indices(config, all_flavours)
-    print("  [2/3] Loading training tracks ...")
+    all_flavours, event_numbers = _load_split_metadata(config)
+    split = _split_indices(config, all_flavours, event_numbers)
+    print("  [2/4] Loading training tracks ...")
     train_data = load_tracks(
-        config.train_file, train_idx, config.flavour_to_label,
+        config.train_file, split.train, config.flavour_to_label,
         config.track_fields, config.vertex_leg_names, config.vertex_targets,
         config.top_k, config.cache_dir, force=force, block_rows=block_rows,
         progress=progress, include_pair_target=include_pair_target,
         data_seed=config.data_seed)
-    print("  [3/3] Loading test tracks ...")
+    print("  [3/4] Loading validation tracks ...")
+    validation_data = load_tracks(
+        config.train_file, split.validation, config.flavour_to_label,
+        config.track_fields, config.vertex_leg_names, config.vertex_targets,
+        config.top_k, config.cache_dir, force=force, block_rows=block_rows,
+        progress=progress, include_pair_target=include_pair_target,
+        data_seed=config.data_seed)
+    print("  [4/4] Loading test tracks ...")
     test_data = load_tracks(
-        config.train_file, test_idx, config.flavour_to_label,
+        config.train_file, split.test, config.flavour_to_label,
         config.track_fields, config.vertex_leg_names, config.vertex_targets,
         config.top_k, config.cache_dir, force=force, block_rows=block_rows,
         progress=progress, include_pair_target=include_pair_target,
         data_seed=config.data_seed)
-    y_train, y_test = train_data["y"], test_data["y"]
+    y_train = train_data["y"]
+    y_validation = validation_data["y"]
+    y_test = test_data["y"]
+
+    for split_name, labels in (
+            ("Train", y_train), ("Validation", y_validation),
+            ("Test", y_test)):
+        print(split_name + " — " + "  ".join(
+            f"{name}:{(labels == index).sum():,}"
+            for index, name in enumerate(config.jet_class_names)))
 
     pin_memory = str(device).startswith("cuda")
     persistent_workers = config.num_workers > 0
@@ -470,14 +501,52 @@ def create_dataloaders(config, device, *, force=False, block_rows=None,
         persistent_workers=persistent_workers,
         generator=dataloader_generator(config.seed),
         worker_init_fn=seed_dataloader_worker)
-    val_loader = DataLoader(
-        JetDataset(test_data, include_pair_target=include_pair_target),
+    validation_loader = DataLoader(
+        JetDataset(validation_data, include_pair_target=include_pair_target),
         batch_size=config.batch_size,
         pin_memory=pin_memory, num_workers=config.num_workers,
         persistent_workers=persistent_workers,
         generator=dataloader_generator(config.seed + 1),
         worker_init_fn=seed_dataloader_worker)
-    return train_loader, val_loader, train_data, test_data, y_train, y_test
+    test_loader = DataLoader(
+        JetDataset(test_data, include_pair_target=include_pair_target),
+        batch_size=config.batch_size,
+        pin_memory=pin_memory, num_workers=config.num_workers,
+        persistent_workers=persistent_workers,
+        generator=dataloader_generator(config.seed + 2),
+        worker_init_fn=seed_dataloader_worker)
+
+    summary = dict(split.summary)
+    summary["retained_jets_after_track_filter"] = {
+        "train": int(len(y_train)),
+        "validation": int(len(y_validation)),
+        "test": int(len(y_test)),
+    }
+    summary["dropped_jets_no_valid_tracks"] = {
+        name: summary["selected_jets"][name] - retained
+        for name, retained in summary[
+            "retained_jets_after_track_filter"].items()
+    }
+    summary["retained_class_counts"] = {
+        split_name: {
+            name: int((labels == index).sum())
+            for index, name in enumerate(config.jet_class_names)
+        }
+        for split_name, labels in (
+            ("train", y_train), ("validation", y_validation),
+            ("test", y_test))
+    }
+    return DataSplits(
+        train_loader=train_loader,
+        validation_loader=validation_loader,
+        test_loader=test_loader,
+        train_data=train_data,
+        validation_data=validation_data,
+        test_data=test_data,
+        y_train=y_train,
+        y_validation=y_validation,
+        y_test=y_test,
+        summary=summary)
 
 
 def cache_cli(argv=None):

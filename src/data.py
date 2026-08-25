@@ -17,12 +17,19 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 from .config import dataloader_generator, seed_dataloader_worker
+from .data_split import (
+    DataSplits,
+    JET_EVENT_FIELD,
+    SPLIT_VERSION,
+    split_indices_by_event,
+)
 
 
 def _cache_key(idx, track_fields, cache_dir, data_seed=42):
     """Hash indices, fields and data seed into a deterministic cache name."""
     fields_bytes = ",".join(track_fields).encode()
-    seed_bytes = f"\0data_seed={data_seed}".encode()
+    seed_bytes = (
+        f"\0data_seed={data_seed}\0split_version={SPLIT_VERSION}").encode()
     h = hashlib.md5(
         np.asarray(idx).tobytes() + fields_bytes + seed_bytes
     ).hexdigest()[:12]
@@ -214,65 +221,50 @@ class JetDataset(Dataset):
 
 
 # ===========================================================================
-# create_dataloaders — balanced train/test split + DataLoader construction.
+# create_dataloaders — event-disjoint train/validation/test construction.
 # ===========================================================================
 def create_dataloaders(config, device):
-    """Build train and validation DataLoaders with balanced class sampling.
-
-    The test set uses the last N_TEST jets (natural distribution).
-    The training set draws an equal number of jets from each flavour class.
-
-    Returns:
-        train_loader, val_loader, train_data, test_data, y_train, y_test
-    """
-    rng = np.random.default_rng(config.data_seed)
-
-    # ── flavour labels (cached on disk) ──────────────────────────────────
-    _flavour_cache = os.path.join(config.cache_dir, "all_flavours.npy")
-    if os.path.exists(_flavour_cache):
-        print("  [1/3] Loading flavour labels (cached)")
-        all_flavours = np.load(_flavour_cache)
-    else:
-        print("  [1/3] Reading flavour labels from HDF5 ...")
-        with h5py.File(config.train_file, "r") as f:
-            all_flavours = f["jets"]["HadronConeExclTruthLabelID"][:]
-        np.save(_flavour_cache, all_flavours)
-        print("  [1/3] Cached flavour labels")
-
-    # ── shuffle valid index pool ─────────────────────────────────────────
-    valid_mask = np.isin(all_flavours, list(config.flavour_to_label.keys()))
-    valid_idx  = rng.permutation(np.where(valid_mask)[0])
-
-    # ── test/train split ─────────────────────────────────────────────────
-    test_idx    = np.sort(valid_idx[-config.n_test:])       # take last N
-    pool_idx    = valid_idx[:-config.n_test]                # remainder for training
-    pool_labels = np.array([config.flavour_to_label[v] for v in all_flavours[pool_idx]])
-
-    # ── balanced training sample (equal per class) ───────────────────────
-    n_classes_jet = len(config.jet_class_names)
-    n_per_class   = config.n_train // n_classes_jet
-    train_idx = np.sort(np.concatenate([
-        rng.choice(pool_idx[pool_labels == cls],
-                   size=min(n_per_class, (pool_labels == cls).sum()),
-                   replace=False)
-        for cls in range(n_classes_jet)
-    ]))
+    """Build event-disjoint train, validation and independent test loaders."""
+    os.makedirs(config.cache_dir, exist_ok=True)
+    print("  [1/4] Reading flavour and event metadata from HDF5 ...")
+    with h5py.File(config.train_file, "r") as f:
+        jets = f["jets"]
+        if isinstance(jets, h5py.Group):
+            has_event_number = JET_EVENT_FIELD in jets
+        else:
+            has_event_number = JET_EVENT_FIELD in (jets.dtype.names or ())
+        if not has_event_number:
+            raise KeyError(
+                f"jets is missing required field: {JET_EVENT_FIELD}")
+        all_flavours = jets["HadronConeExclTruthLabelID"][:]
+        event_numbers = jets[JET_EVENT_FIELD][:]
+    split = split_indices_by_event(config, all_flavours, event_numbers)
 
     # ── load tracks into memory ──────────────────────────────────────────
-    print("  [2/3] Loading training tracks ...")
-    train_data = load_tracks(config.train_file, train_idx,
+    print("  [2/4] Loading training tracks ...")
+    train_data = load_tracks(config.train_file, split.train,
                              config.flavour_to_label, config.track_fields,
                              config.vertex_leg_names, config.vertex_targets,
                              config.top_k, config.cache_dir, config.data_seed)
-    print("  [3/3] Loading test tracks ...")
-    test_data  = load_tracks(config.train_file, test_idx,
+    print("  [3/4] Loading validation tracks ...")
+    validation_data = load_tracks(config.train_file, split.validation,
                              config.flavour_to_label, config.track_fields,
                              config.vertex_leg_names, config.vertex_targets,
                              config.top_k, config.cache_dir, config.data_seed)
-    y_train, y_test = train_data["y"], test_data["y"]
+    print("  [4/4] Loading test tracks ...")
+    test_data = load_tracks(config.train_file, split.test,
+                             config.flavour_to_label, config.track_fields,
+                             config.vertex_leg_names, config.vertex_targets,
+                             config.top_k, config.cache_dir, config.data_seed)
+    y_train = train_data["y"]
+    y_validation = validation_data["y"]
+    y_test = test_data["y"]
 
     print("Train — " + "  ".join(f"{name}:{(y_train==i).sum():,}"
                                   for i, name in enumerate(config.jet_class_names)))
+    print("Validation — " + "  ".join(
+        f"{name}:{(y_validation==i).sum():,}"
+        for i, name in enumerate(config.jet_class_names)))
     print("Test  — " + "  ".join(f"{name}:{(y_test==i).sum():,}"
                                   for i, name in enumerate(config.jet_class_names)))
 
@@ -284,10 +276,45 @@ def create_dataloaders(config, device):
         pin_memory=_pin, num_workers=config.num_workers, persistent_workers=_pw,
         generator=dataloader_generator(config.seed),
         worker_init_fn=seed_dataloader_worker)
-    val_loader = DataLoader(
-        JetDataset(test_data), batch_size=config.batch_size,
+    validation_loader = DataLoader(
+        JetDataset(validation_data), batch_size=config.batch_size,
         pin_memory=_pin, num_workers=config.num_workers, persistent_workers=_pw,
         generator=dataloader_generator(config.seed + 1),
         worker_init_fn=seed_dataloader_worker)
+    test_loader = DataLoader(
+        JetDataset(test_data), batch_size=config.batch_size,
+        pin_memory=_pin, num_workers=config.num_workers, persistent_workers=_pw,
+        generator=dataloader_generator(config.seed + 2),
+        worker_init_fn=seed_dataloader_worker)
 
-    return train_loader, val_loader, train_data, test_data, y_train, y_test
+    summary = dict(split.summary)
+    summary["retained_jets_after_track_filter"] = {
+        "train": int(len(y_train)),
+        "validation": int(len(y_validation)),
+        "test": int(len(y_test)),
+    }
+    summary["dropped_jets_no_valid_tracks"] = {
+        name: summary["selected_jets"][name] - retained
+        for name, retained in summary[
+            "retained_jets_after_track_filter"].items()
+    }
+    summary["retained_class_counts"] = {
+        split_name: {
+            name: int((labels == index).sum())
+            for index, name in enumerate(config.jet_class_names)
+        }
+        for split_name, labels in (
+            ("train", y_train), ("validation", y_validation),
+            ("test", y_test))
+    }
+    return DataSplits(
+        train_loader=train_loader,
+        validation_loader=validation_loader,
+        test_loader=test_loader,
+        train_data=train_data,
+        validation_data=validation_data,
+        test_data=test_data,
+        y_train=y_train,
+        y_validation=y_validation,
+        y_test=y_test,
+        summary=summary)

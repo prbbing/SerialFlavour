@@ -13,8 +13,9 @@
         "0"
     ],
     "train_file": "/data/yuyang/opendata/gn2_tt/mc-flavtag-ttbar-small.h5",
-    "n_train": 120000,
-    "n_test": 40000,
+    "n_train": 1000000,
+    "n_val": 100000,
+    "n_test": 200000,
     "batch_size": 512,
     "train_plot_dir": "/data/yuyang/results/results_staged/",
     "model_name": "staged_origin_vertex_jet.pt",

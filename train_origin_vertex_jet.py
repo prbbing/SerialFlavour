@@ -26,6 +26,7 @@ import numpy as np
 
 from src.config import load_config, _DEFAULTS, seed_everything
 from src.data_fast import create_dataloaders
+from src.data_split import write_split_manifest
 from src.models import build_model
 from src.losses import compute_origin_class_weights
 from src.training import run_training, validate_epoch
@@ -44,7 +45,12 @@ from src.plotting import (
     plot_vertex_metrics_history,
     plot_vertex_loss_components,
 )
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import (
+    balanced_accuracy_score,
+    classification_report,
+    confusion_matrix,
+    f1_score,
+)
 
 parser = argparse.ArgumentParser(
     description="Train staged transformer jet classifier: track-origin "
@@ -61,6 +67,9 @@ parser.add_argument("--weights", "--weights-path", dest="weights_path", default=
 parser.add_argument("--output-dir", default=None,
                     help="Override train_plot_dir in training mode, or the parent "
                          "directory for eval_<pt_name> in eval-only mode.")
+parser.add_argument(
+    "--eval-split", choices=("validation", "test"), default="test",
+    help="Data split used by --eval-only (default: independent test).")
 args = parser.parse_args()
 
 config, cfg_dict = load_config(args.config)
@@ -105,6 +114,13 @@ def _run_evaluation(pred_arrays, cfg, plot_dir, history=None):
     all_probs    = pred_arrays["all_probs"]
 
     print("\nJet classification report:")
+    exact_accuracy = float(np.mean(all_true == all_preds))
+    balanced_accuracy = balanced_accuracy_score(all_true, all_preds)
+    macro_f1 = f1_score(all_true, all_preds, average="macro")
+    print(
+        f"Exact metrics: accuracy={exact_accuracy:.6f}  "
+        f"balanced_accuracy={balanced_accuracy:.6f}  "
+        f"macro_f1={macro_f1:.6f}")
     print(classification_report(all_true, all_preds,
                                 target_names=cfg.jet_class_names))
     print("Jet confusion matrix (rows=true, cols=pred):")
@@ -220,7 +236,15 @@ if args.eval_only:
     print(f"Eval-only — weights: {weights_path}")
 
     print("Loading data...")
-    _, val_loader, _, test_data, _, y_test = create_dataloaders(config, DEVICE)
+    splits = create_dataloaders(config, DEVICE)
+    selected_loader = (
+        splits.validation_loader
+        if args.eval_split == "validation" else splits.test_loader)
+    selected_labels = (
+        splits.y_validation
+        if args.eval_split == "validation" else splits.y_test)
+    write_split_manifest(
+        os.path.join(eval_plot_dir, "split_manifest.json"), splits.summary)
 
     model = build_model(config).to(DEVICE)
     if use_dp:
@@ -240,12 +264,14 @@ if args.eval_only:
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Parameters: {n_params:,}")
-    print(f"Device: {DEVICE}  |  Test: {len(y_test):,}\n")
+    print(
+        f"Device: {DEVICE}  |  Evaluation split: {args.eval_split}  |  "
+        f"Jets: {len(selected_labels):,}\n")
 
     criterion_jet = nn.CrossEntropyLoss()
     criterion_origin = nn.CrossEntropyLoss(ignore_index=-1)
     *_, pred_arrays = validate_epoch(
-        model, val_loader, criterion_jet, criterion_origin,
+        model, selected_loader, criterion_jet, criterion_origin,
         config.n_origin_classes, config.lambda_jet,
         config.lambda_origin, config.lambda_vertex,
         config.lambda_pair, config.fit_lxy, config.fit_dz, DEVICE)
@@ -283,8 +309,16 @@ with open(_cfg_save_path, "w") as f:
 print(f"Config saved to {_cfg_save_path}")
 
 print("Loading data...")
-train_loader, val_loader, train_data, test_data, y_train, y_test = create_dataloaders(
-    config, DEVICE)
+splits = create_dataloaders(config, DEVICE)
+train_loader = splits.train_loader
+val_loader = splits.validation_loader
+test_loader = splits.test_loader
+train_data = splits.train_data
+y_train = splits.y_train
+y_validation = splits.y_validation
+y_test = splits.y_test
+write_split_manifest(
+    os.path.join(config.plot_dir, "split_manifest.json"), splits.summary)
 
 plot_input_variables(train_data["X"], train_data["mask"], train_data["y"],
                      config.track_fields, config.top_k,
@@ -321,15 +355,26 @@ criterion_origin = nn.CrossEntropyLoss(ignore_index=-1, weight=_origin_weights)
 
 n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print(f"Parameters: {n_params:,}")
-print(f"Device: {DEVICE}  |  Train: {len(y_train):,}  |  Test: {len(y_test):,}\n")
+print(
+    f"Device: {DEVICE}  |  Train: {len(y_train):,}  |  "
+    f"Validation: {len(y_validation):,}  |  Test: {len(y_test):,}\n")
 
-history, pred_arrays = run_training(
+history, _validation_pred_arrays = run_training(
     model, train_loader, val_loader, optimiser,
     criterion_jet, criterion_origin,
     config, DEVICE, config.epochs, config.n_origin_classes, len(y_train),
     config.vertex_leg_names, config.calibrate_vertex_fit)
 
-# ── run evaluation (training mode) ────────────────────────────────────
+# ── final independent-test evaluation using validation-selected weights ─
+_best_jet_path = os.path.join(config.plot_dir, "best_jet.pt")
+model.load_state_dict(torch.load(
+    _best_jet_path, map_location=DEVICE, weights_only=True))
+print(f"\nFinal independent test — loaded {_best_jet_path}")
+*_, pred_arrays = validate_epoch(
+    model, test_loader, criterion_jet, criterion_origin,
+    config.n_origin_classes, config.lambda_jet,
+    config.lambda_origin, config.lambda_vertex,
+    config.lambda_pair, config.fit_lxy, config.fit_dz, DEVICE)
 _run_evaluation(pred_arrays, config, config.plot_dir, history=history)
 
 sys.stdout = _orig_stdout

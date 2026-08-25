@@ -152,17 +152,18 @@ _DEFAULTS = {
     "colours": {
         "b-jet": "#1f77b4", "c-jet": "#ff7f0e", "light-jet": "#2ca02c",
     },
-    # Background weights in the b-tagging discriminant: log(p_b / Σ w_i p_i)
-    "disc_bkg_weights": {"c-jet": 0.3, "light-jet": 0.7},
-    # Background weights in the c-tagging discriminant: log(p_c / Σ w_i p_i)
-    "c_disc_bkg_weights": {"b-jet": 0.5, "light-jet": 0.5},
+    # Paper-style b discriminant with f_c=0.2 and f_tau=0.
+    "disc_bkg_weights": {"c-jet": 0.2, "light-jet": 0.8},
+    # Analogous c discriminant with f_b=0.3 and f_tau=0.
+    "c_disc_bkg_weights": {"b-jet": 0.3, "light-jet": 0.7},
 
     # -- training -----------------------------------------------------------
     "seed":            42,            # model, optimiser and DataLoader RNG
     "data_seed":       42,            # train/test sampling and cache identity
     "train_file":      "/data/yuyang/opendata/gn2_tt/mc-flavtag-ttbar-small.h5",
     "n_train":         120_000,       # balanced across classes
-    "n_test":          40_000,        # natural distribution (last N)
+    "n_val":           None,          # None -> n_test; natural event-disjoint holdout
+    "n_test":          40_000,        # independent natural-distribution test
     "epochs":          100,
     "checkpoint_interval": 20,  # save epoch_N.pt every N epochs
     "lr":              1e-3,          # Adam learning rate
@@ -216,6 +217,7 @@ class Config:
         self.data_seed          = cfg_dict["data_seed"]
         self.train_file         = cfg_dict["train_file"]
         self.n_train            = cfg_dict["n_train"]
+        self.n_val              = cfg_dict["n_val"]
         self.n_test             = cfg_dict["n_test"]
         self.batch_size         = cfg_dict["batch_size"]
         self.use_pair_target    = cfg_dict["use_pair_target"]
@@ -330,6 +332,12 @@ class Config:
             "seed must be an integer in [0, 2**32)"
         assert type(self.data_seed) is int and 0 <= self.data_seed < 2 ** 32, \
             "data_seed must be an integer in [0, 2**32)"
+        assert type(self.n_train) is int and self.n_train > 0, \
+            "n_train must be a positive integer"
+        assert type(self.n_val) is int and self.n_val > 0, \
+            "n_val must be a positive integer"
+        assert type(self.n_test) is int and self.n_test > 0, \
+            "n_test must be a positive integer"
 
         # -- derived quantities ---------------------------------------------
         self.n_feats = len(self.track_fields)   # total input dimensionality
@@ -391,5 +399,7 @@ def load_config(config_path=None):
         if unknown:
             raise ValueError(f"Unknown config keys: {unknown}")
         cfg_dict.update(file_cfg)
+    if cfg_dict["n_val"] is None:
+        cfg_dict["n_val"] = cfg_dict["n_test"]
     config = Config(cfg_dict)
     return config, cfg_dict
