@@ -1,0 +1,17 @@
+{
+  "data": {
+    "train_file": "/data/yuyang/opendata/gn2_tt/mc-flavtag-ttbar-medium.h5",
+    "data_seed": 42,
+    "sizes": {
+      "a_train": 500000,
+      "a_val": 100000,
+      "b_train": 500000,
+      "b_val": 100000,
+      "y_test": 200000
+    },
+    "split_dir": "/data/yuyang/SerialFlavour/parallel_refine/cache/splits/a500k_b500k",
+    "processed_cache_dir": "/data/yuyang/SerialFlavour/parallel_refine/cache/processed",
+    "top_k": 40,
+    "num_workers": 2
+  }
+}

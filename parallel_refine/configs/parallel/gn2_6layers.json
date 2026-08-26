@@ -1,0 +1,49 @@
+{
+  "parallel": {
+    "checkpoint": "best_jet.pt",
+    "seeds": [
+      {
+        "seed": 1,
+        "output_name": "parallel_seed1"
+      },
+      {
+        "seed": 2,
+        "output_name": "parallel_seed2"
+      },
+      {
+        "seed": 3,
+        "output_name": "parallel_seed3"
+      },
+      {
+        "seed": 4,
+        "output_name": "parallel_seed4"
+      },
+      {
+        "seed": 5,
+        "output_name": "parallel_seed5"
+      }
+    ],
+    "model": {
+      "d_model": 32,
+      "n_heads": 2,
+      "n_layers": 6,
+      "d_ffn": 64,
+      "dropout": 0.1
+    },
+    "training": {
+      "gpu_ids": [
+        -1
+      ],
+      "batch_size": 512,
+      "epochs": 100,
+      "checkpoint_interval": 20,
+      "lr": 0.001,
+      "weight_decay": 0.0001
+    },
+    "loss_weights": {
+      "jet": 1.0,
+      "origin": 1.0,
+      "pair": 1.0
+    }
+  }
+}
