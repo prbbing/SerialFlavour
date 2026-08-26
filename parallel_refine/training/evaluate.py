@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Evaluate locked direct Parallel, DNN, and BDT predictions on cached Y."""
+"""Evaluate locked direct Parallel and DNN predictions on cached Y.
+
+BDT evaluation remains available for reproducing earlier studies, but is not
+part of the default workflow.
+"""
 
 from __future__ import annotations
 
@@ -72,7 +76,9 @@ def main(argv=None):
     parser.add_argument("--seed", type=int, action="append")
     parser.add_argument("--recipe", action="append")
     parser.add_argument(
-        "--model", choices=("direct", "dnn", "bdt", "all"), default="all")
+        "--model",
+        choices=("direct", "dnn", "direct_dnn", "bdt", "all"),
+        default="direct_dnn")
     args = parser.parse_args(argv)
     study = load_study_config(args.config)
     recipes = args.recipe or study.refiners["recipes"]
@@ -86,7 +92,7 @@ def main(argv=None):
         source_index = np.asarray(cache.source_index)
         event_number = np.asarray(cache.event_number)
 
-        if args.model in {"direct", "all"}:
+        if args.model in {"direct", "direct_dnn", "all"}:
             from parallel_refine.src.auxiliary_evaluation import (
                 evaluate_parallel_auxiliary)
 
@@ -109,7 +115,7 @@ def main(argv=None):
 
         for recipe in recipes:
             columns = cache.recipe_columns(recipe)
-            if args.model in {"dnn", "all"}:
+            if args.model in {"dnn", "direct_dnn", "all"}:
                 model_directory = study.refiner_directory(run, recipe, "dnn")
                 checkpoint = model_directory / "best_dnn.pt"
                 if not checkpoint.is_file():

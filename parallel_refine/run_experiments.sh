@@ -22,7 +22,7 @@ GPU_IDS=(0 1 1 2 2)
 # Example: RECIPES=(F2_jet_aux F3_embed_aux F4_all).
 RECIPES=()
 
-# Maximum number of simultaneous (seed, recipe, DNN/BDT) Stage-4 jobs.
+# Maximum number of simultaneous downstream Stage-4 jobs.
 MAX_JOBS=12
 
 RUN_PREPARE_DATA=true
@@ -34,14 +34,15 @@ PROCESSED_SPLITS=(a_train a_val b_train b_val y_test)
 RUN_PARALLEL_TRAINING=true
 RUN_B_CACHE=true
 RUN_DNN=true
-RUN_XGBOOST=true
+# Retained only for reproducing earlier BDT studies; disabled by default.
+RUN_XGBOOST=false
 
 # The default is the complete locked workflow, including Y cache generation and
 # final evaluation. For pilot/tuning runs, set both Y switches to false before
 # launching; turn them on only after every A/B choice is frozen.
 RUN_Y_CACHE=true
 RUN_Y_EVALUATION=true
-EVALUATION_MODEL=all  # direct, dnn, bdt, or all
+EVALUATION_MODEL=direct_dnn  # direct, dnn, direct_dnn, bdt, or all
 
 LOG_ROOT="parallel_refine/logs"
 RUN_TAG="$(date +%Y%m%d_%H%M%S)"
@@ -159,9 +160,9 @@ if [[ "${BUILD_PROCESSED_CACHES}" == true ]]; then
 fi
 
 case "${EVALUATION_MODEL}" in
-    direct|dnn|bdt|all) ;;
+    direct|dnn|direct_dnn|bdt|all) ;;
     *)
-        echo "ERROR: EVALUATION_MODEL must be direct, dnn, bdt, or all." >&2
+        echo "ERROR: EVALUATION_MODEL must be direct, dnn, direct_dnn, bdt, or all." >&2
         exit 1
         ;;
 esac
@@ -251,12 +252,12 @@ if [[ "${RUN_B_CACHE}" == true ]]; then
 fi
 
 # =============================================================================
-# Stage 4: one independent job per (seed, recipe, model type). DNN and XGBoost
-# therefore train concurrently, with at most MAX_JOBS processes per batch.
+# Stage 4: one independent job per (seed, recipe, model type), with at most
+# MAX_JOBS processes per batch. The default workflow trains DNN only.
 # =============================================================================
 
 if [[ "${RUN_DNN}" == true || "${RUN_XGBOOST}" == true ]]; then
-    section "STAGE 4: TRAIN DNN/XGBOOST IN PARALLEL (MAX_JOBS=${MAX_JOBS})"
+    section "STAGE 4: TRAIN ENABLED DOWNSTREAM REFINERS (MAX_JOBS=${MAX_JOBS})"
     pids=()
     labels=()
     logs=()
@@ -334,8 +335,8 @@ if [[ "${RUN_Y_CACHE}" == true ]]; then
 fi
 
 # =============================================================================
-# Stage 6: final locked-Y evaluation. EVALUATION_MODEL=all evaluates direct
-# Parallel (including origin/pair diagnostics and plots), DNN, and XGBoost.
+# Stage 6: final locked-Y evaluation. The default direct_dnn mode evaluates
+# direct Parallel (including origin/pair diagnostics and plots) and every DNN.
 # =============================================================================
 
 if [[ "${RUN_Y_EVALUATION}" == true ]]; then

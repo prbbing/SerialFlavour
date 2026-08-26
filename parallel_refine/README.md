@@ -522,12 +522,12 @@ DNN 为带 B-train-only standardization 的 `128-64-32-output` MLP，按 B-val c
 ```bash
 python -m parallel_refine.training.evaluate \
   --config parallel_refine/configs/experiments/default.json \
-  --model all
+  --model direct_dnn
 ```
 
-可以用 `--seed`、`--recipe` 和 `--model direct|dnn|bdt|all` 缩小范围。评估会保存 `metrics.json`、`test_predictions.npz` 和 `evaluation_manifest.json`，并对同一 Y source index 同时保留 direct Parallel、DNN 和 BDT 结果。零 background pass 的 rejection 写成 `null` 加显式标志，不作为精确无穷值排序。
+`direct_dnn` 是默认模式，同时评估 direct Parallel 和所有选中的 DNN recipe。可以用 `--seed`、`--recipe` 和 `--model direct|dnn|direct_dnn` 缩小范围。`bdt|all` 只保留用于复现早期 BDT 研究，不属于默认流程。评估会保存 `metrics.json`、`test_predictions.npz` 和 `evaluation_manifest.json`。零 background pass 的 rejection 写成 `null` 加显式标志，不作为精确无穷值排序。
 
-当 `--model direct|all` 时，还会对原始 Parallel checkpoint 在同一 Y split 上做一次 live inference，评估两个辅助头。这样做是因为冻结的 jet-level feature cache 只保存 truth-free 汇总，不能从中精确恢复逐 track origin confusion matrix 或完整 pair score 分布。运行前会核对 live loader 与冻结缓存的 `source_index` 完全一致。
+当 `--model direct|direct_dnn|all` 时，还会对原始 Parallel checkpoint 在同一 Y split 上做一次 live inference，评估两个辅助头。这样做是因为冻结的 jet-level feature cache 只保存 truth-free 汇总，不能从中精确恢复逐 track origin confusion matrix 或完整 pair score 分布。运行前会核对 live loader 与冻结缓存的 `source_index` 完全一致。
 
 - track origin：只统计 `origin >= 0` 的真实 track，写出 accuracy、cross-entropy、Macro-F1、逐类 precision/recall/F1、原始计数矩阵和按 truth 行归一化的 confusion matrix；
 - track pair：沿用 `src.losses.pair_vertex_loss` 与 `src.plotting.plot_pair_vertexing` 的分母，统计所有有效有序 pair，包含对角 self-pair；`match` 为 `truth_pair=1`，`other` 为 `truth_pair=0`；
@@ -554,7 +554,12 @@ bash parallel_refine/run_experiments.sh
 bash parallel_refine/run_experiments_plain.sh
 ```
 
-[`run_experiments_plain.sh`](run_experiments_plain.sh) 固定使用默认 experiment config、seed 1–5 和 GPU 映射 `0/1/1/2/2`。DNN/BDT 按 recipe 分为四批，每批 10 个后台任务，因此不超过 `max_job=12`；日志固定写入 `parallel_refine/logs/plain/`，下一次运行会覆盖同名日志。
+[`run_experiments_plain.sh`](run_experiments_plain.sh) 固定使用默认 experiment config、seed 1–5 和 GPU 映射 `0/1/1/2/2`。DNN 按 recipe 分为四批，每批 5 个后台任务，因此不超过 `max_job=12`；日志固定写入 `parallel_refine/logs/plain/`，下一次运行会覆盖同名日志。根据首轮结果，plain 默认流程不再训练或评估 BDT。
+
+两个 scaling 对照使用各自完全展开的 plain 脚本，并写入相互隔离的日志目录：
+
+- [`run_experiments_plain_a1m_6layers.sh`](run_experiments_plain_a1m_6layers.sh)：固定使用 `a1m_6layers.json`，日志写入 `parallel_refine/logs/plain_a1m_6layers/`；
+- [`run_experiments_plain_a500k_4layers.sh`](run_experiments_plain_a500k_4layers.sh)：固定使用 `a500k_4layers.json`，日志写入 `parallel_refine/logs/plain_a500k_4layers/`。
 
 脚本开头集中配置 config 路径、`SEEDS`/`GPU_IDS`、recipe 子集、`MAX_JOBS`、各阶段开关、日志目录和 Y 锁定开关。所有 GPU 阶段都通过 `CUDA_VISIBLE_DEVICES` 选择脚本指定的物理 GPU；experiment config 中的设备保持 `[-1]`。
 
@@ -563,8 +568,8 @@ bash parallel_refine/run_experiments_plain.sh
 1. 生成/验证 event-disjoint A/B/Y split，并串行构建公共 A/B/Y processed cache，避免五个 seed 竞争生成同一文件；此时不运行模型、不计算 Y 指标；
 2. 并行训练五个 Parallel seed；
 3. 为每个 Parallel checkpoint 生成 B-train/B-val frozen feature cache；
-4. 将每个 `(seed, recipe, model_type)` 作为独立任务并行训练 DNN 和 XGBoost；默认 5 seeds × 4 recipes × 2 model types 共 40 个任务，以 `MAX_JOBS=12` 分批限制同时运行的进程数，每个任务使用独立日志；
+4. 将每个 `(seed, recipe)` 作为独立任务并行训练 DNN；默认 5 seeds × 4 recipes 共 20 个任务，以 `MAX_JOBS=12` 分批限制同时运行的进程数，每个任务使用独立日志；XGBoost 开关保留用于复现旧实验，但默认关闭；
 5. 进入锁定阶段后，为各 Parallel checkpoint 并行生成 Y frozen feature cache，这是第一次在 Y 上运行训练后的模型；
-6. 运行 `evaluate --model all`，统一评估 direct Parallel、DNN、XGBoost，并为 direct Parallel 生成 track-origin confusion matrix 和 track-pair match/other 图片。
+6. 运行 `evaluate --model direct_dnn`，统一评估 direct Parallel 和 DNN，并为 direct Parallel 生成 track-origin confusion matrix 和 track-pair match/other 图片。
 
 Stage 1 的 `PROCESSED_SPLITS` 默认包含全部 A/B/Y split；Y 在这里仅做与模型无关的确定性预处理。`RUN_Y_CACHE` 与 `RUN_Y_EVALUATION` 分开控制，因此可以复用已有 checkpoint-bound Y cache，仅重跑评估。默认两个 Y 开关均为 `true`，代表这是最终锁定后的完整运行脚本；在 pilot 或任何仍会根据 B 调整方案的阶段，应先把二者都改成 `false`，避免提前在 Y 上运行模型或查看最终指标。
