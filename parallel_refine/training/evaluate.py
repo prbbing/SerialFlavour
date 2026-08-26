@@ -19,6 +19,7 @@ from parallel_refine.src.cache import load_frozen_cache
 from parallel_refine.src.config import load_study_config, write_json_atomic
 from parallel_refine.src.downstream import create_tabular_loader, load_dnn
 from parallel_refine.src.metrics import write_prediction_result
+from parallel_refine.src.xgboost_utils import booster_probabilities
 
 
 def _device(config):
@@ -138,22 +139,23 @@ def main(argv=None):
                 if not checkpoint.is_file():
                     raise FileNotFoundError(f"missing locked BDT: {checkpoint}")
                 try:
-                    from xgboost import XGBClassifier
+                    import xgboost
                 except ModuleNotFoundError as error:
                     raise RuntimeError(
                         "BDT evaluation requires xgboost>=2.0; install it in the "
                         "active SerialFlavour environment") from error
                 description = json.loads(
                     (model_directory / "model.json").read_text(encoding="utf-8"))
-                if description.get("model_type") != "xgboost_xgbclassifier":
+                if description.get("model_type") not in {
+                        "xgboost_booster", "xgboost_xgbclassifier"}:
                     raise ValueError("locked BDT is not an XGBoost model")
                 if description["recipe"] != recipe or not np.array_equal(
                         columns, np.asarray(description["columns"], dtype=np.int64)):
                     raise ValueError("BDT model/cache feature schema mismatch")
-                bdt = XGBClassifier()
-                bdt.load_model(str(checkpoint))
-                probabilities = bdt.predict_proba(
-                    np.asarray(cache.features[:, columns], dtype=np.float32),
+                booster = xgboost.Booster()
+                booster.load_model(str(checkpoint))
+                probabilities = booster_probabilities(
+                    booster, cache.features[:, columns],
                     iteration_range=(0, description["best_iteration"] + 1))
                 directory = model_directory / "evaluation" / "y_test" / "bdt"
                 result = write_prediction_result(

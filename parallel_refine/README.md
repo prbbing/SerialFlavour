@@ -515,7 +515,7 @@ python -m parallel_refine.training.train_bdt \
 
 DNN 为带 B-train-only standardization 的 `128-64-32-output` MLP，按 B-val cross-entropy 保存 `best_dnn.pt`。BDT 使用 XGBoost `XGBClassifier`，固定 `multi:softprob`、`mlogloss` 和 histogram tree method，并用 B-val early stopping 选择最佳 boosting iteration。Y 不参与训练或选择。
 
-公共缓存和指标代码不依赖 XGBoost；只有运行 BDT 训练或评估 XGBoost checkpoint 时才要求当前 SerialFlavour 环境安装 `xgboost>=2.0`。模型保存为原生 `best_bdt.json`，评估时显式使用 manifest 记录的最佳 boosting iteration。默认配置使用 GPU `device="cuda"`；CPU 运行时将其改为 `"cpu"`。
+公共缓存和指标代码不依赖 XGBoost；只有运行 BDT 训练或评估 XGBoost checkpoint 时才要求当前 SerialFlavour 环境安装 `xgboost>=2.0`。训练仍使用 `XGBClassifier` 的 sklearn 接口与 early stopping，但保存和评估使用其底层原生 `Booster` 的 `best_bdt.json`；这避开部分 XGBoost/sklearn 组合在 wrapper `save_model` 上缺少 `_estimator_type` 的兼容性错误。评估通过 `Booster.predict(DMatrix)` 执行，避免 CPU cache 与 CUDA booster 的 inplace-predict 设备回退警告。评估时显式使用 manifest 记录的最佳 boosting iteration。默认配置使用 GPU `device="cuda"`；CPU 运行时将其改为 `"cpu"`。
 
 ### 15.6 锁定后在 Y 上评估
 

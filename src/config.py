@@ -167,7 +167,7 @@ _DEFAULTS = {
     "epochs":          100,
     "checkpoint_interval": 20,  # save epoch_N.pt every N epochs
     "lr":              1e-3,          # Adam learning rate
-    "num_workers":     0,             # DataLoader workers
+    "num_workers":     2,             # DataLoader workers
     "model_name":      "model.pt",
     "train_plot_dir":  "./results/",
     "train_cache_dir": ".track_cache/",

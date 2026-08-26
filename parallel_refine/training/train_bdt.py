@@ -17,6 +17,7 @@ import numpy as np
 from parallel_refine.src.cache import load_frozen_cache
 from parallel_refine.src.config import load_study_config, write_json_atomic
 from parallel_refine.src.metrics import probability_metrics
+from parallel_refine.src.xgboost_utils import booster_probabilities
 
 
 def _train_one(study, run, recipe, *, skip_complete):
@@ -36,7 +37,9 @@ def _train_one(study, run, recipe, *, skip_complete):
         return
     if output.exists() and any(output.iterdir()):
         raise FileExistsError(f"refusing to overwrite BDT output: {output}")
-    output.mkdir(parents=True)
+    # A failed first save leaves an empty directory.  It is safe to reuse that
+    # exact directory; non-empty partial outputs remain protected above.
+    output.mkdir(parents=True, exist_ok=True)
 
     train_cache = load_frozen_cache(study, run, "b_train")
     val_cache = load_frozen_cache(study, run, "b_val")
@@ -74,9 +77,10 @@ def _train_one(study, run, recipe, *, skip_complete):
         x_train, y_train, eval_set=[(x_val, y_val)], verbose=False)
     elapsed = time.perf_counter() - started
     best_iteration = int(model.best_iteration)
-    probabilities = model.predict_proba(
-        x_val, iteration_range=(0, best_iteration + 1))
-    model.save_model(str(checkpoint))
+    booster = model.get_booster()
+    probabilities = booster_probabilities(
+        booster, x_val, iteration_range=(0, best_iteration + 1))
+    booster.save_model(str(checkpoint))
     np.savez(
         output / "validation_predictions.npz", y=y_val,
         probabilities=probabilities,
@@ -88,7 +92,8 @@ def _train_one(study, run, recipe, *, skip_complete):
         "metrics": probability_metrics(y_val, probabilities),
     })
     description = {
-        "model_type": "xgboost_xgbclassifier",
+        "model_type": "xgboost_booster",
+        "training_estimator": "xgboost.XGBClassifier",
         "xgboost_version": xgboost.__version__,
         "experiment_config": str(study.path),
         "experiment_config_sha256": study.source_sha256,
