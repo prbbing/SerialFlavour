@@ -183,9 +183,12 @@ def build_split_indices(
         remaining, event_counts, config.y_test, "y_test")
     reserved["b_val"], remaining = _reserve_natural(
         remaining, event_counts, config.b_val, "b_val")
-    reserved["b_train"], remaining = _reserve_balanced(
-        remaining, event_class_counts,
-        _candidate_targets(config, config.b_train), "b_train")
+    if config.b_train:
+        reserved["b_train"], remaining = _reserve_balanced(
+            remaining, event_class_counts,
+            _candidate_targets(config, config.b_train), "b_train")
+    else:
+        reserved["b_train"] = np.empty(0, dtype=remaining.dtype)
     reserved["a_val"], remaining = _reserve_natural(
         remaining, event_counts, config.a_val, "a_val")
     reserved["a_train"], remaining = _reserve_balanced(
@@ -194,16 +197,20 @@ def build_split_indices(
 
     arrays: dict[str, np.ndarray] = {}
     for name in SPLIT_NAMES:
+        requested = int(getattr(config, name))
+        if requested == 0:
+            arrays[name] = np.empty(0, dtype=np.int64)
+            continue
         candidate_mask = np.isin(inverse, reserved[name])
         candidates = valid[candidate_mask]
         if name.endswith("train"):
             candidate_labels = labels[candidate_mask]
             selected = _sample_kinematic_matched(
                 config, candidates, candidate_labels, jet_pt, jet_eta,
-                int(getattr(config, name)), rng)
+                requested, rng)
         else:
             selected = rng.choice(
-                candidates, size=int(getattr(config, name)), replace=False)
+                candidates, size=requested, replace=False)
         arrays[name] = np.sort(selected.astype(np.int64, copy=False))
 
     event_sets = {

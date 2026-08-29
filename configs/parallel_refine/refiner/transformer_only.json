@@ -1,0 +1,41 @@
+{
+  "feature_cache": {
+    "root": "/data/yuyang/SerialFlavour/parallel_refine/cache/frozen_structured_pool_v4",
+    "dtype": "float32",
+    "batch_size": 1024,
+    "splits": [
+      "y_test"
+    ]
+  },
+  "refiners": {
+    "seed_pairing": "same",
+    "recipes": [
+      "F0_aux",
+      "F1_embed",
+      "F2_jet_aux",
+      "F3_embed_aux",
+      "F4_all"
+    ],
+    "dnn": {
+      "gpu_ids": [
+        -1
+      ],
+      "hidden_dims": [
+        128,
+        64,
+        32
+      ],
+      "dropout": 0.1,
+      "batch_size": 1024,
+      "num_workers": 2,
+      "epochs": 50,
+      "learning_rate": 0.001,
+      "weight_decay": 0.0001,
+      "early_stopping_patience": 10,
+      "tensorboard": {
+        "enabled": true,
+        "subdir": "tensorboard"
+      }
+    }
+  }
+}

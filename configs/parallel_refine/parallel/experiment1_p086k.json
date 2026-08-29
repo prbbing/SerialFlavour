@@ -1,0 +1,74 @@
+{
+  "parallel": {
+    "checkpoint": "best_jet.pt",
+    "seeds": [
+      {
+        "seed": 1,
+        "output_name": "parallel_seed1"
+      },
+      {
+        "seed": 2,
+        "output_name": "parallel_seed2"
+      },
+      {
+        "seed": 3,
+        "output_name": "parallel_seed3"
+      },
+      {
+        "seed": 4,
+        "output_name": "parallel_seed4"
+      },
+      {
+        "seed": 5,
+        "output_name": "parallel_seed5"
+      }
+    ],
+    "model": {
+      "d_model": 40,
+      "n_heads": 4,
+      "n_layers": 6,
+      "d_ffn": 80,
+      "dropout": 0.1,
+      "track_projection_dim": null,
+      "task_head_hidden_dims": [
+        16
+      ]
+    },
+    "training": {
+      "gpu_ids": [
+        -1
+      ],
+      "batch_size": 512,
+      "epochs": 100,
+      "checkpoint_interval": 20,
+      "lr": 0.001,
+      "weight_decay": 0.0001,
+      "tensorboard": {
+        "enabled": true,
+        "subdir": "tensorboard"
+      }
+    },
+    "loss_weights": {
+      "jet": 1,
+      "origin": 0.5,
+      "pair": 1.5
+    },
+    "class_weights": {
+      "jet_class_weights": [
+        2,
+        2,
+        1
+      ],
+      "origin_class_weights": [
+        3.08,
+        566.04,
+        1,
+        10.16,
+        6.56,
+        7.53,
+        83.66,
+        19.91
+      ]
+    }
+  }
+}

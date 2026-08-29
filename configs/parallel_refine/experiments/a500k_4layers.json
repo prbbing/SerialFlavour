@@ -1,6 +1,6 @@
 {
   "components": {
-    "data": "../data/data_a500k_b500k.json",
+    "data": "../data/data_a500k_b200k_y500k.json",
     "parallel": "../parallel/gn2_4layers.json",
     "refiner": "../refiner/dnn_default.json"
   },

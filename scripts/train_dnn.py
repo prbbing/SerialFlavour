@@ -224,6 +224,10 @@ def main(argv=None):
     parser.add_argument("--skip-complete", action="store_true")
     args = parser.parse_args(argv)
     study = load_study_config(args.config)
+    if study.data["sizes"]["b_train"] == 0:
+        raise ValueError(
+            "cannot train a DNN for a Transformer-only configuration with "
+            "b_train=0")
     print(f"experiment_manifest={write_experiment_manifest(study)}")
     recipes = args.recipe or study.refiners["recipes"]
     unknown = set(recipes) - set(study.refiners["recipes"])

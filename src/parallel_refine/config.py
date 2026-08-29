@@ -187,6 +187,11 @@ def _require_positive_int(mapping: dict[str, Any], key: str) -> None:
         raise ValueError(f"{key} must be a positive integer")
 
 
+def _require_nonnegative_int(mapping: dict[str, Any], key: str) -> None:
+    if not isinstance(mapping.get(key), int) or mapping[key] < 0:
+        raise ValueError(f"{key} must be a non-negative integer")
+
+
 def _require_increasing_numeric_list(mapping: dict[str, Any], key: str) -> None:
     values = mapping.get(key)
     if (
@@ -253,7 +258,10 @@ def load_study_config(path: str | Path) -> StudyConfig:
 
     sizes = values["data"].get("sizes", {})
     for split in REQUIRED_SPLITS:
+        if split == "b_train":
+            continue
         _require_positive_int(sizes, split)
+    _require_nonnegative_int(sizes, "b_train")
     _require_positive_int(values["data"], "data_seed")
     for key in ("train_file", "split_dir", "processed_cache_dir"):
         if not isinstance(values["data"].get(key), str) or not values["data"][key]:
@@ -424,10 +432,13 @@ def load_study_config(path: str | Path) -> StudyConfig:
         "splits", ("b_train", "b_val", "y_test")))
     if not cache_splits or set(cache_splits) - set(REQUIRED_SPLITS):
         raise ValueError("feature_cache.splits contains an unknown split")
-    required_downstream = {"b_train", "b_val", "y_test"}
+    required_downstream = (
+        {"b_train", "b_val", "y_test"}
+        if values["data"]["sizes"]["b_train"] > 0
+        else {"y_test"})
     if not required_downstream.issubset(cache_splits):
         raise ValueError(
-            "feature_cache.splits must include b_train, b_val, and y_test")
+            "feature_cache.splits does not include the splits required by this route")
     if not isinstance(values["feature_cache"].get("root"), str) or not values[
             "feature_cache"]["root"]:
         raise ValueError("feature_cache.root must be a non-empty path")
