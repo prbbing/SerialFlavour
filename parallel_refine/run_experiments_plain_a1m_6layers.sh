@@ -42,7 +42,6 @@ CUDA_VISIBLE_DEVICES=1 python -m parallel_refine.training.train_dnn --config par
 CUDA_VISIBLE_DEVICES=1 python -m parallel_refine.training.train_dnn --config parallel_refine/configs/experiments/a1m_6layers.json --seed 3 --recipe F1_embed --skip-complete >parallel_refine/logs/plain_a1m_6layers/dnn_seed3_F1_embed_gpu1.log 2>&1 &
 CUDA_VISIBLE_DEVICES=2 python -m parallel_refine.training.train_dnn --config parallel_refine/configs/experiments/a1m_6layers.json --seed 4 --recipe F1_embed --skip-complete >parallel_refine/logs/plain_a1m_6layers/dnn_seed4_F1_embed_gpu2.log 2>&1 &
 CUDA_VISIBLE_DEVICES=2 python -m parallel_refine.training.train_dnn --config parallel_refine/configs/experiments/a1m_6layers.json --seed 5 --recipe F1_embed --skip-complete >parallel_refine/logs/plain_a1m_6layers/dnn_seed5_F1_embed_gpu2.log 2>&1 &
-wait
 
 echo "STAGE 4B: train F2_jet_aux DNN"
 CUDA_VISIBLE_DEVICES=0 python -m parallel_refine.training.train_dnn --config parallel_refine/configs/experiments/a1m_6layers.json --seed 1 --recipe F2_jet_aux --skip-complete >parallel_refine/logs/plain_a1m_6layers/dnn_seed1_F2_jet_aux_gpu0.log 2>&1 &
@@ -58,7 +57,6 @@ CUDA_VISIBLE_DEVICES=1 python -m parallel_refine.training.train_dnn --config par
 CUDA_VISIBLE_DEVICES=1 python -m parallel_refine.training.train_dnn --config parallel_refine/configs/experiments/a1m_6layers.json --seed 3 --recipe F3_embed_aux --skip-complete >parallel_refine/logs/plain_a1m_6layers/dnn_seed3_F3_embed_aux_gpu1.log 2>&1 &
 CUDA_VISIBLE_DEVICES=2 python -m parallel_refine.training.train_dnn --config parallel_refine/configs/experiments/a1m_6layers.json --seed 4 --recipe F3_embed_aux --skip-complete >parallel_refine/logs/plain_a1m_6layers/dnn_seed4_F3_embed_aux_gpu2.log 2>&1 &
 CUDA_VISIBLE_DEVICES=2 python -m parallel_refine.training.train_dnn --config parallel_refine/configs/experiments/a1m_6layers.json --seed 5 --recipe F3_embed_aux --skip-complete >parallel_refine/logs/plain_a1m_6layers/dnn_seed5_F3_embed_aux_gpu2.log 2>&1 &
-wait
 
 echo "STAGE 4D: train F4_all DNN"
 CUDA_VISIBLE_DEVICES=0 python -m parallel_refine.training.train_dnn --config parallel_refine/configs/experiments/a1m_6layers.json --seed 1 --recipe F4_all --skip-complete >parallel_refine/logs/plain_a1m_6layers/dnn_seed1_F4_all_gpu0.log 2>&1 &

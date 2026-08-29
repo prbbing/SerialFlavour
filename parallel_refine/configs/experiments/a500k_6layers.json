@@ -1,0 +1,12 @@
+{
+  "components": {
+    "data": "../data/data_a500k_b500k.json",
+    "parallel": "../parallel/gn2_6layers.json",
+    "refiner": "../refiner/dnn_xgboost_default.json"
+  },
+  "config_kind": "experiment",
+  "experiment": {
+    "name": "parallel_refine_a500k_6layers",
+    "output_root": "/data/yuyang/SerialFlavour/results/parallel_refine"
+  }
+}
