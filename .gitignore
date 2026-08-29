@@ -1,0 +1,110 @@
+# ===========================
+# 1. Python 编译缓存与字节码
+# ===========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+
+# ===========================
+# 2. 打包与分发文件
+# ===========================
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-wheel-metadata/
+
+# ===========================
+# 3. 单元测试与覆盖率报告
+# ===========================
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+cover/
+.codex/
+.agent/
+
+# ===========================
+# 4. 虚拟环境（本地开发环境）
+# ===========================
+venv/
+env/
+ENV/
+.venv
+.venv/
+env.bak/
+venv.bak/
+pythonenv*
+
+# ===========================
+# 5. 日志、数据库与临时文件
+# ===========================
+*.log
+*.sqlite
+*.sqlite3
+*.db
+*.pid
+*.seed
+*.pid.lock
+.python-version
+
+# ===========================
+# 6. Jupyter Notebook 相关
+# ===========================
+.ipynb_checkpoints/
+*.ipynb_checkpoints*
+*.ipynb
+# 如果你想把特定的notebook保留下来，可以用 ! 取反，例如：
+# !important_analysis.ipynb
+
+# ===========================
+# 7. 环境变量与密钥（重要！切勿提交）
+# ===========================
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.crt
+secrets.yaml
+config.ini
+
+# ===========================
+# 8. IDE 和编辑器配置（团队风格统一建议忽略）
+# ===========================
+# Visual Studio Code
+.vscode/
+*.code-workspace
+.history/
+
+# ===========================
+# 9. 项目特定临时目录（按需修改）
+# ===========================
+local/
+.track_cache/
+tests/
+tmp/
