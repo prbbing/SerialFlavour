@@ -22,6 +22,7 @@ from src.parallel_refine.config import (
     write_json_atomic)
 from src.parallel_refine.data import create_loader
 from src.parallel_refine.models import build_parallel
+from src.parallel_refine.plotting import plot_training_history
 from src.parallel_refine.splits import load_split_bundle
 from src.parallel_refine.training import (
     aggregate_losses, choose_device, evaluate_loss, move_batch,
@@ -149,6 +150,7 @@ def main(argv=None):
                 f"seed={run.seed} epoch={epoch} "
                 f"train={train['total']:.6f} "
                 f"val_jet={validation['jet']:.6f}")
+        plot_training_history(history, output)
     return 0
 
 

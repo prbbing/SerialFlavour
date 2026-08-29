@@ -23,6 +23,7 @@ from src.parallel_refine.cache import load_frozen_cache
 from src.parallel_refine.config import load_study_config, write_json_atomic
 from src.parallel_refine.downstream import create_tabular_loader, load_dnn
 from src.parallel_refine.metrics import write_prediction_result
+from src.parallel_refine.plotting import plot_jet_evaluation
 from src.parallel_refine.xgboost_utils import booster_probabilities
 
 
@@ -108,6 +109,7 @@ def main(argv=None):
                 source_index=source_index, event_number=event_number,
                 metadata={"parallel_seed": run.seed},
                 auxiliary_metrics=auxiliary)
+            plot_jet_evaluation(y, _direct_probabilities(cache), directory)
             _write_manifest(
                 directory.parent / "evaluation_manifest.json",
                 study=study, run=run, recipe=None, model="direct_parallel",
@@ -134,6 +136,7 @@ def main(argv=None):
                     event_number=event_number,
                     metadata={"parallel_seed": run.seed, "dnn_seed": run.seed,
                               "recipe": recipe})
+                plot_jet_evaluation(y, probabilities, directory)
                 _write_manifest(
                     directory.parent / "evaluation_manifest.json",
                     study=study, run=run, recipe=recipe, model="dnn",
@@ -170,6 +173,7 @@ def main(argv=None):
                     event_number=event_number,
                     metadata={"parallel_seed": run.seed, "bdt_seed": run.seed,
                               "recipe": recipe})
+                plot_jet_evaluation(y, probabilities, directory)
                 _write_manifest(
                     directory.parent / "evaluation_manifest.json",
                     study=study, run=run, recipe=recipe, model="bdt",

@@ -173,8 +173,7 @@ class AuxiliaryAccumulator:
         pair = {
             "pair_definition": (
                 "valid ordered track pairs including diagonal self-pairs, "
-                "matching src.losses.pair_vertex_loss and "
-                "src.plotting.plot_pair_vertexing; match=truth_pair 1, "
+                "matching src.losses.pair_vertex_loss; match=truth_pair 1, "
                 "other=truth_pair 0"),
             "n_pairs": pair_total,
             "includes_diagonal": True,

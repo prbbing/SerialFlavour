@@ -19,7 +19,7 @@
 
 ## 2. 当前模型中“embedding”和“task readout”的准确含义
 
-当前 [`parallel_origin_vertex_jet.py`](../src/models/parallel_origin_vertex_jet.py) 并不存在三个完全独立的 task embedding。模型首先产生共享的逐 track 表示
+当前 [`parallel_model.py`](../src/parallel_model.py) 并不存在三个完全独立的 task embedding。模型首先产生共享的逐 track 表示
 
 \[
 H\in\mathbb{R}^{K\times D},
@@ -530,7 +530,7 @@ python scripts/evaluate.py \
 当 `--model direct|direct_dnn|all` 时，还会对原始 Parallel checkpoint 在同一 Y split 上做一次 live inference，评估两个辅助头。这样做是因为冻结的 jet-level feature cache 只保存 truth-free 汇总，不能从中精确恢复逐 track origin confusion matrix 或完整 pair score 分布。运行前会核对 live loader 与冻结缓存的 `source_index` 完全一致。
 
 - track origin：只统计 `origin >= 0` 的真实 track，写出 accuracy、cross-entropy、Macro-F1、逐类 precision/recall/F1、原始计数矩阵和按 truth 行归一化的 confusion matrix；
-- track pair：沿用 `src.losses.pair_vertex_loss` 与 `src.plotting.plot_pair_vertexing` 的分母，统计所有有效有序 pair，包含对角 self-pair；`match` 为 `truth_pair=1`，`other` 为 `truth_pair=0`；
+- track pair：沿用 `src.losses.pair_vertex_loss` 的分母，统计所有有效有序 pair，包含对角 self-pair；`match` 为 `truth_pair=1`，`other` 为 `truth_pair=0`；
 - pair score 不整表落盘，而是以 100 个固定 bins 流式累计总体和各 jet flavour 的直方图，避免额外保存巨大的 `(N,K,K)` score 数组。pair AUC 和分位数因此明确标为 histogram approximation，BCE、均值、方差和计数仍按逐 pair 精确累计。
 
 辅助评估文件位于 direct Parallel 的 `parallel/auxiliary_tasks/`：

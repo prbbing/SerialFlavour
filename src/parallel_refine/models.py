@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.models.parallel_origin_vertex_jet import build_parallel_origin_vertex_jet
+from src.parallel_model import build_parallel_origin_vertex_jet
 
 from src.parallel_refine.config import ParallelRuntimeConfig
 

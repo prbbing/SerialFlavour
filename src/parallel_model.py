@@ -18,7 +18,7 @@ Forward flow:
       ├── origin_head → origin_logits (B,K,8)
       └── pair_head: Bilinear(emb_i, emb_j) → pair_logits (B,K,K)
 
-Parameter budget: ~55 k (matching staged_origin_vertex_jet).
+Parameter budget: approximately 55 k for the default configuration.
 """
 import torch
 import torch.nn as nn
