@@ -1,4 +1,4 @@
-"""Truth-free, structured attention-pooled features for DNN/BDT refiners."""
+"""Truth-free, structured attention-pooled features for DNN refiners."""
 
 from __future__ import annotations
 

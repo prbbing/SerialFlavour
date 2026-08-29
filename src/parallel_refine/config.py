@@ -300,7 +300,7 @@ def load_study_config(path: str | Path) -> StudyConfig:
     if not recipes or set(recipes) - set(FEATURE_RECIPES):
         raise ValueError(f"refiners.recipes must use {sorted(FEATURE_RECIPES)}")
     if values["refiners"].get("seed_pairing", "same") != "same":
-        raise ValueError("only same Parallel/DNN/BDT seed pairing is currently supported")
+        raise ValueError("only same Parallel/DNN seed pairing is currently supported")
     dnn = values["refiners"].get("dnn", {})
     if dnn.get("gpu_ids", [-1]) != [-1]:
         raise ValueError(
@@ -315,26 +315,6 @@ def load_study_config(path: str | Path) -> StudyConfig:
     for key in ("learning_rate", "dropout"):
         if not isinstance(dnn.get(key), (int, float)) or dnn[key] < 0:
             raise ValueError(f"refiners.dnn.{key} must be non-negative")
-    bdt = values["refiners"].get("bdt", {})
-    for key in (
-            "n_estimators", "max_depth", "max_bin",
-            "early_stopping_rounds", "n_jobs"):
-        _require_positive_int(bdt, key)
-    if not isinstance(bdt.get("learning_rate"), (int, float)) or bdt["learning_rate"] <= 0:
-        raise ValueError("refiners.bdt.learning_rate must be positive")
-    for key in ("min_child_weight", "gamma", "reg_alpha", "reg_lambda"):
-        if not isinstance(bdt.get(key), (int, float)) or bdt[key] < 0:
-            raise ValueError(f"refiners.bdt.{key} must be non-negative")
-    for key in ("subsample", "colsample_bytree"):
-        if (
-                not isinstance(bdt.get(key), (int, float))
-                or not 0 < bdt[key] <= 1):
-            raise ValueError(f"refiners.bdt.{key} must be in (0, 1]")
-    if bdt.get("tree_method") != "hist":
-        raise ValueError("refiners.bdt.tree_method must be 'hist'")
-    if not isinstance(bdt.get("device"), str) or not bdt["device"]:
-        raise ValueError("refiners.bdt.device must be a non-empty string")
-
     return StudyConfig(source, values, tuple(runs))
 
 

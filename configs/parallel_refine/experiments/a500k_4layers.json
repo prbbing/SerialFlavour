@@ -2,7 +2,7 @@
   "components": {
     "data": "../data/data_a500k_b500k.json",
     "parallel": "../parallel/gn2_4layers.json",
-    "refiner": "../refiner/dnn_xgboost_default.json"
+    "refiner": "../refiner/dnn_default.json"
   },
   "config_kind": "experiment",
   "experiment": {

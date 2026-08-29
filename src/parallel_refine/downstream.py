@@ -1,4 +1,4 @@
-"""Common tabular data and DNN definitions for DNN/BDT comparisons."""
+"""Common tabular data and DNN definitions for downstream refiners."""
 
 from __future__ import annotations
 

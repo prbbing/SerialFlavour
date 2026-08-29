@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
-"""Evaluate locked direct Parallel and DNN predictions on cached Y.
-
-BDT evaluation remains available for reproducing earlier studies, but is not
-part of the default workflow.
-"""
+"""Evaluate locked direct Parallel and DNN predictions on cached Y."""
 
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 import sys
 
@@ -24,7 +19,6 @@ from src.parallel_refine.config import load_study_config, write_json_atomic
 from src.parallel_refine.downstream import create_tabular_loader, load_dnn
 from src.parallel_refine.metrics import write_prediction_result
 from src.parallel_refine.plotting import plot_jet_evaluation
-from src.parallel_refine.xgboost_utils import booster_probabilities
 
 
 def _device(config):
@@ -78,7 +72,7 @@ def main(argv=None):
     parser.add_argument("--recipe", action="append")
     parser.add_argument(
         "--model",
-        choices=("direct", "dnn", "direct_dnn", "bdt", "all"),
+        choices=("direct", "dnn", "direct_dnn"),
         default="direct_dnn")
     args = parser.parse_args(argv)
     study = load_study_config(args.config)
@@ -93,7 +87,7 @@ def main(argv=None):
         source_index = np.asarray(cache.source_index)
         event_number = np.asarray(cache.event_number)
 
-        if args.model in {"direct", "direct_dnn", "all"}:
+        if args.model in {"direct", "direct_dnn"}:
             from src.parallel_refine.auxiliary_evaluation import (
                 evaluate_parallel_auxiliary)
 
@@ -117,7 +111,7 @@ def main(argv=None):
 
         for recipe in recipes:
             columns = cache.recipe_columns(recipe)
-            if args.model in {"dnn", "direct_dnn", "all"}:
+            if args.model in {"dnn", "direct_dnn"}:
                 model_directory = study.refiner_directory(run, recipe, "dnn")
                 checkpoint = model_directory / "best_dnn.pt"
                 if not checkpoint.is_file():
@@ -140,43 +134,6 @@ def main(argv=None):
                 _write_manifest(
                     directory.parent / "evaluation_manifest.json",
                     study=study, run=run, recipe=recipe, model="dnn",
-                    cache=cache, result=result, checkpoint=checkpoint)
-
-            if args.model in {"bdt", "all"}:
-                model_directory = study.refiner_directory(run, recipe, "bdt")
-                checkpoint = model_directory / "best_bdt.json"
-                if not checkpoint.is_file():
-                    raise FileNotFoundError(f"missing locked BDT: {checkpoint}")
-                try:
-                    import xgboost
-                except ModuleNotFoundError as error:
-                    raise RuntimeError(
-                        "BDT evaluation requires xgboost>=2.0; install it in the "
-                        "active SerialFlavour environment") from error
-                description = json.loads(
-                    (model_directory / "model.json").read_text(encoding="utf-8"))
-                if description.get("model_type") not in {
-                        "xgboost_booster", "xgboost_xgbclassifier"}:
-                    raise ValueError("locked BDT is not an XGBoost model")
-                if description["recipe"] != recipe or not np.array_equal(
-                        columns, np.asarray(description["columns"], dtype=np.int64)):
-                    raise ValueError("BDT model/cache feature schema mismatch")
-                booster = xgboost.Booster()
-                booster.load_model(str(checkpoint))
-                probabilities = booster_probabilities(
-                    booster, cache.features[:, columns],
-                    iteration_range=(0, description["best_iteration"] + 1))
-                directory = model_directory / "evaluation" / "y_test" / "bdt"
-                result = write_prediction_result(
-                    directory, model_name="bdt", split="y_test", y=y,
-                    probabilities=probabilities, source_index=source_index,
-                    event_number=event_number,
-                    metadata={"parallel_seed": run.seed, "bdt_seed": run.seed,
-                              "recipe": recipe})
-                plot_jet_evaluation(y, probabilities, directory)
-                _write_manifest(
-                    directory.parent / "evaluation_manifest.json",
-                    study=study, run=run, recipe=recipe, model="bdt",
                     cache=cache, result=result, checkpoint=checkpoint)
     return 0
 

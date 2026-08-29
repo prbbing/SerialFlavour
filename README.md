@@ -24,7 +24,7 @@ SerialFlavour/
 
 `parallel_refine` is a two-stage experiment with event-disjoint A/B/Y data.
 A-train/A-val train and select the upstream Parallel checkpoint.
-B-train/B-val fit and select frozen-feature DNN or BDT readouts.
+B-train/B-val fit and select frozen-feature DNN readouts.
 Y-test is reserved for final locked evaluation only.
 
 Run the configured stages from the repository root:
