@@ -22,7 +22,7 @@ from src.data import (
     _unique,
 )
 
-from parallel_refine.src.splits import load_split_bundle
+from src.parallel_refine.splits import load_split_bundle
 
 
 CACHE_VERSION = "parallel_refine_topk_v1"

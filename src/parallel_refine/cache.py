@@ -12,13 +12,13 @@ from typing import Any
 import numpy as np
 import torch
 
-from parallel_refine.src.config import (
+from src.parallel_refine.config import (
     FEATURE_RECIPES, SeedRun, StudyConfig, active_parallel_config)
-from parallel_refine.src.data import create_loader
-from parallel_refine.src.features import FEATURE_SCHEMA_VERSION, build_feature_table
-from parallel_refine.src.models import build_parallel, checkpoint_config
-from parallel_refine.src.parallel_adapter import frozen_parallel_outputs
-from parallel_refine.src.splits import load_split_bundle
+from src.parallel_refine.data import create_loader
+from src.parallel_refine.features import FEATURE_SCHEMA_VERSION, build_feature_table
+from src.parallel_refine.models import build_parallel, checkpoint_config
+from src.parallel_refine.parallel_adapter import frozen_parallel_outputs
+from src.parallel_refine.splits import load_split_bundle
 
 
 def sha256_file(path: str | Path) -> str:
@@ -174,7 +174,7 @@ def load_frozen_cache(
     manifest_path = directory / "manifest.json"
     if not manifest_path.is_file():
         raise FileNotFoundError(
-            f"missing frozen feature cache: {directory}; run generate_cache.py")
+            f"missing frozen feature cache: {directory}; run scripts/generate_cache.py")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     expected = {
         "version": FEATURE_SCHEMA_VERSION,

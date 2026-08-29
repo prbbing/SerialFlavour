@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 import time
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -17,13 +17,13 @@ import torch.nn as nn
 
 from src.config import seed_everything
 
-from parallel_refine.src.config import (
+from src.parallel_refine.config import (
     active_parallel_config, load_study_config, materialize_parallel_config,
     write_json_atomic)
-from parallel_refine.src.data import create_loader
-from parallel_refine.src.models import build_parallel
-from parallel_refine.src.splits import load_split_bundle
-from parallel_refine.src.training import (
+from src.parallel_refine.data import create_loader
+from src.parallel_refine.models import build_parallel
+from src.parallel_refine.splits import load_split_bundle
+from src.parallel_refine.training import (
     aggregate_losses, choose_device, evaluate_loss, move_batch,
     origin_class_weights, parallel_losses, save_history)
 

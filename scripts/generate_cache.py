@@ -7,14 +7,14 @@ import argparse
 from pathlib import Path
 import sys
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import torch
 
-from parallel_refine.src.cache import generate_frozen_cache
-from parallel_refine.src.config import load_study_config
+from src.parallel_refine.cache import generate_frozen_cache
+from src.parallel_refine.config import load_study_config
 
 
 def _device():

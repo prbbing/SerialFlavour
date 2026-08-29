@@ -7,14 +7,14 @@ import argparse
 from pathlib import Path
 import sys
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from parallel_refine.src.config import (
+from src.parallel_refine.config import (
     active_parallel_config, load_study_config, materialize_parallel_config)
-from parallel_refine.src.data import load_processed_split
-from parallel_refine.src.splits import generate_split_bundle
+from src.parallel_refine.data import load_processed_split
+from src.parallel_refine.splits import generate_split_bundle
 
 
 def main(argv=None):

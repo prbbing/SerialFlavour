@@ -10,11 +10,11 @@ from pathlib import Path
 import sys
 import tempfile
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from parallel_refine.src.config import (
+from src.parallel_refine.config import (
     COMPONENT_KEYS, load_study_config, write_json_atomic)
 
 

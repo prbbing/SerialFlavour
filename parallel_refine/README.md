@@ -386,7 +386,7 @@ configs/
 组件文件不能直接传给 `--config`，runtime config 也禁止使用 `base_config`。创建新实验入口时可使用：
 
 ```bash
-python -m parallel_refine.tools.compose_experiment \
+python scripts/compose_experiment.py \
   --experiment-name parallel_refine_default \
   --output-root /data/yuyang/SerialFlavour/results/parallel_refine \
   --data-config parallel_refine/configs/data/data_1m_b500k.json \
@@ -427,14 +427,14 @@ Parallel 组件中的 `parallel.seeds` 只定义模型 seed 和相对输出名�
 ### 15.2 生成 A/B/Y split
 
 ```bash
-python -m parallel_refine.training.prepare_data \
+python scripts/prepare_data.py \
   --config parallel_refine/configs/experiments/default.json
 ```
 
 如需同时构建 processed caches：
 
 ```bash
-python -m parallel_refine.training.prepare_data \
+python scripts/prepare_data.py \
   --config parallel_refine/configs/experiments/default.json \
   --build-processed-caches
 ```
@@ -442,7 +442,7 @@ python -m parallel_refine.training.prepare_data \
 可以重复使用 `--processed-split` 只构建指定 split，例如在多 seed 训练前先串行构建公共 A/B cache，避免多个训练进程竞争写入：
 
 ```bash
-python -m parallel_refine.training.prepare_data \
+python scripts/prepare_data.py \
   --config parallel_refine/configs/experiments/default.json \
   --build-processed-caches \
   --processed-split a_train --processed-split a_val \
@@ -454,7 +454,7 @@ split 由 `eventNumber` 划分，manifest 记录实际 jet/event 数、类别分
 ### 15.3 在一个配置中训练多个 Parallel seed
 
 ```bash
-python -m parallel_refine.training.train_parallel \
+python scripts/train_parallel.py \
   --config parallel_refine/configs/experiments/default.json \
   --skip-complete
 ```
@@ -462,7 +462,7 @@ python -m parallel_refine.training.train_parallel \
 也可以只运行一个或多个指定 seed：
 
 ```bash
-python -m parallel_refine.training.train_parallel \
+python scripts/train_parallel.py \
   --config parallel_refine/configs/experiments/default.json \
   --seed 1 --seed 3
 ```
@@ -472,7 +472,7 @@ python -m parallel_refine.training.train_parallel \
 ### 15.4 生成供 DNN/BDT 共用的 B/Y 缓存
 
 ```bash
-python -m parallel_refine.training.generate_cache \
+python scripts/generate_cache.py \
   --config parallel_refine/configs/experiments/default.json
 ```
 
@@ -492,11 +492,11 @@ pair head 在缓存推理中使用与 `nn.Bilinear` 等价的 `(H W)Hᵀ`，避�
 训练配置中启用的全部 recipe：
 
 ```bash
-python -m parallel_refine.training.train_dnn \
+python scripts/train_dnn.py \
   --config parallel_refine/configs/experiments/default.json \
   --skip-complete
 
-python -m parallel_refine.training.train_bdt \
+python scripts/train_bdt.py \
   --config parallel_refine/configs/experiments/default.json \
   --skip-complete
 ```
@@ -504,11 +504,11 @@ python -m parallel_refine.training.train_bdt \
 只训练指定 seed/recipe：
 
 ```bash
-python -m parallel_refine.training.train_dnn \
+python scripts/train_dnn.py \
   --config parallel_refine/configs/experiments/default.json \
   --seed 2 --recipe F3_embed_aux
 
-python -m parallel_refine.training.train_bdt \
+python scripts/train_bdt.py \
   --config parallel_refine/configs/experiments/default.json \
   --seed 2 --recipe F3_embed_aux
 ```
@@ -520,7 +520,7 @@ DNN 为带 B-train-only standardization 的 `128-64-32-output` MLP，按 B-val c
 ### 15.6 锁定后在 Y 上评估
 
 ```bash
-python -m parallel_refine.training.evaluate \
+python scripts/evaluate.py \
   --config parallel_refine/configs/experiments/default.json \
   --model direct_dnn
 ```

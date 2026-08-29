@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 
-from parallel_refine.src.cache import FrozenFeatureCache
+from src.parallel_refine.cache import FrozenFeatureCache
 
 
 def fit_normalization(
@@ -111,4 +111,3 @@ def load_dnn(directory: str | Path, device: torch.device):
         directory / "best_dnn.pt", map_location=device, weights_only=True))
     model.eval()
     return model, description
-

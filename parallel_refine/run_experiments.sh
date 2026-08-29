@@ -104,7 +104,7 @@ run_on_visible_gpu() {
 "${PYTHON}" - "${CONFIG}" "${SEEDS[@]}" <<'PY'
 import sys
 
-from parallel_refine.src.config import load_study_config
+from src.parallel_refine.config import load_study_config
 
 study = load_study_config(sys.argv[1])
 study.selected_seeds(int(value) for value in sys.argv[2:])
@@ -134,7 +134,7 @@ if ((${#selected_recipes[@]} == 0)); then
         "${PYTHON}" - "${CONFIG}" <<'PY'
 import sys
 
-from parallel_refine.src.config import load_study_config
+from src.parallel_refine.config import load_study_config
 
 for recipe in load_study_config(sys.argv[1]).refiners["recipes"]:
     print(recipe)
@@ -188,7 +188,7 @@ done
 
 if [[ "${RUN_PREPARE_DATA}" == true ]]; then
     section "STAGE 1: PREPARE OR VALIDATE A/B/Y SPLITS"
-    "${PYTHON}" -m parallel_refine.training.prepare_data \
+    "${PYTHON}" scripts/prepare_data.py \
         --config "${CONFIG}" \
         "${prepare_args[@]}" \
         2>&1 | tee "${LOG_DIR}/prepare_data.log"
@@ -209,7 +209,7 @@ if [[ "${RUN_PARALLEL_TRAINING}" == true ]]; then
         log="${LOG_DIR}/parallel_seed${seed}_gpu${gpu_id}.log"
         echo "[START] Parallel seed=${seed} gpu=${gpu_id} -- ${log}"
         run_on_visible_gpu "${gpu_id}" \
-            "${PYTHON}" -m parallel_refine.training.train_parallel \
+            "${PYTHON}" scripts/train_parallel.py \
             --config "${CONFIG}" \
             --seed "${seed}" \
             --skip-complete \
@@ -237,7 +237,7 @@ if [[ "${RUN_B_CACHE}" == true ]]; then
         log="${LOG_DIR}/b_cache_seed${seed}_gpu${gpu_id}.log"
         echo "[START] B cache seed=${seed} gpu=${gpu_id} -- ${log}"
         run_on_visible_gpu "${gpu_id}" \
-            "${PYTHON}" -m parallel_refine.training.generate_cache \
+            "${PYTHON}" scripts/generate_cache.py \
             --config "${CONFIG}" \
             --seed "${seed}" \
             --split b_train \
@@ -270,7 +270,7 @@ if [[ "${RUN_DNN}" == true || "${RUN_XGBOOST}" == true ]]; then
                 log="${LOG_DIR}/dnn_seed${seed}_${recipe}_gpu${gpu_id}.log"
                 echo "[START] DNN seed=${seed} recipe=${recipe} gpu=${gpu_id} -- ${log}"
                 run_on_visible_gpu "${gpu_id}" \
-                    "${PYTHON}" -m parallel_refine.training.train_dnn \
+                    "${PYTHON}" scripts/train_dnn.py \
                     --config "${CONFIG}" \
                     --seed "${seed}" \
                     --recipe "${recipe}" \
@@ -286,7 +286,7 @@ if [[ "${RUN_DNN}" == true || "${RUN_XGBOOST}" == true ]]; then
                 log="${LOG_DIR}/xgboost_seed${seed}_${recipe}_gpu${gpu_id}.log"
                 echo "[START] XGBoost seed=${seed} recipe=${recipe} gpu=${gpu_id} -- ${log}"
                 run_on_visible_gpu "${gpu_id}" \
-                    "${PYTHON}" -m parallel_refine.training.train_bdt \
+                    "${PYTHON}" scripts/train_bdt.py \
                     --config "${CONFIG}" \
                     --seed "${seed}" \
                     --recipe "${recipe}" \
@@ -321,7 +321,7 @@ if [[ "${RUN_Y_CACHE}" == true ]]; then
         log="${LOG_DIR}/y_cache_seed${seed}_gpu${gpu_id}.log"
         echo "[START] Y cache seed=${seed} gpu=${gpu_id} -- ${log}"
         run_on_visible_gpu "${gpu_id}" \
-            "${PYTHON}" -m parallel_refine.training.generate_cache \
+            "${PYTHON}" scripts/generate_cache.py \
             --config "${CONFIG}" \
             --seed "${seed}" \
             --split y_test \
@@ -350,7 +350,7 @@ if [[ "${RUN_Y_EVALUATION}" == true ]]; then
         log="${LOG_DIR}/y_evaluate_seed${seed}_gpu${gpu_id}.log"
         echo "[START] Y evaluation seed=${seed} gpu=${gpu_id} -- ${log}"
         run_on_visible_gpu "${gpu_id}" \
-            "${PYTHON}" -m parallel_refine.training.evaluate \
+            "${PYTHON}" scripts/evaluate.py \
             --config "${CONFIG}" \
             --seed "${seed}" \
             --model "${EVALUATION_MODEL}" \

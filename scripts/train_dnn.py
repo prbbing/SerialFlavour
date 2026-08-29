@@ -9,19 +9,19 @@ from pathlib import Path
 import sys
 import time
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import numpy as np
 import torch
 
-from parallel_refine.src.cache import load_frozen_cache
-from parallel_refine.src.config import load_study_config, write_json_atomic
-from parallel_refine.src.downstream import (
+from src.parallel_refine.cache import load_frozen_cache
+from src.parallel_refine.config import load_study_config, write_json_atomic
+from src.parallel_refine.downstream import (
     TabularDNN, create_tabular_loader, fit_normalization,
     save_dnn_description)
-from parallel_refine.src.metrics import probability_metrics
+from src.parallel_refine.metrics import probability_metrics
 from src.config import seed_everything
 
 

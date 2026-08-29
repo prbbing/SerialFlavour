@@ -12,18 +12,18 @@ import json
 from pathlib import Path
 import sys
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import numpy as np
 import torch
 
-from parallel_refine.src.cache import load_frozen_cache
-from parallel_refine.src.config import load_study_config, write_json_atomic
-from parallel_refine.src.downstream import create_tabular_loader, load_dnn
-from parallel_refine.src.metrics import write_prediction_result
-from parallel_refine.src.xgboost_utils import booster_probabilities
+from src.parallel_refine.cache import load_frozen_cache
+from src.parallel_refine.config import load_study_config, write_json_atomic
+from src.parallel_refine.downstream import create_tabular_loader, load_dnn
+from src.parallel_refine.metrics import write_prediction_result
+from src.parallel_refine.xgboost_utils import booster_probabilities
 
 
 def _device(config):
@@ -93,7 +93,7 @@ def main(argv=None):
         event_number = np.asarray(cache.event_number)
 
         if args.model in {"direct", "direct_dnn", "all"}:
-            from parallel_refine.src.auxiliary_evaluation import (
+            from src.parallel_refine.auxiliary_evaluation import (
                 evaluate_parallel_auxiliary)
 
             directory = (

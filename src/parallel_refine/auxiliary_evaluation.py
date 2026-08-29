@@ -8,10 +8,10 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from parallel_refine.src.config import active_parallel_config, write_json_atomic
-from parallel_refine.src.data import create_loader
-from parallel_refine.src.models import build_parallel, checkpoint_config
-from parallel_refine.src.parallel_adapter import frozen_parallel_outputs
+from src.parallel_refine.config import active_parallel_config, write_json_atomic
+from src.parallel_refine.data import create_loader
+from src.parallel_refine.models import build_parallel, checkpoint_config
+from src.parallel_refine.parallel_adapter import frozen_parallel_outputs
 
 
 AUXILIARY_EVALUATION_VERSION = "parallel_refine_auxiliary_y_v1"
