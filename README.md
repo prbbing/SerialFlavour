@@ -13,9 +13,11 @@ SerialFlavour/
 │   ├── losses.py                Origin weighting and pair BCE
 │   ├── parallel_model.py         Parallel Transformer implementation
 │   └── parallel_refine/         A/B/Y split, cache, refiner, evaluation, and plots
-├── scripts/                     Executable preparation, training, cache, and evaluation entry points
-├── parallel_refine/             Research contract, component configs, and experiment runners
-└── tests/                       Parallel model regression tests
+├── configs/parallel_refine/     Component and experiment configurations
+├── local/parallel_refine.md     Parallel Refine research contract (local notes)
+├── scripts/                     Python preparation, training, and evaluation entry points
+├── local/scripts/               Local multi-GPU shell runners
+└── tests/                       Parallel regression tests
 ```
 
 ## Workflow
@@ -28,14 +30,14 @@ Y-test is reserved for final locked evaluation only.
 Run the configured stages from the repository root:
 
 ```bash
-python scripts/prepare_data.py --config parallel_refine/configs/experiments/default.json
-python scripts/train_parallel.py --config parallel_refine/configs/experiments/default.json
-python scripts/generate_cache.py --config parallel_refine/configs/experiments/default.json
-python scripts/train_dnn.py --config parallel_refine/configs/experiments/default.json
-python scripts/evaluate.py --config parallel_refine/configs/experiments/default.json
+python scripts/prepare_data.py --config configs/parallel_refine/experiments/default.json
+python scripts/train_parallel.py --config configs/parallel_refine/experiments/default.json
+python scripts/generate_cache.py --config configs/parallel_refine/experiments/default.json
+python scripts/train_dnn.py --config configs/parallel_refine/experiments/default.json
+python scripts/evaluate.py --config configs/parallel_refine/experiments/default.json
 ```
 
-See [`parallel_refine/README.md`](parallel_refine/README.md) for the experiment contract, feature recipes, and runner commands.
+See [`local/parallel_refine.md`](local/parallel_refine.md) for the experiment contract, feature recipes, and runner commands.
 
 ## Using datasets
 
