@@ -1,6 +1,6 @@
 {
   "feature_cache": {
-    "root": "/data/yuyang/SerialFlavour/parallel_refine/cache/frozen_structured_pool_v3",
+    "root": "/data/yuyang/SerialFlavour/parallel_refine/cache/frozen_structured_pool_v4",
     "dtype": "float32",
     "batch_size": 1024,
     "splits": [
@@ -12,6 +12,7 @@
   "refiners": {
     "seed_pairing": "same",
     "recipes": [
+      "F0_aux",
       "F1_embed",
       "F2_jet_aux",
       "F3_embed_aux",
@@ -32,7 +33,11 @@
       "epochs": 50,
       "learning_rate": 0.001,
       "weight_decay": 0.0001,
-      "early_stopping_patience": 10
+      "early_stopping_patience": 10,
+      "tensorboard": {
+        "enabled": true,
+        "subdir": "tensorboard"
+      }
     }
   }
 }

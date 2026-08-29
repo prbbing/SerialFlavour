@@ -15,7 +15,7 @@ import numpy as np
 from src.data import _read_fields, _require_fields, _row_count, _save_cache_atomic
 
 
-SPLIT_VERSION = "parallel_refine_event_v1"
+SPLIT_VERSION = "parallel_refine_event_v2"
 SPLIT_NAMES = ("a_train", "a_val", "b_train", "b_val", "y_test")
 
 
@@ -45,6 +45,7 @@ def _split_request(config) -> dict[str, Any]:
             str(key): int(value) for key, value in config.flavour_to_label.items()
         },
         "sizes": {name: int(getattr(config, name)) for name in SPLIT_NAMES},
+        "kinematic_resampling": config.kinematic_resampling,
     }
 
 
@@ -77,17 +78,94 @@ def _reserve_balanced(order, event_class_counts, targets, name):
     return order[:stop], order[stop:]
 
 
-def build_split_indices(config, flavours, event_numbers) -> ParallelRefineSplits:
+def _reference_class(config) -> int:
+    name = config.kinematic_resampling["reference_class"]
+    try:
+        return config.jet_class_names.index(name)
+    except ValueError as error:
+        raise ValueError(
+            f"kinematic reference class {name!r} is not a jet class") from error
+
+
+def _candidate_targets(config, total: int) -> np.ndarray:
+    targets = _balanced_targets(total, config.n_jet_classes)
+    factor = float(config.kinematic_resampling["candidate_pool_factor"])
+    reference = _reference_class(config)
+    expanded = np.ceil(targets * factor).astype(np.int64)
+    expanded[reference] = targets[reference]
+    return expanded
+
+
+def _kinematic_bins(config, pt, eta):
+    specification = config.kinematic_resampling
+    pt_edges = np.asarray(specification["pt_bins"], dtype=np.float64)
+    eta_edges = np.asarray(specification["eta_bins"], dtype=np.float64)
+    pt_bin = np.clip(
+        np.searchsorted(pt_edges, pt, side="right") - 1,
+        0, len(pt_edges) - 2)
+    eta_bin = np.clip(
+        np.searchsorted(eta_edges, eta, side="right") - 1,
+        0, len(eta_edges) - 2)
+    return pt_bin * (len(eta_edges) - 1) + eta_bin, (
+        (len(pt_edges) - 1) * (len(eta_edges) - 1))
+
+
+def _sample_kinematic_matched(
+        config, candidates, candidate_labels, jet_pt, jet_eta, total, rng):
+    """Sample every non-reference class to the reference pT/eta density."""
+    targets = _balanced_targets(total, config.n_jet_classes)
+    reference = _reference_class(config)
+    reference_candidates = candidates[candidate_labels == reference]
+    selected_reference = rng.choice(
+        reference_candidates, size=int(targets[reference]), replace=False)
+    reference_bins, n_bins = _kinematic_bins(
+        config, jet_pt[selected_reference], jet_eta[selected_reference])
+    reference_counts = np.bincount(reference_bins, minlength=n_bins).astype(
+        np.float64)
+
+    selected = [selected_reference]
+    for class_index in range(config.n_jet_classes):
+        if class_index == reference:
+            continue
+        class_candidates = candidates[candidate_labels == class_index]
+        class_bins, _ = _kinematic_bins(
+            config, jet_pt[class_candidates], jet_eta[class_candidates])
+        class_counts = np.bincount(class_bins, minlength=n_bins).astype(
+            np.float64)
+        density_ratio = np.divide(
+            reference_counts, class_counts,
+            out=np.zeros_like(reference_counts), where=class_counts > 0)
+        weights = density_ratio[class_bins]
+        if weights.sum() == 0:
+            weights = np.ones(len(class_candidates), dtype=np.float64)
+        else:
+            weights = 0.999 * weights / weights.sum() + 0.001 / len(weights)
+        weights /= weights.sum()
+        selected.append(rng.choice(
+            class_candidates, size=int(targets[class_index]),
+            replace=False, p=weights))
+    return np.concatenate(selected)
+
+
+def build_split_indices(
+        config, flavours, event_numbers, jet_pt, jet_eta) -> ParallelRefineSplits:
     flavours = np.asarray(flavours)
     event_numbers = np.asarray(event_numbers)
+    jet_pt = np.asarray(jet_pt)
+    jet_eta = np.asarray(jet_eta)
     if (
             flavours.ndim != 1
             or event_numbers.ndim != 1
-            or len(flavours) != len(event_numbers)):
+            or jet_pt.ndim != 1
+            or jet_eta.ndim != 1
+            or not (len(flavours) == len(event_numbers) == len(jet_pt) == len(jet_eta))):
         raise ValueError(
-            "flavours/event_numbers must be equal-length one-dimensional arrays")
+            "flavours/event_numbers/jet_pt/jet_eta must be equal-length "
+            "one-dimensional arrays")
 
-    valid = np.flatnonzero(np.isin(flavours, list(config.flavour_to_label)))
+    valid = np.flatnonzero(
+        np.isin(flavours, list(config.flavour_to_label))
+        & np.isfinite(jet_pt) & np.isfinite(jet_eta))
     valid_events = event_numbers[valid]
     unique_events, inverse, event_counts = np.unique(
         valid_events, return_inverse=True, return_counts=True)
@@ -107,12 +185,12 @@ def build_split_indices(config, flavours, event_numbers) -> ParallelRefineSplits
         remaining, event_counts, config.b_val, "b_val")
     reserved["b_train"], remaining = _reserve_balanced(
         remaining, event_class_counts,
-        _balanced_targets(config.b_train, config.n_jet_classes), "b_train")
+        _candidate_targets(config, config.b_train), "b_train")
     reserved["a_val"], remaining = _reserve_natural(
         remaining, event_counts, config.a_val, "a_val")
     reserved["a_train"], remaining = _reserve_balanced(
         remaining, event_class_counts,
-        _balanced_targets(config.a_train, config.n_jet_classes), "a_train")
+        _candidate_targets(config, config.a_train), "a_train")
 
     arrays: dict[str, np.ndarray] = {}
     for name in SPLIT_NAMES:
@@ -120,14 +198,9 @@ def build_split_indices(config, flavours, event_numbers) -> ParallelRefineSplits
         candidates = valid[candidate_mask]
         if name.endswith("train"):
             candidate_labels = labels[candidate_mask]
-            targets = _balanced_targets(
-                int(getattr(config, name)), config.n_jet_classes)
-            selected = np.concatenate([
-                rng.choice(
-                    candidates[candidate_labels == class_index],
-                    size=int(targets[class_index]), replace=False)
-                for class_index in range(config.n_jet_classes)
-            ])
+            selected = _sample_kinematic_matched(
+                config, candidates, candidate_labels, jet_pt, jet_eta,
+                int(getattr(config, name)), rng)
         else:
             selected = rng.choice(
                 candidates, size=int(getattr(config, name)), replace=False)
@@ -167,6 +240,7 @@ def build_split_indices(config, flavours, event_numbers) -> ParallelRefineSplits
         "index_sha256": {name: _hash(value) for name, value in arrays.items()},
         "event_sha256": {name: _hash(value) for name, value in event_sets.items()},
         "overlaps": overlaps,
+        "kinematic_resampling": config.kinematic_resampling,
     }
     return ParallelRefineSplits(arrays, summary)
 
@@ -180,10 +254,14 @@ def generate_split_bundle(config, *, force: bool = False) -> ParallelRefineSplit
 
     with h5py.File(config.train_file, "r") as handle:
         jets = handle["jets"]
-        fields = ("HadronConeExclTruthLabelID", "eventNumber")
+        fields = (
+            "HadronConeExclTruthLabelID", "eventNumber",
+            "pt_btagJes", "eta_btagJes")
         _require_fields(jets, fields, "jets")
         values = _read_fields(jets, fields, 0, _row_count(jets, fields[0]))
-    result = build_split_indices(config, values[fields[0]], values[fields[1]])
+    result = build_split_indices(
+        config, values[fields[0]], values[fields[1]],
+        values[fields[2]], values[fields[3]])
     result.summary["request"] = _split_request(config)
     output.mkdir(parents=True, exist_ok=True)
     _save_cache_atomic(str(index_path), result.arrays)

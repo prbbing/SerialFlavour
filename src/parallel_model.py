@@ -1,112 +1,118 @@
+"""GN2-inspired Parallel transformer with three configurable task heads.
+
+Jet features are copied to every track and concatenated with the track inputs
+before a shared Transformer encoder. The resulting track representation may
+optionally be projected before attention pooling and the three task-specific
+MLPs. Track-origin and track-pair tasks are conditioned on the pooled jet
+representation.
 """
-Parallel three-task transformer jet classifier (GN2-inspired).
 
-Architecture
-------------
-Single shared TransformerEncoder → three parallel task heads:
-
-  1. Jet-flavour classification  — attention-pooled jet summary → 3 classes
-  2. Track-origin classification  — per-track embeddings → 8 classes
-  3. Track-pair vertexing          — pairwise Bilinear → same-vertex score
-
-All dimensions are powers of 2 for efficient GPU computation.
-
-Forward flow:
-    x (B,K,F) → init_net (2-layer MLP) → encoder → per-track embeddings
-      │
-      ├── pool_attn → weighted sum → pooled (B,D) → jet_head → jet_logits
-      ├── origin_head → origin_logits (B,K,8)
-      └── pair_head: Bilinear(emb_i, emb_j) → pair_logits (B,K,K)
-
-Parameter budget: approximately 55 k for the default configuration.
-"""
 import torch
 import torch.nn as nn
 
 
+def _make_task_head(in_dim, hidden_dims, out_dim):
+    layers = []
+    current = in_dim
+    for width in hidden_dims:
+        layers.extend((nn.Linear(current, width), nn.ReLU()))
+        current = width
+    layers.append(nn.Linear(current, out_dim))
+    return nn.Sequential(*layers)
+
+
 class ParallelOriginVertexJetTransformer(nn.Module):
-    def __init__(self, in_dim, d_model, n_heads, n_layers, d_ffn, dropout,
-                 n_origin_classes, n_jet_classes,
-                 gate_temp=0.1):
+    def __init__(
+            self, track_in_dim, jet_in_dim, d_model, n_heads, n_layers, d_ffn,
+            dropout, n_origin_classes, n_jet_classes,
+            track_projection_dim=None, task_head_hidden_dims=(16,)):
         super().__init__()
         self.n_origin_classes = n_origin_classes
-        self.gate_temp        = gate_temp
 
-        # -- per-track initialisation network (GN2-style MLP) --
         self.init_net = nn.Sequential(
-            nn.Linear(in_dim, d_model),
+            nn.Linear(track_in_dim + jet_in_dim, d_model),
             nn.ReLU(),
             nn.Linear(d_model, d_model),
             nn.ReLU(),
         )
 
-        # -- single shared transformer encoder --
-        _enc_layer = nn.TransformerEncoderLayer(
-            d_model=d_model, nhead=n_heads, dim_feedforward=d_ffn,
-            dropout=dropout, batch_first=True, norm_first=True)
-        self.encoder = nn.TransformerEncoder(_enc_layer, num_layers=n_layers)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=n_heads,
+            dim_feedforward=d_ffn,
+            dropout=dropout,
+            batch_first=True,
+            norm_first=True,
+        )
+        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
 
-        # -- global attention pooling --
-        self.pool_attn = nn.Linear(d_model, 1)
+        task_dim = track_projection_dim or d_model
+        self.track_projection = (
+            nn.Identity() if track_projection_dim is None
+            else nn.Linear(d_model, track_projection_dim))
+        self.task_dim = task_dim
+        self.pool_attn = nn.Linear(task_dim, 1)
 
-        # -- three parallel task heads --
-        self.jet_head = nn.Sequential(
-            nn.LayerNorm(d_model), nn.Linear(d_model, n_jet_classes))
+        hidden_dims = tuple(task_head_hidden_dims)
+        self.jet_head = _make_task_head(
+            task_dim, hidden_dims, n_jet_classes)
+        self.origin_head = _make_task_head(
+            2 * task_dim, hidden_dims, n_origin_classes)
+        self.pair_head = _make_task_head(
+            3 * task_dim, hidden_dims, 1)
 
-        self.origin_head = nn.Sequential(
-            nn.LayerNorm(d_model), nn.Linear(d_model, n_origin_classes))
+    def representations(self, track_features, jet_features, mask):
+        """Return track embeddings, pooled jet embedding, and pool weights."""
+        padding = ~mask
+        repeated_jet = jet_features.unsqueeze(1).expand(
+            -1, track_features.shape[1], -1)
+        combined = torch.cat((track_features, repeated_jet), dim=-1)
+        encoded = self.encoder(
+            self.init_net(combined), src_key_padding_mask=padding)
+        track_embedding = self.track_projection(encoded)
+        scores = self.pool_attn(track_embedding).masked_fill(
+            padding.unsqueeze(-1), float("-inf"))
+        attention = torch.softmax(scores, dim=1)
+        pooled = (track_embedding * attention).sum(dim=1)
+        return track_embedding, pooled, attention
 
-        # Bilinear computes  x1^T W x2 + b  for each track pair
-        self.pair_head = nn.Bilinear(d_model, d_model, 1)
+    def task_logits(self, track_embedding, pooled):
+        """Apply structurally identical MLP heads to task-specific inputs."""
+        batch, tracks, dimension = track_embedding.shape
+        pooled_tracks = pooled.unsqueeze(1).expand(-1, tracks, -1)
+        origin_logits = self.origin_head(torch.cat(
+            (track_embedding, pooled_tracks), dim=-1))
 
-    def forward(self, x, mask):
-        """Single shared-encoder forward with three parallel heads.
-
-        Args:
-            x:    (B, K, F)      — track features
-            mask: (B, K)  bool   — track validity
-
-        Returns:
-            dict: jet_logits (B,3), origin_logits (B,K,8),
-                  pair_logits (B,K,K)
-        """
-        B, K, _ = x.shape
-        track_padding_mask = ~mask
-
-        # -- shared encoder --
-        h = self.init_net(x)                                    # (B, K, D)
-        h = self.encoder(h, src_key_padding_mask=track_padding_mask)  # (B, K, D)
-
-        # -- global attention pooling --
-        scores = self.pool_attn(h)                              # (B, K, 1)
-        scores = scores.masked_fill(track_padding_mask.unsqueeze(-1), float("-inf"))
-        attn_w = torch.softmax(scores, dim=1)                   # (B, K, 1)
-        pooled = (h * attn_w).sum(dim=1)                        # (B, D)
-
-        # -- parallel task heads --
-        jet_logits    = self.jet_head(pooled)                   # (B, 3)
-        origin_logits = self.origin_head(h)                     # (B, K, 8)
-
-        # pairwise compatibility: for each pair (i,j), Bilinear(emb_i, emb_j)
-        D = h.shape[-1]
-        h_i = h.unsqueeze(2).expand(-1, -1, K, -1)             # (B, K, K, D)
-        h_j = h.unsqueeze(1).expand(-1, K, -1, -1)             # (B, K, K, D)
+        embedding_i = track_embedding.unsqueeze(2).expand(
+            -1, -1, tracks, -1)
+        embedding_j = track_embedding.unsqueeze(1).expand(
+            -1, tracks, -1, -1)
+        pooled_pairs = pooled[:, None, None, :].expand(
+            -1, tracks, tracks, -1)
+        pair_inputs = torch.cat(
+            (embedding_i, embedding_j, pooled_pairs), dim=-1)
         pair_logits = self.pair_head(
-            h_i.reshape(B * K * K, D),
-            h_j.reshape(B * K * K, D),
-        ).reshape(B, K, K)                                      # (B, K, K)
+            pair_inputs.reshape(batch * tracks * tracks, 3 * dimension)
+        ).reshape(batch, tracks, tracks)
 
         return {
-            "jet_logits":    jet_logits,
+            "jet_logits": self.jet_head(pooled),
             "origin_logits": origin_logits,
-            "pair_logits":   pair_logits,
+            "pair_logits": pair_logits,
         }
+
+    def forward(self, track_features, jet_features, mask):
+        """Run the shared encoder and the three Parallel task heads."""
+        track_embedding, pooled, _ = self.representations(
+            track_features, jet_features, mask)
+        return self.task_logits(track_embedding, pooled)
 
 
 def build_parallel_origin_vertex_jet(config):
-    """Factory: Config → ParallelOriginVertexJetTransformer."""
+    """Build a Parallel model from a resolved runtime configuration."""
     return ParallelOriginVertexJetTransformer(
-        in_dim=config.n_feats,
+        track_in_dim=config.n_feats,
+        jet_in_dim=config.n_jet_feats,
         d_model=config.d_model,
         n_heads=config.n_heads,
         n_layers=config.n_layers,
@@ -114,5 +120,6 @@ def build_parallel_origin_vertex_jet(config):
         dropout=config.dropout,
         n_origin_classes=config.n_origin_classes,
         n_jet_classes=config.n_jet_classes,
-        gate_temp=config.gate_temp,
+        track_projection_dim=config.track_projection_dim,
+        task_head_hidden_dims=config.task_head_hidden_dims,
     )

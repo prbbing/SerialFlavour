@@ -28,24 +28,22 @@ def _target(model: nn.Module) -> nn.Module:
 
 
 def frozen_parallel_outputs(
-        model: nn.Module, x: torch.Tensor, mask: torch.Tensor) -> dict[str, torch.Tensor]:
+        model: nn.Module, track_features: torch.Tensor,
+        jet_features: torch.Tensor, mask: torch.Tensor) -> dict[str, torch.Tensor]:
     """Return shared representations and task-head predictions efficiently."""
     target = _target(model)
-    padding = ~mask
-    hidden = target.encoder(target.init_net(x), src_key_padding_mask=padding)
-    scores = target.pool_attn(hidden).masked_fill(
-        padding.unsqueeze(-1), float("-inf"))
-    attention = torch.softmax(scores, dim=1)
-    pooled = (hidden * attention).sum(dim=1)
-    jet_logits = target.jet_head(pooled)
-    origin_logits = target.origin_head(hidden)
+    hidden, pooled, attention = target.representations(
+        track_features, jet_features, mask)
+    logits = target.task_logits(hidden, pooled)
+    jet_logits = logits["jet_logits"]
+    origin_logits = logits["origin_logits"]
     origin_probs = torch.softmax(origin_logits, dim=-1)
     origin_probs = origin_probs * mask.unsqueeze(-1).to(origin_probs.dtype)
-    weight = target.pair_head.weight[0]
-    pair_logits = torch.matmul(torch.matmul(hidden, weight), hidden.transpose(1, 2))
-    if target.pair_head.bias is not None:
-        pair_logits = pair_logits + target.pair_head.bias[0]
-    pair_mask = mask.unsqueeze(2) & mask.unsqueeze(1)
+    pair_logits = logits["pair_logits"]
+    tracks = mask.shape[1]
+    off_diagonal = ~torch.eye(
+        tracks, dtype=torch.bool, device=mask.device).unsqueeze(0)
+    pair_mask = mask.unsqueeze(2) & mask.unsqueeze(1) & off_diagonal
     pair_probs = torch.sigmoid(pair_logits) * pair_mask.to(pair_logits.dtype)
     return {
         "track_embedding": hidden,

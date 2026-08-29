@@ -20,14 +20,18 @@ _DEFAULTS = {
     "n_layers": 4,
     "d_ffn": 64,
     "dropout": 0.1,
-    "gate_temp": 0.1,
     "n_origin_classes": 8,
     "n_jet_classes": 3,
+    "jet_fields": ["pt_btagJes", "eta_btagJes"],
+    "truth_vertex": {
+        "field": "ftagTruthVertexIndex",
+        "premerged": True,
+        "merge_distance_mm": 0.1,
+    },
     "track_fields": [
-        "qOverP", "deta", "dphi", "d0", "z0SinTheta",
-        "d0Uncertainty", "z0SinThetaUncertainty", "qOverPUncertainty",
-        "theta", "thetaUncertainty", "phiUncertainty",
+        "d0", "z0SinTheta", "dphi", "deta", "qOverP",
         "lifetimeSignedD0Significance", "lifetimeSignedZ0SinThetaSignificance",
+        "phiUncertainty", "thetaUncertainty", "qOverPUncertainty",
         "numberOfPixelHits", "numberOfSCTHits",
         "numberOfInnermostPixelLayerHits",
         "numberOfNextToInnermostPixelLayerHits",
@@ -42,12 +46,20 @@ _DEFAULTS = {
         "Pileup", "Fake", "Primary", "From b", "From b->c", "From c",
         "From tau", "Other secondary",
     ],
+    "track_projection_dim": None,
+    "task_head_hidden_dims": [16],
     "seed": 42,
     "data_seed": 42,
     "num_workers": 2,
     "lambda_jet": 1.0,
     "lambda_origin": 1.0,
     "lambda_pair": 1.0,
+    "jet_class_weights": [2.0, 2.0, 1.0],
+    "origin_class_weights": [
+        3.08, 566.04, 1.0, 10.16, 6.56, 7.53, 83.66, 19.91,
+    ],
+    "tensorboard_enabled": True,
+    "tensorboard_subdir": "tensorboard",
 }
 
 

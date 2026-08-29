@@ -28,7 +28,11 @@
       "n_heads": 2,
       "n_layers": 4,
       "d_ffn": 64,
-      "dropout": 0.1
+      "dropout": 0.1,
+      "track_projection_dim": null,
+      "task_head_hidden_dims": [
+        16
+      ]
     },
     "training": {
       "gpu_ids": [
@@ -38,12 +42,33 @@
       "epochs": 100,
       "checkpoint_interval": 20,
       "lr": 0.001,
-      "weight_decay": 0.0001
+      "weight_decay": 0.0001,
+      "tensorboard": {
+        "enabled": true,
+        "subdir": "tensorboard"
+      }
     },
     "loss_weights": {
       "jet": 1.0,
-      "origin": 1.0,
-      "pair": 1.0
+      "origin": 0.5,
+      "pair": 1.5
+    },
+    "class_weights": {
+      "jet_class_weights": [
+        2.0,
+        2.0,
+        1.0
+      ],
+      "origin_class_weights": [
+        3.08,
+        566.04,
+        1.0,
+        10.16,
+        6.56,
+        7.53,
+        83.66,
+        19.91
+      ]
     }
   }
 }

@@ -11,6 +11,27 @@
     },
     "split_dir": "/data/yuyang/SerialFlavour/parallel_refine/cache/splits/default",
     "processed_cache_dir": "/data/yuyang/SerialFlavour/parallel_refine/cache/processed",
+    "jet_fields": [
+      "pt_btagJes",
+      "eta_btagJes"
+    ],
+    "truth_vertex": {
+      "field": "ftagTruthVertexIndex",
+      "premerged": true,
+      "merge_distance_mm": 0.1
+    },
+    "normalization": {
+      "enabled": true,
+      "source_split": "a_train",
+      "epsilon": 1e-06
+    },
+    "kinematic_resampling": {
+      "enabled": true,
+      "reference_class": "c-jet",
+      "candidate_pool_factor": 2.0,
+      "pt_bins": [20, 30, 50, 75, 100, 150, 250, 400, 600, 1000, 2000, 6000],
+      "eta_bins": [-2.5, -1.5, -0.8, 0.0, 0.8, 1.5, 2.5]
+    },
     "top_k": 40,
     "num_workers": 2
   }

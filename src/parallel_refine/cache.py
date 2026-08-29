@@ -20,7 +20,7 @@ from src.parallel_refine.upstream import (
 from src.parallel_refine.splits import load_split_bundle
 
 
-FEATURE_SCHEMA_VERSION = "parallel_refine_structured_pool_v3"
+FEATURE_SCHEMA_VERSION = "parallel_refine_structured_pool_v4"
 _FEATURE_EPS = 1e-12
 
 
@@ -255,6 +255,10 @@ def load_frozen_cache(
         "split_index_sha256": split_hash,
         "top_k": int(active_config.top_k),
         "track_fields": list(active_config.track_fields),
+        "jet_fields": list(active_config.jet_fields),
+        "normalization": active_config.normalization,
+        "kinematic_resampling": active_config.kinematic_resampling,
+        "truth_vertex": active_config.truth_vertex,
         "storage_dtype": study.cache.get("dtype", "float32"),
     }
     mismatches = {
@@ -286,7 +290,7 @@ def generate_frozen_cache(
     loader, raw = create_loader(
         active_config, split, shuffle=False, progress=True,
         batch_size=study.cache.get("batch_size", active_config.batch_size),
-        fields=("X", "mask", "y", "source_index", "event_number"))
+        fields=("X", "jet_X", "mask", "y", "source_index", "event_number"))
     model_config = checkpoint_config(checkpoint, active_config)
     model = build_parallel(model_config).to(device)
     model.load_state_dict(torch.load(
@@ -299,7 +303,8 @@ def generate_frozen_cache(
     try:
         for raw_batch in loader:
             batch = {name: values.to(device) for name, values in raw_batch.items()}
-            output = frozen_parallel_outputs(model, batch["X"], batch["mask"])
+            output = frozen_parallel_outputs(
+                model, batch["X"], batch["jet_X"], batch["mask"])
             table = build_feature_table(output)
             if writer is None:
                 writer = _Writer(
@@ -324,6 +329,7 @@ def generate_frozen_cache(
             "study_name": study.study_name,
             "experiment_config": str(study.path),
             "experiment_config_sha256": study.source_sha256,
+            "experiment_markers": study.experiment_markers,
             "parallel_seed": run.seed,
             "downstream_seed": run.seed,
             "parallel_output_name": run.output_name,
@@ -335,6 +341,10 @@ def generate_frozen_cache(
             "source_count": int(len(raw["source_index"])),
             "top_k": int(active_config.top_k),
             "track_fields": list(active_config.track_fields),
+            "jet_fields": list(active_config.jet_fields),
+            "normalization": active_config.normalization,
+            "kinematic_resampling": active_config.kinematic_resampling,
+            "truth_vertex": active_config.truth_vertex,
             "storage_dtype": study.cache.get("dtype", "float32"),
             "feature_names": feature_names,
             "groups": feature_groups,

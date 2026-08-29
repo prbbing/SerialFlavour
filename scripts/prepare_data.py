@@ -12,7 +12,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.parallel_refine.config import (
-    active_parallel_config, load_study_config, materialize_parallel_config)
+    active_parallel_config, load_study_config, materialize_parallel_config,
+    write_experiment_manifest)
 from src.parallel_refine.data import load_processed_split
 from src.parallel_refine.splits import generate_split_bundle
 
@@ -31,6 +32,7 @@ def main(argv=None):
     if args.processed_split and not args.build_processed_caches:
         parser.error("--processed-split requires --build-processed-caches")
     study = load_study_config(args.config)
+    print(f"experiment_manifest={write_experiment_manifest(study)}")
     run = study.seeds[0]
     resolved = materialize_parallel_config(study, run, stage="data")
     config = active_parallel_config(study, run, stage="data")

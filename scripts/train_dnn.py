@@ -17,12 +17,15 @@ import numpy as np
 import torch
 
 from src.parallel_refine.cache import load_frozen_cache
-from src.parallel_refine.config import load_study_config, write_json_atomic
+from src.parallel_refine.config import (
+    load_study_config, write_experiment_manifest, write_json_atomic)
 from src.parallel_refine.downstream import (
     TabularDNN, create_tabular_loader, fit_normalization,
     save_dnn_description)
 from src.parallel_refine.metrics import probability_metrics
 from src.config import seed_everything
+from src.training import (
+    create_tensorboard_writer, log_tensorboard_scalars, save_history_csv)
 
 
 def _device(config):
@@ -88,6 +91,7 @@ def _train_one(study, run, recipe, *, skip_complete):
         num_workers=config.get("num_workers", 0), seed=run.seed + 1000)
     model = TabularDNN(
         len(columns), config["hidden_dims"], config["dropout"], mean, std).to(device)
+    parameter_count = int(sum(parameter.numel() for parameter in model.parameters()))
     optimiser = torch.optim.AdamW(
         model.parameters(), lr=config["learning_rate"],
         weight_decay=config.get("weight_decay", 0.0))
@@ -96,6 +100,13 @@ def _train_one(study, run, recipe, *, skip_complete):
     best = float("inf")
     stale = 0
     best_epoch = None
+    tensorboard = config.get("tensorboard", {})
+    tensorboard_enabled = tensorboard.get("enabled", True)
+    tensorboard_directory = output / tensorboard.get("subdir", "tensorboard")
+    writer = (
+        create_tensorboard_writer(tensorboard_directory)
+        if tensorboard_enabled else None)
+    training_started = time.perf_counter()
     for epoch in range(1, config["epochs"] + 1):
         started = time.perf_counter()
         model.train()
@@ -132,6 +143,16 @@ def _train_one(study, run, recipe, *, skip_complete):
             "saved_best": improved,
             "best_epoch_so_far": best_epoch,
         })
+        if writer is not None:
+            log_tensorboard_scalars(writer, step=epoch, scalars={
+                "loss/train/cross_entropy": history[-1]["train_cross_entropy"],
+                "loss/validation/cross_entropy": history[-1]["val_cross_entropy"],
+                "metrics/train/accuracy": history[-1]["train_accuracy"],
+                "metrics/validation/accuracy": history[-1]["val_accuracy"],
+                "optimizer/learning_rate": optimiser.param_groups[0]["lr"],
+                "timing/epoch_seconds": history[-1]["epoch_seconds"],
+            })
+        save_history_csv(history, output / "training_history.csv")
         write_json_atomic(output / "training_history.json", {
             "history_version": "parallel_refine_dnn_v1",
             "parallel_seed": run.seed,
@@ -145,6 +166,8 @@ def _train_one(study, run, recipe, *, skip_complete):
             f"val_ce={val['loss']:.6f}")
         if stale >= config["early_stopping_patience"]:
             break
+    if writer is not None:
+        writer.close()
 
     model.load_state_dict(torch.load(checkpoint, map_location=device, weights_only=True))
     selected = _evaluate(model, val_loader, device)
@@ -164,6 +187,7 @@ def _train_one(study, run, recipe, *, skip_complete):
         "model": "dnn",
         "experiment_config": str(study.path),
         "experiment_config_sha256": study.source_sha256,
+        "experiment_markers": study.experiment_markers,
         "parallel_seed": run.seed,
         "downstream_seed": run.seed,
         "parallel_output_name": run.output_name,
@@ -171,7 +195,23 @@ def _train_one(study, run, recipe, *, skip_complete):
         "recipe": recipe,
         "train_cache": train_cache.manifest,
         "validation_cache": val_cache.manifest,
-        "parameters": int(sum(parameter.numel() for parameter in model.parameters())),
+        "parameters": parameter_count,
+        "training_summary": {
+            "epochs_completed": len(history),
+            "best_epoch": best_epoch,
+            "best_validation_cross_entropy": best,
+            "wall_seconds": time.perf_counter() - training_started,
+            "train_samples": int(len(train_cache.labels)),
+            "validation_samples": int(len(val_cache.labels)),
+        },
+        "artifacts": {
+            "training_history_json": "training_history.json",
+            "training_history_csv": "training_history.csv",
+            "validation_metrics": "validation_metrics.json",
+            "tensorboard": (
+                str(tensorboard_directory.relative_to(output))
+                if tensorboard_enabled else None),
+        },
         "config": config,
     })
 
@@ -184,6 +224,7 @@ def main(argv=None):
     parser.add_argument("--skip-complete", action="store_true")
     args = parser.parse_args(argv)
     study = load_study_config(args.config)
+    print(f"experiment_manifest={write_experiment_manifest(study)}")
     recipes = args.recipe or study.refiners["recipes"]
     unknown = set(recipes) - set(study.refiners["recipes"])
     if unknown:

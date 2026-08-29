@@ -145,7 +145,11 @@ class AuxiliaryAccumulator:
             raise ValueError("pair logits, truth, and track mask shapes do not align")
         if jet_labels.shape != (logits.shape[0],):
             raise ValueError("pair jet labels must have one entry per jet")
-        valid = mask[:, :, None] & mask[:, None, :] & (truth >= 0)
+        tracks = mask.shape[1]
+        off_diagonal = ~np.eye(tracks, dtype=bool)[None, :, :]
+        valid = (
+            mask[:, :, None] & mask[:, None, :] & off_diagonal
+            & (truth >= 0))
         probability = 1.0 / (1.0 + np.exp(-np.clip(logits, -80.0, 80.0)))
 
         for category, target in enumerate((1.0, 0.0)):
@@ -172,11 +176,11 @@ class AuxiliaryAccumulator:
         pair_total = int(self.pair_count.sum())
         pair = {
             "pair_definition": (
-                "valid ordered track pairs including diagonal self-pairs, "
+                "valid ordered track pairs excluding diagonal self-pairs, "
                 "matching src.losses.pair_vertex_loss; match=truth_pair 1, "
                 "other=truth_pair 0"),
             "n_pairs": pair_total,
-            "includes_diagonal": True,
+            "includes_diagonal": False,
             "score": "sigmoid(pair_logit)",
             "roc_definition": "match is positive; other is negative",
             "histogram_edges": PAIR_BIN_EDGES.tolist(),
@@ -323,7 +327,9 @@ def evaluate_parallel_auxiliary(study, run, cache, directory, device):
     loader, raw = create_loader(
         active_config, "y_test", shuffle=False, progress=True,
         batch_size=study.cache.get("batch_size", active_config.batch_size),
-        fields=("X", "mask", "y", "origin", "truth_pair", "source_index"))
+        fields=(
+            "X", "jet_X", "mask", "y", "origin", "truth_pair",
+            "source_index"))
     if not np.array_equal(np.asarray(raw["source_index"]), np.asarray(cache.source_index)):
         raise ValueError("auxiliary Y source_index does not match frozen feature cache")
 
@@ -339,8 +345,9 @@ def evaluate_parallel_auxiliary(study, run, cache, directory, device):
     processed = 0
     for batch in loader:
         values = batch["X"].to(device)
+        jet_values = batch["jet_X"].to(device)
         mask = batch["mask"].to(device)
-        output = frozen_parallel_outputs(model, values, mask)
+        output = frozen_parallel_outputs(model, values, jet_values, mask)
         accumulator.update_origin(
             output["origin_logits"], batch["origin"].numpy(),
             batch["mask"].numpy())
@@ -349,7 +356,7 @@ def evaluate_parallel_auxiliary(study, run, cache, directory, device):
             batch["mask"].numpy(), batch["y"].numpy())
         processed += len(batch["y"])
         print(f"  auxiliary {run.output_name}/y_test: {processed:,}/{len(raw['y']):,}")
-        del output, values, mask
+        del output, values, jet_values, mask
 
     del model
     if device.type == "cuda":
@@ -377,6 +384,7 @@ def evaluate_parallel_auxiliary(study, run, cache, directory, device):
         "experiment_name": study.experiment_name,
         "experiment_config": str(study.path),
         "experiment_config_sha256": study.source_sha256,
+        "experiment_markers": study.experiment_markers,
         "parallel_seed": run.seed,
         "parallel_checkpoint": str(checkpoint.resolve()),
         "parallel_checkpoint_sha256": cache.manifest["checkpoint_sha256"],

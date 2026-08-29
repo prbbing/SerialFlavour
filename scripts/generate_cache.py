@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 import torch
 
 from src.parallel_refine.cache import generate_frozen_cache
-from src.parallel_refine.config import load_study_config
+from src.parallel_refine.config import load_study_config, write_experiment_manifest
 
 
 def _device():
@@ -29,6 +29,7 @@ def main(argv=None):
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args(argv)
     study = load_study_config(args.config)
+    print(f"experiment_manifest={write_experiment_manifest(study)}")
     selected = study.selected_seeds(args.seed)
     splits = args.split or study.cache.get(
         "splits", ["b_train", "b_val", "y_test"])

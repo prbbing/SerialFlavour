@@ -18,12 +18,13 @@ import torch.nn as nn
 from src.config import seed_everything
 from src.parallel_refine.config import (
     active_parallel_config, load_study_config, materialize_parallel_config,
-    write_json_atomic)
+    write_experiment_manifest, write_json_atomic)
 from src.parallel_refine.data import create_loader
 from src.parallel_refine.upstream import build_parallel
 from src.parallel_refine.splits import load_split_bundle
 from src.training import (
-    aggregate_losses, choose_device, evaluate_loss, move_batch,
+    aggregate_losses, choose_device, create_tensorboard_writer, evaluate_loss,
+    jet_class_weights, log_tensorboard_epoch, move_batch,
     origin_class_weights, parallel_losses, save_history)
 
 
@@ -70,6 +71,7 @@ def main(argv=None):
         help="Skip a seed when its configured checkpoint already exists.")
     args = parser.parse_args(argv)
     study = load_study_config(args.config)
+    print(f"experiment_manifest={write_experiment_manifest(study)}")
     selected = study.selected_seeds(args.seed)
 
     for run in selected:
@@ -98,20 +100,26 @@ def main(argv=None):
         device = choose_device(config)
         seed_everything(
             config.seed, [device.index] if device.type == "cuda" else ())
-        train_loader, train_arrays = create_loader(
+        train_loader, _ = create_loader(
             config, "a_train", progress=True)
         val_loader, _ = create_loader(
             config, "a_val", shuffle=False, progress=True)
         model = build_parallel(config).to(device)
+        parameter_count = int(sum(parameter.numel() for parameter in model.parameters()))
         optimiser = torch.optim.AdamW(
             model.parameters(), lr=config.lr,
             weight_decay=config.weight_decay)
         origin_criterion = nn.CrossEntropyLoss(
             ignore_index=-1,
-            weight=origin_class_weights(
-                train_arrays, config.n_origin_classes, device))
+            weight=origin_class_weights(config, device))
+        jet_criterion = nn.CrossEntropyLoss(
+            weight=jet_class_weights(config, device))
         loss_fn = lambda model_output, batch: parallel_losses(
-            model_output, batch, config, origin_criterion)
+            model_output, batch, config, jet_criterion, origin_criterion)
+        tensorboard_dir = output / config.tensorboard_subdir
+        writer = (
+            create_tensorboard_writer(tensorboard_dir)
+            if config.tensorboard_enabled else None)
         history = []
         best_jet = float("inf")
         best_total = float("inf")
@@ -124,6 +132,8 @@ def main(argv=None):
             "seed": run.seed,
             "train_split": "a_train",
             "validation_split": "a_val",
+            "model_parameters": parameter_count,
+            "validation_samples": int(len(val_loader.dataset)),
             "checkpoint_policy": {
                 "best_jet.pt": "minimum validation jet cross-entropy",
                 "best_total.pt": "minimum validation total loss",
@@ -138,7 +148,8 @@ def main(argv=None):
             for raw in train_loader:
                 batch = move_batch(raw, device)
                 optimiser.zero_grad(set_to_none=True)
-                model_output = model(batch["X"], batch["mask"])
+                model_output = model(
+                    batch["X"], batch["jet_X"], batch["mask"])
                 losses = loss_fn(model_output, batch)
                 losses["total"].backward()
                 optimiser.step()
@@ -177,12 +188,57 @@ def main(argv=None):
                 "saved_best_jet": saved_best_jet,
                 "saved_best_total": saved_best_total,
             })
+            if writer is not None:
+                log_tensorboard_epoch(
+                    writer,
+                    epoch=epoch,
+                    train=train,
+                    validation=validation,
+                    learning_rate=optimiser.param_groups[0]["lr"],
+                    epoch_seconds=history[-1]["epoch_seconds"],
+                )
             save_history(history, output, metadata=history_metadata)
             print(
                 f"seed={run.seed} epoch={epoch} "
                 f"train={train['total']:.6f} "
                 f"val_jet={validation['jet']:.6f}")
+        if writer is not None:
+            writer.close()
         _plot_training_history(history, output)
+        write_json_atomic(output / "run_manifest.json", {
+            "model": "parallel",
+            "experiment_config": str(study.path),
+            "experiment_config_sha256": study.source_sha256,
+            "experiment_markers": study.experiment_markers,
+            "parallel_seed": run.seed,
+            "parallel_output_name": run.output_name,
+            "checkpoint_policy": history_metadata["checkpoint_policy"],
+            "parameters": parameter_count,
+            "training_summary": {
+                "epochs_completed": len(history),
+                "best_jet_epoch": best_jet_epoch,
+                "best_jet_loss": best_jet,
+                "best_total_epoch": best_total_epoch,
+                "best_total_loss": best_total,
+                "wall_seconds": sum(row["epoch_seconds"] for row in history),
+                "train_samples": int(len(train_loader.dataset)),
+                "validation_samples": int(len(val_loader.dataset)),
+            },
+            "artifacts": {
+                "config": "config.json",
+                "split_manifest": "split_manifest.json",
+                "training_history_json": "training_history.json",
+                "training_history_csv": "training_history.csv",
+                "training_history_png": "training_history.png",
+                "tensorboard": (
+                    str(tensorboard_dir.relative_to(output))
+                    if config.tensorboard_enabled else None),
+                "best_jet_checkpoint": "best_jet.pt",
+                "best_total_checkpoint": "best_total.pt",
+                "last_checkpoint": "last.pt",
+            },
+            "config": config._raw,
+        })
     return 0
 
 
