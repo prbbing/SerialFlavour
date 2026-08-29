@@ -16,17 +16,49 @@ import torch
 import torch.nn as nn
 
 from src.config import seed_everything
-
 from src.parallel_refine.config import (
     active_parallel_config, load_study_config, materialize_parallel_config,
     write_json_atomic)
 from src.parallel_refine.data import create_loader
-from src.parallel_refine.models import build_parallel
-from src.parallel_refine.plotting import plot_training_history
+from src.parallel_refine.upstream import build_parallel
 from src.parallel_refine.splits import load_split_bundle
-from src.parallel_refine.training import (
+from src.training import (
     aggregate_losses, choose_device, evaluate_loss, move_batch,
     origin_class_weights, parallel_losses, save_history)
+
+
+def _plot_training_history(history, output_directory):
+    if not history:
+        return
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    epochs = range(1, len(history) + 1)
+    figure, (loss_axis, accuracy_axis) = plt.subplots(1, 2, figsize=(12, 4.5))
+    figure.suptitle("Parallel training history", fontweight="bold")
+    for prefix, colour, label in (("train", "#1f77b4", "train"),
+                                  ("val", "#d62728", "validation")):
+        for key, style, component in (("total", "-", "total"),
+                                      ("jet", "--", "jet CE"),
+                                      ("origin", ":", "origin CE"),
+                                      ("pair", "-.", "pair BCE")):
+            values = [row.get(f"{prefix}_{key}") for row in history]
+            if all(value is not None for value in values):
+                loss_axis.plot(epochs, values, color=colour, linestyle=style,
+                               label=f"{label} {component}")
+        values = [row.get(f"{prefix}_jet_accuracy") for row in history]
+        if all(value is not None for value in values):
+            accuracy_axis.plot(epochs, values, color=colour, label=label)
+    loss_axis.set(xlabel="Epoch", ylabel="Loss", yscale="log")
+    loss_axis.legend(fontsize=7)
+    loss_axis.grid(True, which="both", linestyle="--", alpha=0.3)
+    accuracy_axis.set(xlabel="Epoch", ylabel="Jet accuracy", ylim=(0, 1))
+    accuracy_axis.legend(fontsize=8)
+    accuracy_axis.grid(True, linestyle="--", alpha=0.3)
+    figure.tight_layout()
+    figure.savefig(Path(output_directory) / "training_history.png", dpi=150,
+                   bbox_inches="tight")
+    plt.close(figure)
 
 
 def main(argv=None):
@@ -150,7 +182,7 @@ def main(argv=None):
                 f"seed={run.seed} epoch={epoch} "
                 f"train={train['total']:.6f} "
                 f"val_jet={validation['jet']:.6f}")
-        plot_training_history(history, output)
+        _plot_training_history(history, output)
     return 0
 
 

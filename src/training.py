@@ -1,4 +1,4 @@
-"""Training utilities for the experiment-owned Parallel loop."""
+"""Reusable training and validation primitives for the Parallel base model."""
 
 from __future__ import annotations
 
@@ -54,10 +54,8 @@ def evaluate_loss(model, loader, device, loss_fn):
     for raw in loader:
         batch = move_batch(raw, device)
         output = model(batch["X"], batch["mask"])
-        losses = loss_fn(output, batch)
-        aggregate_losses(totals, losses, len(batch["y"]))
-        jet_correct += int((
-            output["jet_logits"].argmax(dim=-1) == batch["y"]).sum())
+        aggregate_losses(totals, loss_fn(output, batch), len(batch["y"]))
+        jet_correct += int((output["jet_logits"].argmax(-1) == batch["y"]).sum())
         count += len(batch["y"])
     result = {name: value / max(count, 1) for name, value in totals.items()}
     result["jet_accuracy"] = jet_correct / max(count, 1)
@@ -71,18 +69,15 @@ def origin_class_weights(arrays, n_classes: int, device):
 def save_history(history, output_dir, *, metadata=None):
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    rows = [
-        {"epoch": epoch, **row} for epoch, row in enumerate(history, 1)
-    ]
+    rows = [{"epoch": epoch, **row} for epoch, row in enumerate(history, 1)]
     payload = {
-        "history_version": "parallel_refine_training_history_v1",
+        "history_version": "parallel_training_history_v1",
         "metadata": metadata or {},
         "epochs": rows,
     }
     (output / "training_history.json").write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    keys = list(dict.fromkeys(
-        key for row in rows for key in row if key != "epoch"))
+    keys = list(dict.fromkeys(key for row in rows for key in row if key != "epoch"))
     with (output / "training_history.csv").open(
             "w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=["epoch", *keys])

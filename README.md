@@ -12,6 +12,7 @@ SerialFlavour/
 │   ├── data.py                  Shared HDF5 and atomic-cache helpers
 │   ├── losses.py                Origin weighting and pair BCE
 │   ├── parallel_model.py         Parallel Transformer implementation
+│   ├── training.py               Reusable Parallel training and validation loop
 │   └── parallel_refine/         A/B/Y split, cache, refiner, evaluation, and plots
 ├── configs/parallel_refine/     Component and experiment configurations
 ├── local/parallel_refine.md     Parallel Refine research contract (local notes)

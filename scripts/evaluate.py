@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate locked direct Parallel and DNN predictions on cached Y."""
+"""Evaluate locked Parallel and DNN predictions on cached Y."""
 
 from __future__ import annotations
 
@@ -18,7 +18,10 @@ from src.parallel_refine.cache import load_frozen_cache
 from src.parallel_refine.config import load_study_config, write_json_atomic
 from src.parallel_refine.downstream import create_tabular_loader, load_dnn
 from src.parallel_refine.metrics import write_prediction_result
-from src.parallel_refine.plotting import plot_jet_evaluation
+
+
+_JET_CLASS_NAMES = ("b-jet", "c-jet", "light-jet")
+_JET_COLOURS = {"b-jet": "#1f77b4", "c-jet": "#ff7f0e", "light-jet": "#2ca02c"}
 
 
 def _device(config):
@@ -28,10 +31,84 @@ def _device(config):
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def _direct_probabilities(cache):
+def _parallel_probabilities(cache):
     names = cache.manifest["feature_names"]
     columns = [names.index(f"jet_prob_{name}") for name in ("b", "c", "light")]
     return np.asarray(cache.features[:, columns], dtype=np.float32)
+
+
+def _roc_curve(labels, scores):
+    order = np.argsort(-scores, kind="mergesort")
+    labels = labels[order].astype(bool)
+    positives = labels.sum()
+    negatives = len(labels) - positives
+    if positives == 0 or negatives == 0:
+        return None
+    return (np.r_[0, np.cumsum(~labels)] / negatives,
+            np.r_[0, np.cumsum(labels)] / positives)
+
+
+def _plot_discriminant(plt, probabilities, labels, signal, weights, output, stem):
+    background = [index for index in range(3) if index != signal]
+    denominator = probabilities[:, background] @ np.asarray(weights)
+    score = np.log(np.clip(probabilities[:, signal], 1e-12, None)
+                   / np.clip(denominator, 1e-12, None))
+    figure, (distribution_axis, roc_axis) = plt.subplots(1, 2, figsize=(12, 4.5))
+    figure.suptitle(f"{_JET_CLASS_NAMES[signal]} discriminant on locked Y",
+                     fontweight="bold")
+    finite = np.isfinite(score)
+    limit = max(float(np.percentile(np.abs(score[finite]), 99)), 1e-12)
+    for index, name in enumerate(_JET_CLASS_NAMES):
+        distribution_axis.hist(score[finite & (labels == index)], bins=80,
+                               range=(-limit, limit), density=True,
+                               histtype="step", linewidth=1.5,
+                               color=_JET_COLOURS[name], label=name)
+    distribution_axis.set(xlabel="log(signal probability / weighted background)",
+                          ylabel="Density")
+    distribution_axis.legend(fontsize=7)
+    for index in background:
+        selected = (labels == signal) | (labels == index)
+        curve = _roc_curve(labels[selected] == signal, score[selected])
+        if curve is not None:
+            false_positive, true_positive = curve
+            roc_axis.plot(true_positive, false_positive, linewidth=1.5,
+                          color=_JET_COLOURS[_JET_CLASS_NAMES[index]],
+                          label=f"vs {_JET_CLASS_NAMES[index]}")
+    roc_axis.set(xlabel=f"{_JET_CLASS_NAMES[signal]} efficiency",
+                 ylabel="Background rate", yscale="log", ylim=(1e-4, 1.0))
+    roc_axis.legend(fontsize=8)
+    roc_axis.grid(True, which="both", linestyle="--", alpha=0.3)
+    figure.tight_layout()
+    figure.savefig(Path(output) / f"{stem}_discriminant_roc.png", dpi=150,
+                   bbox_inches="tight")
+    plt.close(figure)
+
+
+def _plot_jet_evaluation(labels, probabilities, output_directory):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    output_directory = Path(output_directory)
+    labels = np.asarray(labels)
+    probabilities = np.asarray(probabilities)
+    figure, axes = plt.subplots(1, 3, figsize=(15, 4.5))
+    figure.suptitle("Jet output probabilities on locked Y", fontweight="bold")
+    for predicted, axis in enumerate(axes):
+        for truth, name in enumerate(_JET_CLASS_NAMES):
+            axis.hist(probabilities[labels == truth, predicted], bins=50,
+                      range=(0, 1), density=True, histtype="step", linewidth=1.5,
+                      color=_JET_COLOURS[name], label=name)
+        axis.set(title=f"P({_JET_CLASS_NAMES[predicted]})", xlabel="Probability",
+                 ylabel="Density")
+    axes[0].legend(fontsize=7)
+    figure.tight_layout()
+    figure.savefig(output_directory / "output_probabilities.png", dpi=150,
+                   bbox_inches="tight")
+    plt.close(figure)
+    _plot_discriminant(plt, probabilities, labels, 0, (0.2, 0.8), output_directory,
+                       "b")
+    _plot_discriminant(plt, probabilities, labels, 1, (0.3, 0.7), output_directory,
+                       "c")
 
 
 @torch.no_grad()
@@ -72,8 +149,8 @@ def main(argv=None):
     parser.add_argument("--recipe", action="append")
     parser.add_argument(
         "--model",
-        choices=("direct", "dnn", "direct_dnn"),
-        default="direct_dnn")
+        choices=("parallel", "dnn", "parallel_dnn"),
+        default="parallel_dnn")
     args = parser.parse_args(argv)
     study = load_study_config(args.config)
     recipes = args.recipe or study.refiners["recipes"]
@@ -87,31 +164,31 @@ def main(argv=None):
         source_index = np.asarray(cache.source_index)
         event_number = np.asarray(cache.event_number)
 
-        if args.model in {"direct", "direct_dnn"}:
+        if args.model in {"parallel", "parallel_dnn"}:
             from src.parallel_refine.auxiliary_evaluation import (
                 evaluate_parallel_auxiliary)
 
             directory = (
                 study.output_directory / "refiners" / run.output_name
-                / "direct_parallel" / "evaluation" / "y_test" / "parallel")
+                / "parallel" / "evaluation" / "y_test" / "parallel")
             auxiliary = evaluate_parallel_auxiliary(
                 study, run, cache, directory,
                 _device(study.parallel.get("training", {})))
             result = write_prediction_result(
                 directory, model_name="parallel", split="y_test", y=y,
-                probabilities=_direct_probabilities(cache),
+                probabilities=_parallel_probabilities(cache),
                 source_index=source_index, event_number=event_number,
                 metadata={"parallel_seed": run.seed},
                 auxiliary_metrics=auxiliary)
-            plot_jet_evaluation(y, _direct_probabilities(cache), directory)
+            _plot_jet_evaluation(y, _parallel_probabilities(cache), directory)
             _write_manifest(
                 directory.parent / "evaluation_manifest.json",
-                study=study, run=run, recipe=None, model="direct_parallel",
+                study=study, run=run, recipe=None, model="parallel",
                 cache=cache, result=result, checkpoint=study.checkpoint(run))
 
         for recipe in recipes:
             columns = cache.recipe_columns(recipe)
-            if args.model in {"dnn", "direct_dnn"}:
+            if args.model in {"dnn", "parallel_dnn"}:
                 model_directory = study.refiner_directory(run, recipe, "dnn")
                 checkpoint = model_directory / "best_dnn.pt"
                 if not checkpoint.is_file():
@@ -130,7 +207,7 @@ def main(argv=None):
                     event_number=event_number,
                     metadata={"parallel_seed": run.seed, "dnn_seed": run.seed,
                               "recipe": recipe})
-                plot_jet_evaluation(y, probabilities, directory)
+                _plot_jet_evaluation(y, probabilities, directory)
                 _write_manifest(
                     directory.parent / "evaluation_manifest.json",
                     study=study, run=run, recipe=recipe, model="dnn",
