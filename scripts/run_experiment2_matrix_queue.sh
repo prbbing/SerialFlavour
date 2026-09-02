@@ -1,60 +1,66 @@
 #!/usr/bin/env bash
-# Background queue for the complete Experiment 1 matrix.
+# Background queue for the Experiment 2 A-train scaling matrix.
 #
-# The 20 experiment configs run sequentially. Inside each experiment, the
-# generic runner still trains its configured seeds in parallel on GPUs
-# 0,1,1,2,2. Successful configs receive hash-bound completion markers, so a
-# restarted queue skips only configs whose resolved configuration is unchanged.
+# The shared A-val/B/Y split must be materialized before training. This queue
+# runs that preparation once (without --force), then runs the 11 outstanding
+# configurations sequentially. The 56k/A=1M entry remains in the matrix but
+# is omitted here because its prior run is recorded in the Experiment 2 README.
+# Inside each configuration, the generic runner trains its configured seeds
+# in parallel on GPUs 0,1,1,2,2.
 
 set -uo pipefail
 
-# Keep running independent configs after a failed config. Set to 0 to stop at
-# the first failure. No data-processing or experiment config is changed here.
+# Keep running independent configurations after a failed configuration. Set
+# to 0 to stop at the first failure.
 CONTINUE_ON_ERROR=1
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-QUEUE_SCRIPT="$ROOT/scripts/run_experiment1_matrix_queue.sh"
+QUEUE_SCRIPT="$ROOT/scripts/run_experiment2_matrix_queue.sh"
 EXPERIMENT_RUNNER="$ROOT/scripts/run_parallel_refine_experiment.sh"
-QUEUE_DIR="$ROOT/logs/parallel_refine/experiment1_matrix_queue"
+SHARED_SPLIT_SCRIPT="$ROOT/scripts/prepare_experiment2_shared_splits.py"
+QUEUE_DIR="$ROOT/logs/parallel_refine/experiment2_matrix_queue"
 MASTER_LOG="$QUEUE_DIR/matrix_queue.log"
 STATE_LOG="$QUEUE_DIR/matrix_queue_state.tsv"
 PID_FILE="$QUEUE_DIR/matrix_queue.pid"
 DONE_DIR="$QUEUE_DIR/completed"
+SPLIT_LOCK_DIR="$ROOT/logs/parallel_refine/experiment2_shared_split.lock"
 
 CONFIGS=(
+    # A-train = 600k.
+    "configs/parallel_refine/experiments/experiment2/experiment2_p056k_a600k.json"
+    "configs/parallel_refine/experiments/experiment2/experiment2_p122k_a600k.json"
 
-    # A/B = 80/20.
-    "configs/parallel_refine/experiments/experiment1/experiment1_p023k_a080_b020.json"
-    "configs/parallel_refine/experiments/experiment1/experiment1_p056k_a080_b020.json"
-    "configs/parallel_refine/experiments/experiment1/experiment1_p086k_a080_b020.json"
-    "configs/parallel_refine/experiments/experiment1/experiment1_p122k_a080_b020.json"
-    "configs/parallel_refine/experiments/experiment1/experiment1_p160k_a080_b020.json"
+    # A-train = 800k.
+    "configs/parallel_refine/experiments/experiment2/experiment2_p056k_a800k.json"
+    "configs/parallel_refine/experiments/experiment2/experiment2_p122k_a800k.json"
 
-    # A/B = 90/10.
-    "configs/parallel_refine/experiments/experiment1/experiment1_p023k_a090_b010.json"
-    "configs/parallel_refine/experiments/experiment1/experiment1_p056k_a090_b010.json"
-    "configs/parallel_refine/experiments/experiment1/experiment1_p086k_a090_b010.json"
-    "configs/parallel_refine/experiments/experiment1/experiment1_p122k_a090_b010.json"
-    "configs/parallel_refine/experiments/experiment1/experiment1_p160k_a090_b010.json"
+    # A-train = 1M. The p056k entry is already represented by
+    # parallel_refine_a1m_6layers and is intentionally not retrained here.
+    "configs/parallel_refine/experiments/experiment2/experiment2_p122k_a1m.json"
 
+    # A-train = 1.5M.
+    "configs/parallel_refine/experiments/experiment2/experiment2_p056k_a1500k.json"
+    "configs/parallel_refine/experiments/experiment2/experiment2_p122k_a1500k.json"
 
-    # A/B = 100/0: Transformer-only baselines.
-    "configs/parallel_refine/experiments/experiment1/experiment1_p023k_a100_b000.json"
-    "configs/parallel_refine/experiments/experiment1/experiment1_p056k_a100_b000.json"
-    "configs/parallel_refine/experiments/experiment1/experiment1_p086k_a100_b000.json"
-    "configs/parallel_refine/experiments/experiment1/experiment1_p122k_a100_b000.json"
-    "configs/parallel_refine/experiments/experiment1/experiment1_p160k_a100_b000.json"
+    # A-train = 2M.
+    "configs/parallel_refine/experiments/experiment2/experiment2_p056k_a2m.json"
+    "configs/parallel_refine/experiments/experiment2/experiment2_p122k_a2m.json"
 
-    # A/B = 70/30.
-    "configs/parallel_refine/experiments/experiment1/experiment1_p023k_a070_b030.json"
-    "configs/parallel_refine/experiments/experiment1/experiment1_p056k_a070_b030.json"
-    "configs/parallel_refine/experiments/experiment1/experiment1_p086k_a070_b030.json"
-    "configs/parallel_refine/experiments/experiment1/experiment1_p122k_a070_b030.json"
-    "configs/parallel_refine/experiments/experiment1/experiment1_p160k_a070_b030.json"
+    # A-train = 3M.
+    "configs/parallel_refine/experiments/experiment2/experiment2_p056k_a3m.json"
+    "configs/parallel_refine/experiments/experiment2/experiment2_p122k_a3m.json"
 )
 
 mkdir -p "$QUEUE_DIR" "$DONE_DIR"
 cd "$ROOT"
+
+SPLIT_LOCK_HELD=0
+cleanup_split_lock() {
+    if ((SPLIT_LOCK_HELD == 1)); then
+        rmdir "$SPLIT_LOCK_DIR" 2>/dev/null || true
+        SPLIT_LOCK_HELD=0
+    fi
+}
 
 is_running() {
     if [[ ! -f "$PID_FILE" ]]; then
@@ -73,6 +79,29 @@ print(load_study_config(sys.argv[1]).source_sha256)
 PY
 }
 
+prepare_shared_splits() {
+    local waited=0
+    while ! mkdir "$SPLIT_LOCK_DIR" 2>/dev/null; do
+        if ((waited >= 3600)); then
+            echo "ERROR: timed out waiting for shared-split preparation lock" >&2
+            return 1
+        fi
+        sleep 2
+        waited=$((waited + 2))
+    done
+    SPLIT_LOCK_HELD=1
+
+    echo "$(date -Is) SHARED_SPLIT_PREPARE start"
+    if python -u "$SHARED_SPLIT_SCRIPT" 2>&1 | tee "$QUEUE_DIR/shared_split_prepare.log"; then
+        echo "$(date -Is) SHARED_SPLIT_PREPARE complete"
+        cleanup_split_lock
+        return 0
+    fi
+    echo "$(date -Is) SHARED_SPLIT_PREPARE failed" >&2
+    cleanup_split_lock
+    return 1
+}
+
 run_queue() {
     if is_running && [[ "$(<"$PID_FILE")" != "$$" ]]; then
         echo "ERROR: matrix queue is already running with PID $(<"$PID_FILE")" >&2
@@ -80,7 +109,7 @@ run_queue() {
     fi
 
     echo "$$" >"$PID_FILE"
-    trap 'rm -f "$PID_FILE"' EXIT
+    trap 'cleanup_split_lock; rm -f "$PID_FILE"' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
 
@@ -96,6 +125,12 @@ run_queue() {
 
     echo "$(date -Is) QUEUE_START total_configs=$total"
     printf "timestamp\tstatus\tconfig\n" >>"$STATE_LOG"
+
+    if ! prepare_shared_splits; then
+        echo "$(date -Is) QUEUE_ABORT shared split preparation failed"
+        return 1
+    fi
+    printf "%s\tSHARED_SPLITS_READY\t%s\n" "$(date -Is)" "$SHARED_SPLIT_SCRIPT" >>"$STATE_LOG"
 
     for config in "${CONFIGS[@]}"; do
         position=$((position + 1))
@@ -174,21 +209,25 @@ case "$MODE" in
         nohup bash "$QUEUE_SCRIPT" run >>"$MASTER_LOG" 2>&1 &
         queue_pid="$!"
         echo "$queue_pid" >"$PID_FILE"
-        echo "Started Experiment 1 matrix queue in background."
+        echo "Started Experiment 2 matrix queue in background."
         echo "PID: $queue_pid"
         echo "Log: $MASTER_LOG"
         ;;
     run)
         run_queue
         ;;
+    prepare)
+        prepare_shared_splits
+        ;;
     status)
         show_status
         ;;
     *)
-        echo "Usage: bash scripts/run_experiment1_matrix_queue.sh {start|status|run}"
+        echo "Usage: bash scripts/run_experiment2_matrix_queue.sh {start|status|run|prepare}"
         echo
-        echo "  start   launch the 20-config queue with nohup"
-        echo "  status  show PID status and the latest master-log lines"
-        echo "  run     run in the foreground (mainly for debugging)"
+        echo "  start    launch the 11-config queue with nohup"
+        echo "  status   show PID status and the latest master-log lines"
+        echo "  run      run in the foreground (mainly for debugging)"
+        echo "  prepare  generate/verify shared A-val/B/Y splits only"
         ;;
 esac
