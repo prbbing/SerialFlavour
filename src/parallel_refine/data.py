@@ -6,6 +6,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import tempfile
+import uuid
 
 import h5py
 import numpy as np
@@ -26,8 +28,9 @@ from src.data import (
 from src.parallel_refine.splits import load_split_bundle
 
 
-CACHE_VERSION = "parallel_refine_topk_normalized_v4"
+CACHE_VERSION = "parallel_refine_topk_normalized_mmap_v5"
 NORMALIZATION_VERSION = "parallel_refine_a_train_standardization_v1"
+PROCESSED_CACHE_MANIFEST_VERSION = "parallel_refine_processed_mmap_v1"
 JET_AUX_FIELDS = (
     "HadronConeExclTruthLabelID", "eventNumber", "pt_btagJes", "eta_btagJes",
 )
@@ -55,7 +58,109 @@ def _cache_path(config, split_name: str, indices: np.ndarray) -> Path:
         CACHE_VERSION.encode(),
     ))
     digest = hashlib.sha256(payload).hexdigest()[:20]
-    return Path(config.cache_dir) / f"{split_name}_{digest}.npz"
+    # This is a cache stem, rather than one archive file. Each field is stored
+    # separately as a .npy file so training processes can map the same pages
+    # instead of independently materialising a complete .npz archive in RAM.
+    return Path(config.cache_dir) / f"{split_name}_{digest}"
+
+
+def _processed_manifest_path(cache_stem: Path) -> Path:
+    return cache_stem.with_name(f"{cache_stem.name}.manifest.json")
+
+
+def _save_processed_cache_atomic(
+        cache_stem: Path, arrays: dict[str, np.ndarray]) -> None:
+    """Publish a field-wise, memory-mappable processed cache atomically.
+
+    The manifest is the commit marker. Field file names include a unique
+    generation token, so a forced rebuild never exposes a mixed old/new cache
+    to a concurrent reader. Superseded generations are intentionally kept:
+    an already-running memory-mapped reader may still reference them.
+    """
+    cache_stem.parent.mkdir(parents=True, exist_ok=True)
+    generation = f"{os.getpid()}_{uuid.uuid4().hex}"
+    published = []
+    temporary = None
+    try:
+        specifications = {}
+        for name, values in arrays.items():
+            destination = cache_stem.with_name(
+                f"{cache_stem.name}.{generation}.{name}.npy")
+            handle = tempfile.NamedTemporaryFile(
+                prefix=f".{cache_stem.name}.{generation}.{name}.",
+                suffix=".npy", dir=cache_stem.parent, delete=False)
+            temporary = Path(handle.name)
+            handle.close()
+            np.save(temporary, values, allow_pickle=False)
+            os.replace(temporary, destination)
+            temporary = None
+            published.append(destination)
+            specifications[name] = {
+                "file": destination.name,
+                "shape": list(values.shape),
+                "dtype": str(values.dtype),
+            }
+        manifest = {
+            "version": PROCESSED_CACHE_MANIFEST_VERSION,
+            "cache_version": CACHE_VERSION,
+            "arrays": specifications,
+        }
+        handle = tempfile.NamedTemporaryFile(
+            prefix=f".{cache_stem.name}.{generation}.", suffix=".json",
+            dir=cache_stem.parent, mode="w", encoding="utf-8", delete=False)
+        temporary = Path(handle.name)
+        json.dump(manifest, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+        handle.close()
+        os.replace(temporary, _processed_manifest_path(cache_stem))
+        temporary = None
+    except BaseException:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        for path in published:
+            path.unlink(missing_ok=True)
+        raise
+
+
+def _load_processed_cache(
+        cache_stem: Path, fields: tuple[str, ...] | list[str] | None):
+    manifest_path = _processed_manifest_path(cache_stem)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if (
+            manifest.get("version") != PROCESSED_CACHE_MANIFEST_VERSION
+            or manifest.get("cache_version") != CACHE_VERSION
+            or not isinstance(manifest.get("arrays"), dict)):
+        raise ValueError(f"processed cache schema mismatch: {manifest_path}")
+    specifications = manifest["arrays"]
+    selected = tuple(specifications) if fields is None else tuple(fields)
+    missing = set(selected) - set(specifications)
+    if missing:
+        raise KeyError(f"processed cache is missing fields: {sorted(missing)}")
+
+    arrays = {}
+    for name in selected:
+        specification = specifications[name]
+        if not isinstance(specification, dict):
+            raise ValueError(f"processed cache field specification is invalid: {name}")
+        filename = specification.get("file")
+        expected_prefix = f"{cache_stem.name}."
+        if (
+                not isinstance(filename, str)
+                or Path(filename).name != filename
+                or not filename.startswith(expected_prefix)
+                or not filename.endswith(f".{name}.npy")):
+            raise ValueError(f"processed cache field path is invalid: {name}")
+        # Copy-on-write maps keep the files immutable even if a future tensor
+        # operation accidentally writes to an input. They also present a
+        # writable NumPy view to torch.from_numpy without copying the array.
+        values = np.load(cache_stem.parent / filename,
+                         mmap_mode="c", allow_pickle=False)
+        if list(values.shape) != specification.get("shape"):
+            raise ValueError(f"processed cache field shape mismatch: {name}")
+        if str(values.dtype) != specification.get("dtype"):
+            raise ValueError(f"processed cache field dtype mismatch: {name}")
+        arrays[name] = values
+    return arrays
 
 
 def _allocate(
@@ -278,14 +383,8 @@ def load_processed_split(
         raise KeyError(f"unknown Parallel Refine split {split_name!r}")
     indices = np.asarray(bundle.arrays[split_name], dtype=np.int64)
     path = _cache_path(config, split_name, indices)
-    if path.exists() and not force:
-        with np.load(path) as cached:
-            selected = cached.files if fields is None else fields
-            missing = set(selected) - set(cached.files)
-            if missing:
-                raise KeyError(
-                    f"processed cache is missing fields: {sorted(missing)}")
-            return {name: cached[name] for name in selected}
+    if _processed_manifest_path(path).exists() and not force:
+        return _load_processed_cache(path, fields)
 
     result = _load_raw_processed_split(
         config, split_name, bundle,
@@ -294,7 +393,7 @@ def load_processed_split(
         config, bundle, split_name, result, force=force,
         block_rows=block_rows, progress=progress)
     _apply_standardization(result, statistics)
-    _save_cache_atomic(str(path), result)
+    _save_processed_cache_atomic(path, result)
     if fields is None:
         return result
     missing = set(fields) - set(result)

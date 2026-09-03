@@ -23,7 +23,9 @@ echo "STAGE 0: prepare or verify shared Experiment 2 split anchor"
 python -u scripts/prepare_experiment2_shared_splits.py \
     2>&1 | tee "$LOG_DIR/shared_split_prepare.log"
 
-echo "STAGE 1: prepare A/B/Y processed caches"
+# CACHE_VERSION creates a new field-wise mmap generation automatically; do not
+# pass --force here. Old processed .npz files remain untouched for rollback.
+echo "STAGE 1: build versioned mmap A/B/Y processed caches before parallel training"
 python scripts/prepare_data.py \
     --config "$CONFIG" \
     --build-processed-caches \
@@ -56,7 +58,7 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_dnn.py --config "$CONFIG" --seed 2 -
 CUDA_VISIBLE_DEVICES=1 python scripts/train_dnn.py --config "$CONFIG" --seed 3 --recipe F0_aux --skip-complete >"$LOG_DIR/dnn_seed3_F0_aux_gpu1.log" 2>&1 &
 CUDA_VISIBLE_DEVICES=2 python scripts/train_dnn.py --config "$CONFIG" --seed 4 --recipe F0_aux --skip-complete >"$LOG_DIR/dnn_seed4_F0_aux_gpu2.log" 2>&1 &
 CUDA_VISIBLE_DEVICES=2 python scripts/train_dnn.py --config "$CONFIG" --seed 5 --recipe F0_aux --skip-complete >"$LOG_DIR/dnn_seed5_F0_aux_gpu2.log" 2>&1 &
-wait
+
 
 echo "STAGE 4: train F1_embed DNN"
 CUDA_VISIBLE_DEVICES=0 python scripts/train_dnn.py --config "$CONFIG" --seed 1 --recipe F1_embed --skip-complete >"$LOG_DIR/dnn_seed1_F1_embed_gpu0.log" 2>&1 &
@@ -72,7 +74,7 @@ CUDA_VISIBLE_DEVICES=1 python scripts/train_dnn.py --config "$CONFIG" --seed 2 -
 CUDA_VISIBLE_DEVICES=1 python scripts/train_dnn.py --config "$CONFIG" --seed 3 --recipe F2_jet_aux --skip-complete >"$LOG_DIR/dnn_seed3_F2_jet_aux_gpu1.log" 2>&1 &
 CUDA_VISIBLE_DEVICES=2 python scripts/train_dnn.py --config "$CONFIG" --seed 4 --recipe F2_jet_aux --skip-complete >"$LOG_DIR/dnn_seed4_F2_jet_aux_gpu2.log" 2>&1 &
 CUDA_VISIBLE_DEVICES=2 python scripts/train_dnn.py --config "$CONFIG" --seed 5 --recipe F2_jet_aux --skip-complete >"$LOG_DIR/dnn_seed5_F2_jet_aux_gpu2.log" 2>&1 &
-wait
+
 
 echo "STAGE 4: train F3_embed_aux DNN"
 CUDA_VISIBLE_DEVICES=0 python scripts/train_dnn.py --config "$CONFIG" --seed 1 --recipe F3_embed_aux --skip-complete >"$LOG_DIR/dnn_seed1_F3_embed_aux_gpu0.log" 2>&1 &
