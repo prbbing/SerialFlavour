@@ -92,6 +92,7 @@ def _train_one(study, run, recipe, *, skip_complete):
     model = TabularDNN(
         len(columns), config["hidden_dims"], config["dropout"], mean, std).to(device)
     parameter_count = int(sum(parameter.numel() for parameter in model.parameters()))
+    print(f"DNN seed={run.seed} recipe={recipe} parameters={parameter_count:,}")
     optimiser = torch.optim.AdamW(
         model.parameters(), lr=config["learning_rate"],
         weight_decay=config.get("weight_decay", 0.0))

@@ -16,8 +16,11 @@ import torch
 
 from src.parallel_refine.cache import load_frozen_cache
 from src.parallel_refine.config import (
-    load_study_config, write_experiment_manifest, write_json_atomic)
+    GRAPH_RECIPES, load_study_config, write_experiment_manifest, write_json_atomic)
 from src.parallel_refine.downstream import create_tabular_loader, load_dnn
+from src.parallel_refine.graph_cache import load_graph_cache
+from src.parallel_refine.graph_refiner import (
+    create_graph_loader, load_graph_refiner)
 from src.parallel_refine.metrics import (
     b_discriminant, c_discriminant, write_prediction_result)
 
@@ -271,8 +274,23 @@ def _dnn_probabilities(model, cache, columns, config, device):
     return torch.cat(probabilities).numpy()
 
 
-def _write_manifest(path, *, study, run, recipe, model, cache, result, checkpoint):
-    write_json_atomic(path, {
+@torch.no_grad()
+def _graph_probabilities(model, table, graph, columns, recipe, config, device):
+    loader = create_graph_loader(
+        table, graph, columns, recipe, batch_size=config["batch_size"],
+        shuffle=False, num_workers=config.get("num_workers", 0), seed=0)
+    probabilities = []
+    for batch in loader:
+        values = {name: value.to(device) for name, value in batch.items()}
+        probabilities.append(torch.softmax(model(
+            values["context"], values["node_values"], values["pair_probs"],
+            values["track_mask"]), dim=-1).cpu())
+    return torch.cat(probabilities).numpy()
+
+
+def _write_manifest(path, *, study, run, recipe, model, cache, result, checkpoint,
+                    graph_cache=None):
+    payload = {
         "evaluation_version": "parallel_refine_y_v1",
         "study_name": study.study_name,
         "experiment_config": str(study.path),
@@ -288,7 +306,10 @@ def _write_manifest(path, *, study, run, recipe, model, cache, result, checkpoin
         "split": "y_test",
         "feature_cache": cache.manifest,
         "result": result,
-    })
+    }
+    if graph_cache is not None:
+        payload["graph_cache"] = graph_cache.manifest
+    write_json_atomic(path, payload)
 
 
 def main(argv=None):
@@ -337,8 +358,44 @@ def main(argv=None):
                 cache=cache, result=result, checkpoint=study.checkpoint(run))
 
         for recipe in recipes:
-            columns = cache.recipe_columns(recipe)
             if args.model in {"dnn", "parallel_dnn"}:
+                if recipe in GRAPH_RECIPES:
+                    columns = cache.recipe_columns("F1O")
+                    graph = load_graph_cache(study, run, "y_test")
+                    model_directory = study.refiner_directory(
+                        run, recipe, "graph_dnn")
+                    checkpoint = model_directory / "best_graph_refiner.pt"
+                    if not checkpoint.is_file():
+                        raise FileNotFoundError(
+                            f"missing locked graph refiner: {checkpoint}")
+                    device = _device(study.refiners["graph"])
+                    dnn, description = load_graph_refiner(model_directory, device)
+                    if (
+                            description["recipe"] != recipe
+                            or not np.array_equal(
+                                columns, np.asarray(
+                                    description["context_columns"], dtype=np.int64))):
+                        raise ValueError("graph model/cache feature schema mismatch")
+                    probabilities = _graph_probabilities(
+                        dnn, cache, graph, columns, recipe,
+                        study.refiners["graph"], device)
+                    directory = model_directory / "evaluation" / "y_test" / "graph_dnn"
+                    result = write_prediction_result(
+                        directory, model_name="graph_dnn", split="y_test", y=y,
+                        probabilities=probabilities, source_index=source_index,
+                        event_number=event_number,
+                        metadata={"parallel_seed": run.seed, "dnn_seed": run.seed,
+                                  "recipe": recipe})
+                    _plot_jet_evaluation(y, probabilities, directory)
+                    result["comparison_artifacts"] = _plot_rejection_comparison(
+                        y, _parallel_probabilities(cache), probabilities, directory)
+                    _write_manifest(
+                        directory.parent / "evaluation_manifest.json",
+                        study=study, run=run, recipe=recipe, model="graph_dnn",
+                        cache=cache, result=result, checkpoint=checkpoint,
+                        graph_cache=graph)
+                    continue
+                columns = cache.recipe_columns(recipe)
                 model_directory = study.refiner_directory(run, recipe, "dnn")
                 checkpoint = model_directory / "best_dnn.pt"
                 if not checkpoint.is_file():

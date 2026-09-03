@@ -128,16 +128,26 @@ if ((B_TRAIN > 0)); then
     done
     wait_for_jobs
 
-    echo "STAGE 4: train configured DNN recipes"
+    echo "STAGE 4: train configured downstream recipes"
     for recipe in "${RECIPES[@]}"; do
         echo "  recipe: $recipe"
         for index in "${!SEEDS[@]}"; do
             seed="${SEEDS[$index]}"
             gpu="$(gpu_for_index "$index")"
-            launch_job "$gpu" "dnn_seed${seed}_${recipe}" \
-                "$LOG_DIR/dnn_seed${seed}_${recipe}_gpu${gpu}.log" \
-                python scripts/train_dnn.py --config "$CONFIG" \
-                --seed "$seed" --recipe "$recipe" --skip-complete
+            case "$recipe" in
+                FG0|FG1|FG2)
+                    launch_job "$gpu" "graph_seed${seed}_${recipe}" \
+                        "$LOG_DIR/graph_seed${seed}_${recipe}_gpu${gpu}.log" \
+                        python scripts/train_graph_refiner.py --config "$CONFIG" \
+                        --seed "$seed" --recipe "$recipe" --skip-complete
+                    ;;
+                *)
+                    launch_job "$gpu" "dnn_seed${seed}_${recipe}" \
+                        "$LOG_DIR/dnn_seed${seed}_${recipe}_gpu${gpu}.log" \
+                        python scripts/train_dnn.py --config "$CONFIG" \
+                        --seed "$seed" --recipe "$recipe" --skip-complete
+                    ;;
+            esac
         done
         wait_for_jobs
     done

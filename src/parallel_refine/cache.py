@@ -121,12 +121,29 @@ class FrozenFeatureCache:
     manifest: dict[str, Any]
 
     def recipe_columns(self, recipe: str) -> np.ndarray:
+        if recipe == "F1O":
+            prefixes = ("pooled_", "origin_attention_")
+            return self._columns_with_prefixes(prefixes)
+        if recipe == "F1V":
+            prefixes = ("pooled_", "pair_weighted_embedding_")
+            return self._columns_with_prefixes(prefixes)
         groups = FEATURE_RECIPES[recipe]
         indices = []
         for group in groups:
             start, stop = self.manifest["groups"][group]
             indices.extend(range(start, stop))
         return np.asarray(indices, dtype=np.int64)
+
+    def _columns_with_prefixes(self, prefixes: tuple[str, ...]) -> np.ndarray:
+        """Select dynamic-width fields without changing legacy cache groups."""
+        names = self.manifest["feature_names"]
+        columns = [
+            index for prefix in prefixes for index, name in enumerate(names)
+            if name.startswith(prefix)
+        ]
+        if not columns:
+            raise ValueError(f"frozen cache has no fields for {prefixes}")
+        return np.asarray(columns, dtype=np.int64)
 
     def recipe_features(self, recipe: str) -> np.ndarray:
         return self.features[:, self.recipe_columns(recipe)]
@@ -247,7 +264,7 @@ def load_frozen_cache(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     expected = {
         "version": FEATURE_SCHEMA_VERSION,
-        "study_name": study.study_name,
+        "study_name": study.cache_identity_name,
         "parallel_seed": run.seed,
         "parallel_output_name": run.output_name,
         "split": split,
@@ -326,7 +343,7 @@ def generate_frozen_cache(
             raise ValueError(f"cannot cache empty split {split}")
         metadata = {
             "version": FEATURE_SCHEMA_VERSION,
-            "study_name": study.study_name,
+            "study_name": study.cache_identity_name,
             "experiment_config": str(study.path),
             "experiment_config_sha256": study.source_sha256,
             "experiment_markers": study.experiment_markers,

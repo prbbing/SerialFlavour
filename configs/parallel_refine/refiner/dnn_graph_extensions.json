@@ -1,0 +1,41 @@
+{
+  "feature_cache": {
+    "root": "/data/yuyang/SerialFlavour/parallel_refine/cache/frozen_structured_pool_v4",
+    "graph_root": "/data/yuyang/SerialFlavour/parallel_refine/cache/frozen_pair_graph_v1",
+    "dtype": "float32",
+    "graph_dtype": "float32",
+    "batch_size": 1024,
+    "splits": ["b_train", "b_val", "y_test"]
+  },
+  "refiners": {
+    "seed_pairing": "same",
+    "recipes": ["F1O", "F1V", "FG0", "FG1", "FG2"],
+    "dnn": {
+      "gpu_ids": [-1],
+      "hidden_dims": [128, 64, 32],
+      "dropout": 0.1,
+      "batch_size": 1024,
+      "num_workers": 2,
+      "epochs": 50,
+      "learning_rate": 0.001,
+      "weight_decay": 0.0001,
+      "early_stopping_patience": 10,
+      "tensorboard": {"enabled": true, "subdir": "tensorboard"}
+    },
+    "graph": {
+      "gpu_ids": [-1],
+      "hidden_dim": 64,
+      "num_layers": 2,
+      "output_dim": "track_embedding_dim",
+      "hidden_dims": [128, 64, 32],
+      "dropout": 0.1,
+      "batch_size": 1024,
+      "num_workers": 2,
+      "epochs": 50,
+      "learning_rate": 0.001,
+      "weight_decay": 0.0001,
+      "early_stopping_patience": 10,
+      "tensorboard": {"enabled": true, "subdir": "tensorboard"}
+    }
+  }
+}

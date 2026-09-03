@@ -106,6 +106,7 @@ def main(argv=None):
             config, "a_val", shuffle=False, progress=True)
         model = build_parallel(config).to(device)
         parameter_count = int(sum(parameter.numel() for parameter in model.parameters()))
+        print(f"Parallel seed={run.seed} parameters={parameter_count:,}")
         optimiser = torch.optim.AdamW(
             model.parameters(), lr=config.lr,
             weight_decay=config.weight_decay)

@@ -1,0 +1,23 @@
+{
+  "components": {
+    "data": "../data/data_1m_b200k_y500k.json",
+    "parallel": "../parallel/gn2_4layers.json",
+    "refiner": "../refiner/dnn_graph_extensions.json"
+  },
+  "config_kind": "experiment",
+  "experiment": {
+    "name": "parallel_refine_default_graph_extensions",
+    "upstream_experiment_name": "parallel_refine_default",
+    "output_root": "/data/yuyang/SerialFlavour/results/parallel_refine",
+    "markers": {
+      "label": "Parallel Refine graph extensions",
+      "tags": ["parallel-refine", "F1O", "F1V", "FG0", "FG1", "FG2"],
+      "comparison_group": "parallel_refine_default_extensions",
+      "variables": {
+        "refiner_recipes": "F1O,F1V,FG0,FG1,FG2",
+        "graph_output_dim": "track_embedding_dim",
+        "graph_layers": 2
+      }
+    }
+  }
+}
