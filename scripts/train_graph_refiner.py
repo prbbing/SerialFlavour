@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train one same-seed FG0/FG1/FG2 graph-DNN refiner on B."""
+"""Train one same-seed FG0/FG1/FG2/FG4 graph-DNN refiner on B."""
 
 from __future__ import annotations
 
@@ -18,7 +18,8 @@ import torch
 from src.config import seed_everything
 from src.parallel_refine.cache import load_frozen_cache
 from src.parallel_refine.config import (
-    GRAPH_RECIPES, load_study_config, write_experiment_manifest, write_json_atomic)
+    GRAPH_RECIPES, graph_context_recipe, load_study_config,
+    write_experiment_manifest, write_json_atomic)
 from src.parallel_refine.downstream import fit_normalization
 from src.parallel_refine.graph_cache import load_graph_cache
 from src.parallel_refine.graph_refiner import (
@@ -73,15 +74,16 @@ def _train_one(study, run, recipe, *, skip_complete):
     config = resolve_graph_config(requested_config, train_graph)
     if train_graph.track_embedding.shape[-1] != val_graph.track_embedding.shape[-1]:
         raise ValueError("B-train/B-val graph embedding dimension mismatch")
-    context_columns = train_table.recipe_columns("F1O")
-    if not np.array_equal(context_columns, val_table.recipe_columns("F1O")):
+    context_recipe = graph_context_recipe(recipe)
+    context_columns = train_table.recipe_columns(context_recipe)
+    if not np.array_equal(context_columns, val_table.recipe_columns(context_recipe)):
         raise ValueError("B-train/B-val graph context schema mismatch")
     mean, std = fit_normalization(train_table, context_columns)
     np.savez(output / "normalization.npz", mean=mean, std=std)
     node_dim = graph_node_values(train_graph, recipe, 0).shape[-1]
     save_graph_description(
         output / "model.json", recipe=recipe, context_columns=context_columns,
-        context_names=train_table.recipe_names("F1O"), node_dim=node_dim,
+        context_names=train_table.recipe_names(context_recipe), node_dim=node_dim,
         graph_config=config)
 
     device = _device()

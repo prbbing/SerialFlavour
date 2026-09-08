@@ -29,7 +29,7 @@ FEATURE_RECIPES = {
     "F3_embed_aux": ("embedding", "aux"),
     "F4_all": ("jet_probability", "embedding", "aux"),
 }
-GRAPH_RECIPES = ("FG0", "FG1", "FG2")
+GRAPH_RECIPES = ("FG0", "FG1", "FG2", "FG4")
 RECIPE_MODEL_KIND = {
     **{name: "dnn" for name in FEATURE_RECIPES},
     **{name: "graph_dnn" for name in GRAPH_RECIPES},
@@ -51,9 +51,26 @@ def graph_node_source(recipe: str) -> str:
         "FG0": "valid",
         "FG1": "origin_probs",
         "FG2": "track_embedding",
+        "FG4": "track_embedding",
     }
     try:
         return sources[recipe]
+    except KeyError as error:
+        raise ValueError(f"{recipe} is not a graph recipe") from error
+
+
+def graph_context_recipe(recipe: str) -> str:
+    """Return the frozen pooled-feature selector for one graph recipe."""
+    contexts = {
+        "FG0": "F1O",
+        "FG1": "F1O",
+        "FG2": "F1O",
+        # FG4 is FG2 with the frozen three-class jet posterior at the graph-DNN
+        # classifier input; graph nodes and pair topology remain identical.
+        "FG4": "F1OJ",
+    }
+    try:
+        return contexts[recipe]
     except KeyError as error:
         raise ValueError(f"{recipe} is not a graph recipe") from error
 
@@ -178,6 +195,23 @@ class StudyConfig:
         return self.upstream_experiment_name
 
     @property
+    def refiner_output_experiment_name(self) -> str:
+        """Experiment directory receiving downstream-refiner artifacts.
+
+        An extension may keep its immutable manifest under a new study name
+        while deliberately placing an added recipe beside the parent study's
+        existing refiners.
+        """
+        return str(self.values["experiment"].get(
+            "refiner_output_experiment_name", self.study_name))
+
+    @property
+    def refiner_output_directory(self) -> Path:
+        experiment = self.values["experiment"]
+        return (Path(experiment["output_root"])
+                / self.refiner_output_experiment_name)
+
+    @property
     def source_sha256(self) -> str:
         canonical = json.dumps(
             self.values, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -225,7 +259,8 @@ class StudyConfig:
             "checkpoint", "best_jet.pt")
 
     def refiner_directory(self, run: SeedRun, recipe: str, model: str) -> Path:
-        return self.output_directory / "refiners" / run.output_name / recipe / model
+        return (self.refiner_output_directory / "refiners" / run.output_name
+                / recipe / model)
 
 
 def _require_positive_int(mapping: dict[str, Any], key: str) -> None:
@@ -679,6 +714,7 @@ def write_experiment_manifest(study: StudyConfig) -> Path:
         "version": EXPERIMENT_MANIFEST_VERSION,
         "study_name": study.study_name,
         "upstream_experiment_name": study.upstream_experiment_name,
+        "refiner_output_experiment_name": study.refiner_output_experiment_name,
         "experiment_markers": study.experiment_markers,
         "experiment_config": str(study.path),
         "experiment_config_sha256": study.source_sha256,

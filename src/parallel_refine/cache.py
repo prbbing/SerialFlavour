@@ -127,6 +127,10 @@ class FrozenFeatureCache:
         if recipe == "F1V":
             prefixes = ("pooled_", "pair_weighted_embedding_")
             return self._columns_with_prefixes(prefixes)
+        if recipe == "F1OJ":
+            # Graph-only context selector: F1O plus the frozen jet posterior.
+            prefixes = ("jet_prob_", "pooled_", "origin_attention_")
+            return self._columns_with_prefixes(prefixes)
         groups = FEATURE_RECIPES[recipe]
         indices = []
         for group in groups:

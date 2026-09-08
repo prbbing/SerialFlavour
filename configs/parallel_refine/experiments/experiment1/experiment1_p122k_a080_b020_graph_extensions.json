@@ -26,7 +26,7 @@
         "b_fraction_percent": 20,
         "total_train_jets": 1000000,
         "dnn_enabled": true,
-        "refiner_set": "F1O,F1V,FG0,FG1,FG2"
+        "refiner_set": "F1O,F1V,FG0,FG1,FG2,FG4"
       }
     }
   }

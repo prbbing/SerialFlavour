@@ -16,7 +16,8 @@ import torch
 
 from src.parallel_refine.cache import load_frozen_cache
 from src.parallel_refine.config import (
-    GRAPH_RECIPES, load_study_config, write_experiment_manifest, write_json_atomic)
+    GRAPH_RECIPES, graph_context_recipe, load_study_config,
+    write_experiment_manifest, write_json_atomic)
 from src.parallel_refine.downstream import create_tabular_loader, load_dnn
 from src.parallel_refine.graph_cache import load_graph_cache
 from src.parallel_refine.graph_refiner import (
@@ -360,7 +361,7 @@ def main(argv=None):
         for recipe in recipes:
             if args.model in {"dnn", "parallel_dnn"}:
                 if recipe in GRAPH_RECIPES:
-                    columns = cache.recipe_columns("F1O")
+                    columns = cache.recipe_columns(graph_context_recipe(recipe))
                     graph = load_graph_cache(study, run, "y_test")
                     model_directory = study.refiner_directory(
                         run, recipe, "graph_dnn")

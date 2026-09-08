@@ -29,20 +29,23 @@ mapfile -t CONFIG_METADATA < <(
     python - "$CONFIG" <<'PY'
 import sys
 
-from src.parallel_refine.config import load_study_config
+from src.parallel_refine.config import load_study_config, recipe_model_kind
 
 study = load_study_config(sys.argv[1])
 print(study.study_name)
 print(study.data["sizes"]["b_train"])
 print(" ".join(str(run.seed) for run in study.seeds))
-print(" ".join(study.refiners["recipes"]))
+print(" ".join(
+    f"{recipe}:{recipe_model_kind(recipe)}"
+    for recipe in study.refiners["recipes"]
+))
 PY
 )
 
 EXPERIMENT_NAME="${CONFIG_METADATA[0]}"
 B_TRAIN="${CONFIG_METADATA[1]}"
 read -r -a SEEDS <<< "${CONFIG_METADATA[2]}"
-read -r -a RECIPES <<< "${CONFIG_METADATA[3]}"
+read -r -a RECIPE_SPECS <<< "${CONFIG_METADATA[3]}"
 
 LOG_DIR="logs/parallel_refine/${EXPERIMENT_NAME}"
 mkdir -p "$LOG_DIR"
@@ -88,7 +91,7 @@ echo "CONFIG: $CONFIG"
 echo "EXPERIMENT: $EXPERIMENT_NAME"
 echo "SEEDS: ${SEEDS[*]}"
 echo "B_TRAIN: $B_TRAIN"
-echo "RECIPES: ${RECIPES[*]}"
+echo "RECIPES: ${RECIPE_SPECS[*]}"
 echo "LOG_DIR: $LOG_DIR"
 
 echo "STAGE 1: prepare event-disjoint splits and processed caches"
@@ -129,23 +132,29 @@ if ((B_TRAIN > 0)); then
     wait_for_jobs
 
     echo "STAGE 4: train configured downstream recipes"
-    for recipe in "${RECIPES[@]}"; do
-        echo "  recipe: $recipe"
+    for recipe_spec in "${RECIPE_SPECS[@]}"; do
+        recipe="${recipe_spec%%:*}"
+        recipe_kind="${recipe_spec#*:}"
+        echo "  recipe: ${recipe} (${recipe_kind})"
         for index in "${!SEEDS[@]}"; do
             seed="${SEEDS[$index]}"
             gpu="$(gpu_for_index "$index")"
-            case "$recipe" in
-                FG0|FG1|FG2)
+            case "$recipe_kind" in
+                graph_dnn)
                     launch_job "$gpu" "graph_seed${seed}_${recipe}" \
                         "$LOG_DIR/graph_seed${seed}_${recipe}_gpu${gpu}.log" \
                         python scripts/train_graph_refiner.py --config "$CONFIG" \
                         --seed "$seed" --recipe "$recipe" --skip-complete
                     ;;
-                *)
+                dnn)
                     launch_job "$gpu" "dnn_seed${seed}_${recipe}" \
                         "$LOG_DIR/dnn_seed${seed}_${recipe}_gpu${gpu}.log" \
                         python scripts/train_dnn.py --config "$CONFIG" \
                         --seed "$seed" --recipe "$recipe" --skip-complete
+                    ;;
+                *)
+                    echo "ERROR: unknown model kind ${recipe_kind} for recipe ${recipe}" >&2
+                    exit 1
                     ;;
             esac
         done

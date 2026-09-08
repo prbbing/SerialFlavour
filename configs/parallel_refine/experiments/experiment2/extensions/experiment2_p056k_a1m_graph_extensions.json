@@ -33,7 +33,7 @@
         "dnn_hidden_dims": "128-64-32",
         "dnn_enabled": true,
         "prior_result_experiment": "parallel_refine_a1m_6layers",
-        "refiner_set": "F1O,F1V,FG0,FG1,FG2"
+        "refiner_set": "F1O,F1V,FG0,FG1,FG2,FG4"
       }
     },
     "upstream_experiment_name": "experiment2_p056k_a1m"

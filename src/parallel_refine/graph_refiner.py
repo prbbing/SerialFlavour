@@ -1,4 +1,4 @@
-"""Modular weighted-pair GNN and data adapters for FG0--FG2.
+"""Modular weighted-pair GNN and data adapters for FG0--FG2 and FG4.
 
 The graph encoder consumes only frozen Parallel predictions.  It has no access
 to truth origin or truth-pair labels, keeping the downstream A/B/Y contract
@@ -36,6 +36,8 @@ def graph_node_values(graph: GraphFeatureCache, recipe: str, index: int):
     if recipe == "FG1":
         return graph.origin_probs[index].astype(np.float32, copy=True)
     if recipe == "FG2":
+        return graph.track_embedding[index].astype(np.float32, copy=True)
+    if recipe == "FG4":
         return graph.track_embedding[index].astype(np.float32, copy=True)
     raise ValueError(f"not a graph recipe: {recipe}")
 
@@ -108,7 +110,7 @@ class WeightedPairMessageLayer(nn.Module):
 
 
 class PairGraphEncoder(nn.Module):
-    """Encode FG0/FG1/FG2 node inputs and weighted directed pair topology."""
+    """Encode FG0/FG1/FG2/FG4 node inputs and weighted pair topology."""
 
     def __init__(self, node_dim: int, hidden_dim: int, num_layers: int,
                  output_dim: int, dropout: float):

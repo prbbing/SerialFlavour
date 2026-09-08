@@ -9,7 +9,7 @@
   },
   "refiners": {
     "seed_pairing": "same",
-    "recipes": ["F1O", "F1V", "FG0", "FG1", "FG2"],
+    "recipes": ["F1O", "F1V", "FG0", "FG1", "FG2", "FG4"],
     "dnn": {
       "gpu_ids": [-1],
       "hidden_dims": [128, 64, 32],

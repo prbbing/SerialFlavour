@@ -11,10 +11,10 @@
     "output_root": "/data/yuyang/SerialFlavour/results/parallel_refine",
     "markers": {
       "label": "Parallel Refine graph extensions",
-      "tags": ["parallel-refine", "F1O", "F1V", "FG0", "FG1", "FG2"],
+      "tags": ["parallel-refine", "F1O", "F1V", "FG0", "FG1", "FG2", "FG4"],
       "comparison_group": "parallel_refine_default_extensions",
       "variables": {
-        "refiner_recipes": "F1O,F1V,FG0,FG1,FG2",
+        "refiner_recipes": "F1O,F1V,FG0,FG1,FG2,FG4",
         "graph_output_dim": "track_embedding_dim",
         "graph_layers": 2
       }
