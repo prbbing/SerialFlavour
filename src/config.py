@@ -60,6 +60,9 @@ _DEFAULTS = {
     ],
     "tensorboard_enabled": True,
     "tensorboard_subdir": "tensorboard",
+    "torch_compile": True,
+    "torch_compile_mode": "reduce-overhead",
+    "dense_pair_loss": True,
 }
 
 

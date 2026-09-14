@@ -570,6 +570,18 @@ def load_study_config(path: str | Path) -> StudyConfig:
             or ".." in Path(subdir).parts):
         raise ValueError(
             "parallel.training.tensorboard.subdir must be a safe relative path")
+    for key in ("torch_compile", "dense_pair_loss"):
+        if not isinstance(training.get(key, False), bool):
+            raise ValueError(f"parallel.training.{key} must be a boolean")
+    compile_mode = training.get("torch_compile_mode", "reduce-overhead")
+    if (
+            not isinstance(compile_mode, str)
+            or compile_mode not in {
+                "default", "reduce-overhead", "max-autotune",
+                "max-autotune-no-cudagraphs"}):
+        raise ValueError(
+            "parallel.training.torch_compile_mode must be one of default, "
+            "reduce-overhead, max-autotune, max-autotune-no-cudagraphs")
     for key, value in values["parallel"].get("loss_weights", {}).items():
         if key not in {"jet", "origin", "pair"}:
             raise ValueError(f"unknown parallel loss weight: {key}")

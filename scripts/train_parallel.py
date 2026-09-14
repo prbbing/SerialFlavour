@@ -104,11 +104,17 @@ def main(argv=None):
             config, "a_train", progress=True)
         val_loader, _ = create_loader(
             config, "a_val", shuffle=False, progress=True)
-        model = build_parallel(config).to(device)
-        parameter_count = int(sum(parameter.numel() for parameter in model.parameters()))
+        raw_model = build_parallel(config).to(device)
+        parameter_count = int(sum(parameter.numel() for parameter in raw_model.parameters()))
         print(f"Parallel seed={run.seed} parameters={parameter_count:,}")
+        model = raw_model
+        if config.torch_compile and device.type == "cuda":
+            model = torch.compile(raw_model, mode=config.torch_compile_mode)
+            print(
+                f"Parallel seed={run.seed} torch.compile mode="
+                f"{config.torch_compile_mode}")
         optimiser = torch.optim.AdamW(
-            model.parameters(), lr=config.lr,
+            raw_model.parameters(), lr=config.lr,
             weight_decay=config.weight_decay)
         origin_criterion = nn.CrossEntropyLoss(
             ignore_index=-1,
@@ -116,7 +122,8 @@ def main(argv=None):
         jet_criterion = nn.CrossEntropyLoss(
             weight=jet_class_weights(config, device))
         loss_fn = lambda model_output, batch: parallel_losses(
-            model_output, batch, config, jet_criterion, origin_criterion)
+            model_output, batch, config, jet_criterion, origin_criterion,
+            dense_pair=config.dense_pair_loss)
         tensorboard_dir = output / config.tensorboard_subdir
         writer = (
             create_tensorboard_writer(tensorboard_dir)
@@ -162,20 +169,21 @@ def main(argv=None):
                 name: value / max(count, 1) for name, value in totals.items()
             }
             train["jet_accuracy"] = jet_correct / max(count, 1)
-            validation = evaluate_loss(model, val_loader, device, loss_fn)
+            validation = evaluate_loss(
+                raw_model, val_loader, device, loss_fn)
             saved_best_jet = validation["jet"] < best_jet
             saved_best_total = validation["total"] < best_total
             if saved_best_jet:
                 best_jet = validation["jet"]
                 best_jet_epoch = epoch
-                torch.save(model.state_dict(), output / "best_jet.pt")
+                torch.save(raw_model.state_dict(), output / "best_jet.pt")
             if saved_best_total:
                 best_total = validation["total"]
                 best_total_epoch = epoch
-                torch.save(model.state_dict(), output / "best_total.pt")
+                torch.save(raw_model.state_dict(), output / "best_total.pt")
             if epoch % config.checkpoint_interval == 0:
-                torch.save(model.state_dict(), output / f"epoch_{epoch}.pt")
-            torch.save(model.state_dict(), output / "last.pt")
+                torch.save(raw_model.state_dict(), output / f"epoch_{epoch}.pt")
+            torch.save(raw_model.state_dict(), output / "last.pt")
             history.append({
                 "lr": optimiser.param_groups[0]["lr"],
                 "epoch_seconds": time.perf_counter() - epoch_start,
