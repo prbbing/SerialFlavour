@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 from src.parallel_refine.config import (
     active_parallel_config, load_study_config, materialize_parallel_config,
     write_experiment_manifest, write_json_atomic)
-from src.parallel_refine.data import load_processed_split
+from src.parallel_refine.data import default_cache_workers, load_processed_splits
 from src.parallel_refine.splits import generate_split_bundle
 
 
@@ -28,9 +28,16 @@ def main(argv=None):
         help=("Build only this processed split; repeat for multiple splits. "
               "Requires --build-processed-caches. The default builds all splits."))
     parser.add_argument("--force", action="store_true")
+    parser.add_argument(
+        "--workers", type=int, default=None,
+        help=("parallel processes for --build-processed-caches "
+              "(default: min(cpu_count, 16))"))
     args = parser.parse_args(argv)
     if args.processed_split and not args.build_processed_caches:
         parser.error("--processed-split requires --build-processed-caches")
+    if args.workers is not None and args.workers < 1:
+        parser.error("--workers must be a positive integer")
+    workers = args.workers or default_cache_workers()
     study = load_study_config(args.config)
     print(f"experiment_manifest={write_experiment_manifest(study)}")
     run = study.seeds[0]
@@ -46,13 +53,14 @@ def main(argv=None):
             f"{name}: jets={len(indices):,} "
             f"events={bundle.summary['unique_events'][name]:,} "
             f"sha256={bundle.summary['index_sha256'][name]}")
-        if args.build_processed_caches and name in processed_splits:
-            split_processed = load_processed_split(
-                config, name, force=args.force, progress=True)
-            processed[name] = {
-                "cache_directory": str(Path(config.cache_dir).resolve()),
-                "retained_after_track_selection": int(len(split_processed["y"])),
-            }
+    if args.build_processed_caches:
+        requested = [
+            name for name in bundle.arrays if name in processed_splits]
+        summary = load_processed_splits(
+            config, requested, force=args.force, progress=True,
+            workers=workers)
+        for name in requested:
+            processed[name] = summary[name]
             print(
                 f"  retained_after_track_selection="
                 f"{processed[name]['retained_after_track_selection']:,}")
