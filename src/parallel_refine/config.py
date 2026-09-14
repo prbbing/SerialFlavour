@@ -434,6 +434,34 @@ def load_study_config(path: str | Path) -> StudyConfig:
             not isinstance(normalization.get("epsilon"), (int, float))
             or normalization["epsilon"] <= 0):
         raise ValueError("data.normalization.epsilon must be positive")
+    flavour_sampling = values["data"].get("flavour_sampling", {"mode": "balanced"})
+    mode = flavour_sampling.get("mode") if isinstance(flavour_sampling, dict) else None
+    if mode not in {"balanced", "fixed_ratio"}:
+        raise ValueError(
+            "data.flavour_sampling.mode must be 'balanced' or 'fixed_ratio'")
+    if mode == "balanced":
+        if set(flavour_sampling) != {"mode"}:
+            raise ValueError(
+                "data.flavour_sampling with mode 'balanced' may only define mode")
+    else:
+        if set(flavour_sampling) != {"mode", "class_ratios"}:
+            raise ValueError(
+                "data.flavour_sampling with mode 'fixed_ratio' must define "
+                "only mode and class_ratios")
+        class_ratios = flavour_sampling["class_ratios"]
+        # These names are production defaults, not fields repeated in every
+        # lightweight experiment component.
+        from src.config import _DEFAULTS
+        jet_class_names = values.get(
+            "jet_class_names", _DEFAULTS["jet_class_names"])
+        if set(class_ratios) != set(jet_class_names):
+            raise ValueError(
+                "data.flavour_sampling.class_ratios must define every jet class")
+        if any(
+                not isinstance(value, (int, float)) or value <= 0
+                for value in class_ratios.values()):
+            raise ValueError(
+                "data.flavour_sampling.class_ratios values must be positive")
     resampling = values["data"].get("kinematic_resampling", {})
     if resampling.get("enabled") is not True:
         raise ValueError("data.kinematic_resampling.enabled must be true")
@@ -724,6 +752,8 @@ def parallel_values(study: StudyConfig, run: SeedRun, *, stage: str) -> dict[str
         "jet_fields": data.get("jet_fields", _DEFAULTS["jet_fields"]),
         "truth_vertex": copy.deepcopy(data["truth_vertex"]),
         "normalization": copy.deepcopy(data["normalization"]),
+        "flavour_sampling": copy.deepcopy(
+            data.get("flavour_sampling", {"mode": "balanced"})),
         "kinematic_resampling": copy.deepcopy(data["kinematic_resampling"]),
         "shared_validation": data.get("shared_validation", False),
         **data["sizes"],

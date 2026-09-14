@@ -7,6 +7,10 @@
     "jet_fields": ["pt_btagJes", "eta_btagJes"],
     "truth_vertex": {"field": "ftagTruthVertexIndex", "premerged": true, "merge_distance_mm": 0.1},
     "normalization": {"enabled": true, "source_split": "a_train", "epsilon": 0.000001},
+    "flavour_sampling": {
+      "mode": "fixed_ratio",
+      "class_ratios": {"b-jet": 1, "c-jet": 1, "light-jet": 2}
+    },
     "kinematic_resampling": {
       "enabled": true, "reference_class": "c-jet", "candidate_pool_factor": 2,
       "pt_bins": [20, 30, 50, 75, 100, 150, 250, 400, 600, 1000, 2000, 6000],

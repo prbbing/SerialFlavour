@@ -18,6 +18,10 @@
       "source_split": "a_train",
       "epsilon": 0.000001
     },
+    "flavour_sampling": {
+      "mode": "fixed_ratio",
+      "class_ratios": {"b-jet": 1, "c-jet": 1, "light-jet": 2}
+    },
     "kinematic_resampling": {
       "enabled": true,
       "reference_class": "c-jet",
