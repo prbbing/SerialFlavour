@@ -2,7 +2,7 @@
   "components": {
     "data": "../../../data/data_1m_b200k_y500k.json",
     "parallel": "../../../parallel/experiment1_p056k.json",
-    "refiner": "../../../refiner/dnn_graph_extensions.json"
+    "refiner": "../../../refiner/dnn_graph_all.json"
   },
   "config_kind": "experiment",
   "experiment": {
