@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train Cartesian FG0/FG1/FG2/FG4 graph-DNN refiners on B."""
+"""Train Cartesian FG0/FG1/FG2/FG2s/FG4 graph-DNN refiners on B."""
 
 from __future__ import annotations
 
@@ -73,7 +73,7 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
     val_table = load_frozen_cache(study, run, "b_val")
     train_graph = load_graph_cache(study, run, "b_train")
     val_graph = load_graph_cache(study, run, "b_val")
-    config = resolve_graph_config(requested_config, train_graph)
+    config = resolve_graph_config(requested_config, train_graph, recipe=recipe)
     if train_graph.track_embedding.shape[-1] != val_graph.track_embedding.shape[-1]:
         raise ValueError("B-train/B-val graph embedding dimension mismatch")
     context_recipe = graph_context_recipe(recipe)

@@ -54,6 +54,8 @@ Experiment configurations in `configs/parallel_refine/` combine independent data
 
 The current experiment defaults use 100k jets for each A/B validation split, 200k for B-train, and 500k for the locked Y-test split. The default readout is `input → 128 → 64 → 32 → output`. Every configured Parallel seed is paired with all five downstream initialization seeds (`1`–`5`), so a standard five-Parallel-seed configuration trains and evaluates 25 refiner replicas per recipe, including graph recipes. Older `b500k/y200k` data components remain available only for reproducing earlier runs.
 
+`refiner/dnn_default.json` selects `F1_embed`, `F3_embed_aux`, `F4_all`, `FG2`, `FG2s`, and `FG4`; `FG2s` is the one-layer variant of two-layer `FG2`. The generic runner reads `refiners.recipes` from the selected experiment at launch, so a new experiment JSON can add or remove any implemented recipe through `overrides.refiners.recipes` without editing the runner.
+
 Result artifacts are kept separate for download and post-processing:
 
 ```text

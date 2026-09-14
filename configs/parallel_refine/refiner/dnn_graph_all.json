@@ -25,6 +25,7 @@
       "FG0",
       "FG1",
       "FG2",
+      "FG2s",
       "FG4"
     ],
     "dnn": {
@@ -54,6 +55,11 @@
       ],
       "hidden_dim": 64,
       "num_layers": 2,
+      "recipe_overrides": {
+        "FG2s": {
+          "num_layers": 1
+        }
+      },
       "output_dim": "track_embedding_dim",
       "hidden_dims": [
         128,

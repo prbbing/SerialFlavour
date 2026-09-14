@@ -5,16 +5,21 @@
     "refiner": "../refiner/dnn_graph_all.json"
   },
   "config_kind": "experiment",
+  "overrides": {
+    "refiners": {
+      "recipes": ["F1O", "F1V", "FG0", "FG1", "FG2", "FG2s", "FG4"]
+    }
+  },
   "experiment": {
     "name": "parallel_refine_default_graph_extensions",
     "upstream_experiment_name": "parallel_refine_default",
     "output_root": "/data/yuyang/SerialFlavour/results/parallel_refine",
     "markers": {
       "label": "Parallel Refine graph extensions",
-      "tags": ["parallel-refine", "F1O", "F1V", "FG0", "FG1", "FG2", "FG4"],
+      "tags": ["parallel-refine", "F1O", "F1V", "FG0", "FG1", "FG2", "FG2s", "FG4"],
       "comparison_group": "parallel_refine_default_extensions",
       "variables": {
-        "refiner_recipes": "F1O,F1V,FG0,FG1,FG2,FG4",
+        "refiner_recipes": "F1O,F1V,FG0,FG1,FG2,FG2s,FG4",
         "graph_output_dim": "track_embedding_dim",
         "graph_layers": 2
       }

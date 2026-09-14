@@ -110,7 +110,7 @@ for recipe in "${RECIPES[@]}"; do
             seed="${SEEDS[$index]}"
             gpu="$(gpu_for_index "$index")"
             case "$recipe" in
-                FG0|FG1|FG2|FG4)
+                FG0|FG1|FG2|FG2s|FG4)
                     launch_job "$gpu" "graph_parallel${seed}_dnn${downstream_seed}_${recipe}" \
                         "$LOG_DIR/graph_parallel${seed}_dnn${downstream_seed}_${recipe}_gpu${gpu}.log" \
                         python scripts/train_graph_refiner.py --config "$CONFIG" \

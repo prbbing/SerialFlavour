@@ -1,4 +1,4 @@
-"""Modular weighted-pair GNN and data adapters for FG0--FG2 and FG4.
+"""Modular weighted-pair GNN and data adapters for FG0--FG2s and FG4.
 
 The graph encoder consumes only frozen Parallel predictions.  It has no access
 to truth origin or truth-pair labels, keeping the downstream A/B/Y contract
@@ -35,16 +35,19 @@ def graph_node_values(graph: GraphFeatureCache, recipe: str, index: int):
         return graph.track_mask[index].astype(np.float32, copy=True)[..., None]
     if recipe == "FG1":
         return graph.origin_probs[index].astype(np.float32, copy=True)
-    if recipe == "FG2":
+    if recipe in {"FG2", "FG2s"}:
         return graph.track_embedding[index].astype(np.float32, copy=True)
     if recipe == "FG4":
         return graph.track_embedding[index].astype(np.float32, copy=True)
     raise ValueError(f"not a graph recipe: {recipe}")
 
 
-def resolve_graph_config(graph_config, graph: GraphFeatureCache):
-    """Resolve the symbolic graph output width against one frozen checkpoint."""
+def resolve_graph_config(graph_config, graph: GraphFeatureCache, *, recipe=None):
+    """Resolve one recipe's graph settings against a frozen checkpoint."""
     resolved = copy.deepcopy(graph_config)
+    recipe_overrides = resolved.pop("recipe_overrides", {})
+    if recipe is not None:
+        resolved.update(recipe_overrides.get(recipe, {}))
     if resolved["output_dim"] == "track_embedding_dim":
         resolved["output_dim"] = int(graph.track_embedding.shape[-1])
     return resolved
@@ -110,7 +113,7 @@ class WeightedPairMessageLayer(nn.Module):
 
 
 class PairGraphEncoder(nn.Module):
-    """Encode FG0/FG1/FG2/FG4 node inputs and weighted pair topology."""
+    """Encode FG0/FG1/FG2/FG2s/FG4 node inputs and weighted pair topology."""
 
     def __init__(self, node_dim: int, hidden_dim: int, num_layers: int,
                  output_dim: int, dropout: float):

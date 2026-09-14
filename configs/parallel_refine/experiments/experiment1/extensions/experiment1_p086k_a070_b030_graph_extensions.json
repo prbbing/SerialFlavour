@@ -5,6 +5,11 @@
     "refiner": "../../../refiner/dnn_graph_all.json"
   },
   "config_kind": "experiment",
+  "overrides": {
+    "refiners": {
+      "recipes": ["F1O", "F1V", "FG0", "FG1", "FG2", "FG2s", "FG4"]
+    }
+  },
   "experiment": {
     "name": "experiment1_p086k_a070_b030_graph_extensions",
     "output_root": "/data/yuyang/SerialFlavour/results/parallel_refine",
@@ -30,7 +35,7 @@
         "b_fraction_percent": 30,
         "total_train_jets": 1000000,
         "dnn_enabled": true,
-        "refiner_set": "F1O,F1V,FG0,FG1,FG2,FG4"
+        "refiner_set": "F1O,F1V,FG0,FG1,FG2,FG2s,FG4"
       }
     },
     "upstream_experiment_name": "experiment1_p086k_a070_b030"

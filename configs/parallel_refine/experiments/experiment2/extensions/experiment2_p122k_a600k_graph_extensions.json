@@ -5,6 +5,11 @@
     "refiner": "../../../refiner/dnn_graph_all.json"
   },
   "config_kind": "experiment",
+  "overrides": {
+    "refiners": {
+      "recipes": ["F1O", "F1V", "FG0", "FG1", "FG2", "FG2s", "FG4"]
+    }
+  },
   "experiment": {
     "name": "experiment2_p122k_a600k_graph_extensions",
     "output_root": "/data/yuyang/SerialFlavour/results/parallel_refine",
@@ -32,7 +37,7 @@
         "y_test_jets": 500000,
         "dnn_hidden_dims": "128-64-32",
         "dnn_enabled": true,
-        "refiner_set": "F1O,F1V,FG0,FG1,FG2,FG4"
+        "refiner_set": "F1O,F1V,FG0,FG1,FG2,FG2s,FG4"
       }
     },
     "upstream_experiment_name": "experiment2_p122k_a600k"

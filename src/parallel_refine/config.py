@@ -29,7 +29,7 @@ FEATURE_RECIPES = {
     "F3_embed_aux": ("embedding", "aux"),
     "F4_all": ("jet_probability", "embedding", "aux"),
 }
-GRAPH_RECIPES = ("FG0", "FG1", "FG2", "FG4")
+GRAPH_RECIPES = ("FG0", "FG1", "FG2", "FG2s", "FG4")
 RECIPE_MODEL_KIND = {
     **{name: "dnn" for name in FEATURE_RECIPES},
     **{name: "graph_dnn" for name in GRAPH_RECIPES},
@@ -51,6 +51,7 @@ def graph_node_source(recipe: str) -> str:
         "FG0": "valid",
         "FG1": "origin_probs",
         "FG2": "track_embedding",
+        "FG2s": "track_embedding",
         "FG4": "track_embedding",
     }
     try:
@@ -65,6 +66,7 @@ def graph_context_recipe(recipe: str) -> str:
         "FG0": "F1O",
         "FG1": "F1O",
         "FG2": "F1O",
+        "FG2s": "F1O",
         # FG4 is FG2 with the frozen three-class jet posterior at the graph-DNN
         # classifier input; graph nodes and pair topology remain identical.
         "FG4": "F1OJ",
@@ -660,6 +662,20 @@ def load_study_config(path: str | Path) -> StudyConfig:
         for key in ("learning_rate", "dropout", "weight_decay"):
             if not isinstance(graph.get(key), (int, float)) or graph[key] < 0:
                 raise ValueError(f"refiners.graph.{key} must be non-negative")
+        recipe_overrides = graph.get("recipe_overrides", {})
+        if not isinstance(recipe_overrides, dict):
+            raise ValueError("refiners.graph.recipe_overrides must be an object")
+        unknown_override_recipes = set(recipe_overrides) - set(GRAPH_RECIPES)
+        if unknown_override_recipes:
+            raise ValueError(
+                "refiners.graph.recipe_overrides contains unknown graph recipe(s): "
+                f"{sorted(unknown_override_recipes)}")
+        for recipe, override in recipe_overrides.items():
+            if not isinstance(override, dict) or set(override) != {"num_layers"}:
+                raise ValueError(
+                    "refiners.graph.recipe_overrides entries may define only "
+                    "num_layers")
+            _require_positive_int(override, "num_layers")
         graph_tensorboard = graph.get("tensorboard", {})
         if not isinstance(graph_tensorboard, dict):
             raise ValueError("refiners.graph.tensorboard must be an object")
