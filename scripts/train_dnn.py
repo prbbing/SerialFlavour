@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train one same-seed tabular DNN per Parallel seed and feature recipe on B."""
+"""Train Cartesian tabular-DNN replicates for frozen Parallel features on B."""
 
 from __future__ import annotations
 
@@ -59,12 +59,14 @@ def _evaluate(model, loader, device):
     }
 
 
-def _train_one(study, run, recipe, *, skip_complete):
+def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
     config = study.refiners["dnn"]
-    output = study.refiner_directory(run, recipe, "dnn")
+    output = study.refiner_directory(run, recipe, downstream_seed)
     checkpoint = output / "best_dnn.pt"
     if checkpoint.exists() and skip_complete:
-        print(f"skip DNN seed={run.seed} recipe={recipe}: {checkpoint}")
+        print(
+            f"skip DNN parallel_seed={run.seed} "
+            f"downstream_seed={downstream_seed} recipe={recipe}: {checkpoint}")
         return
     if output.exists() and any(output.iterdir()):
         raise FileExistsError(f"refusing to overwrite DNN output: {output}")
@@ -82,17 +84,20 @@ def _train_one(study, run, recipe, *, skip_complete):
         feature_names=train_cache.recipe_names(recipe), config=config)
 
     device = _device(config)
-    seed_everything(run.seed, [device.index] if device.type == "cuda" else ())
+    seed_everything(
+        downstream_seed, [device.index] if device.type == "cuda" else ())
     train_loader = create_tabular_loader(
         train_cache, columns, batch_size=config["batch_size"], shuffle=True,
-        num_workers=config.get("num_workers", 0), seed=run.seed)
+        num_workers=config.get("num_workers", 0), seed=downstream_seed)
     val_loader = create_tabular_loader(
         val_cache, columns, batch_size=config["batch_size"], shuffle=False,
-        num_workers=config.get("num_workers", 0), seed=run.seed + 1000)
+        num_workers=config.get("num_workers", 0), seed=downstream_seed + 1000)
     model = TabularDNN(
         len(columns), config["hidden_dims"], config["dropout"], mean, std).to(device)
     parameter_count = int(sum(parameter.numel() for parameter in model.parameters()))
-    print(f"DNN seed={run.seed} recipe={recipe} parameters={parameter_count:,}")
+    print(
+        f"DNN parallel_seed={run.seed} downstream_seed={downstream_seed} "
+        f"recipe={recipe} parameters={parameter_count:,}")
     optimiser = torch.optim.AdamW(
         model.parameters(), lr=config["learning_rate"],
         weight_decay=config.get("weight_decay", 0.0))
@@ -157,12 +162,13 @@ def _train_one(study, run, recipe, *, skip_complete):
         write_json_atomic(output / "training_history.json", {
             "history_version": "parallel_refine_dnn_v1",
             "parallel_seed": run.seed,
-            "downstream_seed": run.seed,
+            "downstream_seed": downstream_seed,
             "recipe": recipe,
             "epochs": history,
         })
         print(
-            f"DNN seed={run.seed} recipe={recipe} epoch={epoch} "
+            f"DNN parallel_seed={run.seed} downstream_seed={downstream_seed} "
+            f"recipe={recipe} epoch={epoch} "
             f"train_ce={history[-1]['train_cross_entropy']:.6f} "
             f"val_ce={val['loss']:.6f}")
         if stale >= config["early_stopping_patience"]:
@@ -190,7 +196,7 @@ def _train_one(study, run, recipe, *, skip_complete):
         "experiment_config_sha256": study.source_sha256,
         "experiment_markers": study.experiment_markers,
         "parallel_seed": run.seed,
-        "downstream_seed": run.seed,
+        "downstream_seed": downstream_seed,
         "parallel_output_name": run.output_name,
         "parallel_checkpoint": str(study.checkpoint(run).resolve()),
         "recipe": recipe,
@@ -221,6 +227,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True)
     parser.add_argument("--seed", type=int, action="append")
+    parser.add_argument(
+        "--downstream-seed", type=int, action="append",
+        help="Train only this refiner initialization seed; repeat as needed.")
     parser.add_argument("--recipe", action="append")
     parser.add_argument("--skip-complete", action="store_true")
     args = parser.parse_args(argv)
@@ -234,9 +243,13 @@ def main(argv=None):
     unknown = set(recipes) - set(study.refiners["recipes"])
     if unknown:
         raise ValueError(f"recipe(s) not enabled by config: {sorted(unknown)}")
+    downstream_seeds = study.selected_downstream_seeds(args.downstream_seed)
     for run in study.selected_seeds(args.seed):
         for recipe in recipes:
-            _train_one(study, run, recipe, skip_complete=args.skip_complete)
+            for downstream_seed in downstream_seeds:
+                _train_one(
+                    study, run, recipe, downstream_seed,
+                    skip_complete=args.skip_complete)
     return 0
 
 

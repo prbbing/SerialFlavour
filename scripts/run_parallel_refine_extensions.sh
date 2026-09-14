@@ -6,6 +6,9 @@ set -euo pipefail
 
 CONFIG="${PARALLEL_REFINE_CONFIG:-configs/parallel_refine/experiments/experiment1/experiment1_p122k_a080_b020_graph_extensions.json}"
 GPU_SLOTS=(0 1 1 2 2)
+# A fixed Parallel seed may train at most this many downstream seeds at once.
+# The refiner scheduler below interleaves those jobs across Parallel seeds.
+MAX_REFINER_JOBS_PER_PARALLEL_SEED=5
 
 cd "$(dirname "$0")/.."
 if [[ ! -f "$CONFIG" ]]; then
@@ -28,6 +31,7 @@ print(study.study_name)
 print(study.upstream_experiment_name)
 print(" ".join(str(run.seed) for run in study.seeds))
 print(" ".join(study.refiners["recipes"]))
+print(" ".join(str(seed) for seed in study.downstream_seeds))
 PY
 )
 
@@ -35,6 +39,7 @@ EXPERIMENT_NAME="${CONFIG_METADATA[0]}"
 UPSTREAM_NAME="${CONFIG_METADATA[1]}"
 read -r -a SEEDS <<< "${CONFIG_METADATA[2]}"
 read -r -a RECIPES <<< "${CONFIG_METADATA[3]}"
+read -r -a DOWNSTREAM_SEEDS <<< "${CONFIG_METADATA[4]}"
 LOG_DIR="logs/parallel_refine/${EXPERIMENT_NAME}"
 mkdir -p "$LOG_DIR"
 
@@ -43,6 +48,13 @@ JOB_NAMES=()
 
 gpu_for_index() {
     echo "${GPU_SLOTS[$(($1 % ${#GPU_SLOTS[@]}))]}"
+}
+
+validate_refiner_parallel_seed_capacity() {
+    if ((${#DOWNSTREAM_SEEDS[@]} > MAX_REFINER_JOBS_PER_PARALLEL_SEED)); then
+        echo "ERROR: each Parallel seed may train at most ${MAX_REFINER_JOBS_PER_PARALLEL_SEED} refiner seeds concurrently; configured ${#DOWNSTREAM_SEEDS[@]}" >&2
+        return 1
+    fi
 }
 
 launch_job() {
@@ -73,6 +85,9 @@ echo "CONFIG: $CONFIG"
 echo "REFINER OUTPUT: $EXPERIMENT_NAME"
 echo "UPSTREAM CHECKPOINT OWNER: $UPSTREAM_NAME"
 echo "SEEDS: ${SEEDS[*]}"
+echo "DOWNSTREAM_SEEDS: ${DOWNSTREAM_SEEDS[*]}"
+echo "REFINER REPLICAS PER RECIPE: $((${#SEEDS[@]} * ${#DOWNSTREAM_SEEDS[@]}))"
+echo "MAX_CONCURRENT_REFINER_JOBS_PER_PARALLEL_SEED: $MAX_REFINER_JOBS_PER_PARALLEL_SEED"
 echo "RECIPES: ${RECIPES[*]}"
 echo "LOG_DIR: $LOG_DIR"
 
@@ -87,25 +102,30 @@ done
 wait_for_jobs
 
 echo "STAGE 2: train only configured extension refiners"
+validate_refiner_parallel_seed_capacity
 for recipe in "${RECIPES[@]}"; do
-    echo "  recipe: $recipe"
-    for index in "${!SEEDS[@]}"; do
-        seed="${SEEDS[$index]}"
-        gpu="$(gpu_for_index "$index")"
-        case "$recipe" in
-            FG0|FG1|FG2|FG4)
-                launch_job "$gpu" "graph_seed${seed}_${recipe}" \
-                    "$LOG_DIR/graph_seed${seed}_${recipe}_gpu${gpu}.log" \
-                    python scripts/train_graph_refiner.py --config "$CONFIG" \
-                    --seed "$seed" --recipe "$recipe" --skip-complete
-                ;;
-            *)
-                launch_job "$gpu" "dnn_seed${seed}_${recipe}" \
-                    "$LOG_DIR/dnn_seed${seed}_${recipe}_gpu${gpu}.log" \
-                    python scripts/train_dnn.py --config "$CONFIG" \
-                    --seed "$seed" --recipe "$recipe" --skip-complete
-                ;;
-        esac
+    echo "  recipe: $recipe; dispatching seed-interleaved jobs"
+    for downstream_seed in "${DOWNSTREAM_SEEDS[@]}"; do
+        for index in "${!SEEDS[@]}"; do
+            seed="${SEEDS[$index]}"
+            gpu="$(gpu_for_index "$index")"
+            case "$recipe" in
+                FG0|FG1|FG2|FG4)
+                    launch_job "$gpu" "graph_parallel${seed}_dnn${downstream_seed}_${recipe}" \
+                        "$LOG_DIR/graph_parallel${seed}_dnn${downstream_seed}_${recipe}_gpu${gpu}.log" \
+                        python scripts/train_graph_refiner.py --config "$CONFIG" \
+                        --seed "$seed" --downstream-seed "$downstream_seed" \
+                        --recipe "$recipe" --skip-complete
+                    ;;
+                *)
+                    launch_job "$gpu" "dnn_parallel${seed}_dnn${downstream_seed}_${recipe}" \
+                        "$LOG_DIR/dnn_parallel${seed}_dnn${downstream_seed}_${recipe}_gpu${gpu}.log" \
+                        python scripts/train_dnn.py --config "$CONFIG" \
+                        --seed "$seed" --downstream-seed "$downstream_seed" \
+                        --recipe "$recipe" --skip-complete
+                    ;;
+            esac
+        done
     done
     wait_for_jobs
 done

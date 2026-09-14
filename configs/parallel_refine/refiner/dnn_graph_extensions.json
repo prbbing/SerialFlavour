@@ -8,7 +8,8 @@
     "splits": ["b_train", "b_val", "y_test"]
   },
   "refiners": {
-    "seed_pairing": "same",
+    "seed_pairing": "cartesian",
+    "downstream_seeds": [1, 2, 3, 4, 5],
     "recipes": ["F1O", "F1V", "FG0", "FG1", "FG2", "FG4"],
     "dnn": {
       "gpu_ids": [-1],

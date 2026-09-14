@@ -10,7 +10,8 @@
     ]
   },
   "refiners": {
-    "seed_pairing": "same",
+    "seed_pairing": "cartesian",
+    "downstream_seeds": [1, 2, 3, 4, 5],
     "recipes": [
       "F0_aux",
       "F1_embed",

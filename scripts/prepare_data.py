@@ -13,7 +13,7 @@ if str(ROOT) not in sys.path:
 
 from src.parallel_refine.config import (
     active_parallel_config, load_study_config, materialize_parallel_config,
-    write_experiment_manifest)
+    write_experiment_manifest, write_json_atomic)
 from src.parallel_refine.data import load_processed_split
 from src.parallel_refine.splits import generate_split_bundle
 
@@ -38,6 +38,7 @@ def main(argv=None):
     config = active_parallel_config(study, run, stage="data")
     bundle = generate_split_bundle(config, force=args.force)
     processed_splits = set(args.processed_split or bundle.arrays)
+    processed = {}
     print(f"resolved_config={resolved}")
     print(f"split_dir={config.split_dir}")
     for name, indices in bundle.arrays.items():
@@ -46,9 +47,24 @@ def main(argv=None):
             f"events={bundle.summary['unique_events'][name]:,} "
             f"sha256={bundle.summary['index_sha256'][name]}")
         if args.build_processed_caches and name in processed_splits:
-            processed = load_processed_split(
+            split_processed = load_processed_split(
                 config, name, force=args.force, progress=True)
-            print(f"  retained_after_track_selection={len(processed['y']):,}")
+            processed[name] = {
+                "cache_directory": str(Path(config.cache_dir).resolve()),
+                "retained_after_track_selection": int(len(split_processed["y"])),
+            }
+            print(
+                f"  retained_after_track_selection="
+                f"{processed[name]['retained_after_track_selection']:,}")
+    write_json_atomic(study.data_directory / "data_preparation_manifest.json", {
+        "stage": "data",
+        "experiment_config": str(study.path),
+        "experiment_config_sha256": study.source_sha256,
+        "split_directory": str(Path(config.split_dir).resolve()),
+        "split_manifest": bundle.summary,
+        "processed": processed,
+        "resolved_config": str(resolved.resolve()),
+    })
     return 0
 
 

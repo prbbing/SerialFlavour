@@ -352,7 +352,6 @@ def generate_frozen_cache(
             "experiment_config_sha256": study.source_sha256,
             "experiment_markers": study.experiment_markers,
             "parallel_seed": run.seed,
-            "downstream_seed": run.seed,
             "parallel_output_name": run.output_name,
             "split": split,
             "checkpoint": str(checkpoint.resolve()),

@@ -34,7 +34,7 @@ RECIPE_MODEL_KIND = {
     **{name: "dnn" for name in FEATURE_RECIPES},
     **{name: "graph_dnn" for name in GRAPH_RECIPES},
 }
-EXPERIMENT_MANIFEST_VERSION = "parallel_refine_experiment_manifest_v1"
+EXPERIMENT_MANIFEST_VERSION = "parallel_refine_experiment_manifest_v2"
 
 
 def recipe_model_kind(recipe: str) -> str:
@@ -186,9 +186,19 @@ class StudyConfig:
         return Path(experiment["output_root"]) / experiment["name"]
 
     @property
+    def data_directory(self) -> Path:
+        """Directory for data-stage provenance and resolved inputs."""
+        return self.output_directory / "data"
+
+    @property
     def upstream_output_directory(self) -> Path:
         experiment = self.values["experiment"]
         return Path(experiment["output_root"]) / self.upstream_experiment_name
+
+    @property
+    def parallel_output_directory(self) -> Path:
+        """Directory owning the frozen Parallel checkpoints."""
+        return self.upstream_output_directory / "parallel"
 
     @property
     def cache_identity_name(self) -> str:
@@ -210,6 +220,18 @@ class StudyConfig:
         experiment = self.values["experiment"]
         return (Path(experiment["output_root"])
                 / self.refiner_output_experiment_name)
+
+    @property
+    def refiner_results_directory(self) -> Path:
+        return self.refiner_output_directory / "refiner"
+
+    @property
+    def evaluation_results_directory(self) -> Path:
+        return self.refiner_output_directory / "evaluation"
+
+    @property
+    def downstream_seeds(self) -> tuple[int, ...]:
+        return tuple(int(seed) for seed in self.refiners["downstream_seeds"])
 
     @property
     def source_sha256(self) -> str:
@@ -251,16 +273,39 @@ class StudyConfig:
             raise ValueError(f"unknown configured seed(s): {sorted(missing)}")
         return selected
 
+    def selected_downstream_seeds(
+            self, requested: Iterable[int] | None = None) -> tuple[int, ...]:
+        if requested is None:
+            return self.downstream_seeds
+        wanted = {int(value) for value in requested}
+        selected = tuple(seed for seed in self.downstream_seeds if seed in wanted)
+        missing = wanted - set(selected)
+        if missing:
+            raise ValueError(
+                f"unknown configured downstream seed(s): {sorted(missing)}")
+        return selected
+
     def parallel_directory(self, run: SeedRun) -> Path:
-        return self.upstream_output_directory / "parallel" / run.output_name
+        return self.parallel_output_directory / run.output_name
 
     def checkpoint(self, run: SeedRun) -> Path:
         return self.parallel_directory(run) / self.parallel.get(
             "checkpoint", "best_jet.pt")
 
-    def refiner_directory(self, run: SeedRun, recipe: str, model: str) -> Path:
-        return (self.refiner_output_directory / "refiners" / run.output_name
-                / recipe / model)
+    def refiner_directory(
+            self, run: SeedRun, recipe: str, downstream_seed: int) -> Path:
+        """Directory of one refiner replicate under its frozen Parallel seed."""
+        return (self.refiner_results_directory / run.output_name / recipe
+                / f"dnn_seed{int(downstream_seed)}")
+
+    def evaluation_directory(
+            self, run: SeedRun, recipe: str, downstream_seed: int) -> Path:
+        """Locked-Y evaluation directory matching one refiner replicate."""
+        return (self.evaluation_results_directory / run.output_name / recipe
+                / f"dnn_seed{int(downstream_seed)}")
+
+    def parallel_evaluation_directory(self, run: SeedRun) -> Path:
+        return self.evaluation_results_directory / run.output_name / "parallel"
 
 
 def _require_positive_int(mapping: dict[str, Any], key: str) -> None:
@@ -537,8 +582,19 @@ def load_study_config(path: str | Path) -> StudyConfig:
     if not recipes or set(recipes) - set(RECIPE_MODEL_KIND):
         raise ValueError(
             f"refiners.recipes must use {sorted(RECIPE_MODEL_KIND)}")
-    if values["refiners"].get("seed_pairing", "same") != "same":
-        raise ValueError("only same Parallel/DNN seed pairing is currently supported")
+    if values["refiners"].get("seed_pairing") != "cartesian":
+        raise ValueError(
+            "refiners.seed_pairing must be 'cartesian' for independent "
+            "Parallel/refiner seed replicates")
+    downstream_seeds = values["refiners"].get("downstream_seeds")
+    if (
+            not isinstance(downstream_seeds, list)
+            or not downstream_seeds
+            or any(not isinstance(seed, int) or seed < 0 for seed in downstream_seeds)
+            or len(set(downstream_seeds)) != len(downstream_seeds)):
+        raise ValueError(
+            "refiners.downstream_seeds must be a non-empty list of unique "
+            "non-negative integers")
     dnn = values["refiners"].get("dnn", {})
     if dnn.get("gpu_ids", [-1]) != [-1]:
         raise ValueError(
@@ -640,7 +696,7 @@ def parallel_values(study: StudyConfig, run: SeedRun, *, stage: str) -> dict[str
         "cache_dir": data["processed_cache_dir"],
         "feature_cache_dir": study.cache["root"],
         "feature_cache_dtype": study.cache.get("dtype", "float32"),
-        "output_dir": str(study.output_directory / "parallel"),
+        "output_dir": str(study.parallel_output_directory),
         "top_k": data.get("top_k", _DEFAULTS["top_k"]),
         "num_workers": data.get("num_workers", _DEFAULTS["num_workers"]),
         "jet_fields": data.get("jet_fields", _DEFAULTS["jet_fields"]),
@@ -709,7 +765,7 @@ def write_json_atomic(path: str | Path, payload: Any) -> None:
 
 def write_experiment_manifest(study: StudyConfig) -> Path:
     """Write one immutable-identity manifest shared by all study stages."""
-    path = study.output_directory / "experiment_manifest.json"
+    path = study.data_directory / "experiment_manifest.json"
     payload = {
         "version": EXPERIMENT_MANIFEST_VERSION,
         "study_name": study.study_name,
@@ -733,7 +789,12 @@ def write_experiment_manifest(study: StudyConfig) -> Path:
 
 def materialize_parallel_config(
         study: StudyConfig, run: SeedRun, *, stage: str) -> Path:
-    directory = study.output_directory / "configs" / "resolved" / stage
+    if stage == "data":
+        directory = study.data_directory / "resolved_configs"
+    elif stage == "parallel":
+        directory = study.parallel_output_directory / "resolved_configs"
+    else:
+        raise ValueError(f"unknown result stage for resolved config: {stage}")
     path = directory / f"{run.output_name}.json"
     write_json_atomic(path, parallel_values(study, run, stage=stage))
     return path

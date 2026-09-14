@@ -17,6 +17,9 @@ CONFIG="${PARALLEL_REFINE_CONFIG:-configs/parallel_refine/experiments/experiment
 # Physical GPU allocation slots. Seeds are assigned to these entries in order;
 # if a config contains more seeds than slots, the list is reused cyclically.
 GPU_SLOTS=(0 1 1 2 2)
+# A fixed Parallel seed may train at most this many downstream seeds at once.
+# The refiner scheduler below interleaves those jobs across Parallel seeds.
+MAX_REFINER_JOBS_PER_PARALLEL_SEED=5
 
 cd "$(dirname "$0")/.."
 
@@ -39,6 +42,7 @@ print(" ".join(
     f"{recipe}:{recipe_model_kind(recipe)}"
     for recipe in study.refiners["recipes"]
 ))
+print(" ".join(str(seed) for seed in study.downstream_seeds))
 PY
 )
 
@@ -46,6 +50,7 @@ EXPERIMENT_NAME="${CONFIG_METADATA[0]}"
 B_TRAIN="${CONFIG_METADATA[1]}"
 read -r -a SEEDS <<< "${CONFIG_METADATA[2]}"
 read -r -a RECIPE_SPECS <<< "${CONFIG_METADATA[3]}"
+read -r -a DOWNSTREAM_SEEDS <<< "${CONFIG_METADATA[4]}"
 
 LOG_DIR="logs/parallel_refine/${EXPERIMENT_NAME}"
 mkdir -p "$LOG_DIR"
@@ -56,6 +61,13 @@ JOB_NAMES=()
 gpu_for_index() {
     local index="$1"
     echo "${GPU_SLOTS[$((index % ${#GPU_SLOTS[@]}))]}"
+}
+
+validate_refiner_parallel_seed_capacity() {
+    if ((${#DOWNSTREAM_SEEDS[@]} > MAX_REFINER_JOBS_PER_PARALLEL_SEED)); then
+        echo "ERROR: each Parallel seed may train at most ${MAX_REFINER_JOBS_PER_PARALLEL_SEED} refiner seeds concurrently; configured ${#DOWNSTREAM_SEEDS[@]}" >&2
+        return 1
+    fi
 }
 
 launch_job() {
@@ -90,6 +102,9 @@ wait_for_jobs() {
 echo "CONFIG: $CONFIG"
 echo "EXPERIMENT: $EXPERIMENT_NAME"
 echo "SEEDS: ${SEEDS[*]}"
+echo "DOWNSTREAM_SEEDS: ${DOWNSTREAM_SEEDS[*]}"
+echo "REFINER REPLICAS PER RECIPE: $((${#SEEDS[@]} * ${#DOWNSTREAM_SEEDS[@]}))"
+echo "MAX_CONCURRENT_REFINER_JOBS_PER_PARALLEL_SEED: $MAX_REFINER_JOBS_PER_PARALLEL_SEED"
 echo "B_TRAIN: $B_TRAIN"
 echo "RECIPES: ${RECIPE_SPECS[*]}"
 echo "LOG_DIR: $LOG_DIR"
@@ -132,31 +147,36 @@ if ((B_TRAIN > 0)); then
     wait_for_jobs
 
     echo "STAGE 4: train configured downstream recipes"
+    validate_refiner_parallel_seed_capacity
     for recipe_spec in "${RECIPE_SPECS[@]}"; do
         recipe="${recipe_spec%%:*}"
         recipe_kind="${recipe_spec#*:}"
-        echo "  recipe: ${recipe} (${recipe_kind})"
-        for index in "${!SEEDS[@]}"; do
-            seed="${SEEDS[$index]}"
-            gpu="$(gpu_for_index "$index")"
-            case "$recipe_kind" in
-                graph_dnn)
-                    launch_job "$gpu" "graph_seed${seed}_${recipe}" \
-                        "$LOG_DIR/graph_seed${seed}_${recipe}_gpu${gpu}.log" \
-                        python scripts/train_graph_refiner.py --config "$CONFIG" \
-                        --seed "$seed" --recipe "$recipe" --skip-complete
-                    ;;
-                dnn)
-                    launch_job "$gpu" "dnn_seed${seed}_${recipe}" \
-                        "$LOG_DIR/dnn_seed${seed}_${recipe}_gpu${gpu}.log" \
-                        python scripts/train_dnn.py --config "$CONFIG" \
-                        --seed "$seed" --recipe "$recipe" --skip-complete
-                    ;;
-                *)
-                    echo "ERROR: unknown model kind ${recipe_kind} for recipe ${recipe}" >&2
-                    exit 1
-                    ;;
-            esac
+        echo "  recipe: ${recipe} (${recipe_kind}); dispatching seed-interleaved jobs"
+        for downstream_seed in "${DOWNSTREAM_SEEDS[@]}"; do
+            for index in "${!SEEDS[@]}"; do
+                seed="${SEEDS[$index]}"
+                gpu="$(gpu_for_index "$index")"
+                case "$recipe_kind" in
+                    graph_dnn)
+                        launch_job "$gpu" "graph_parallel${seed}_dnn${downstream_seed}_${recipe}" \
+                            "$LOG_DIR/graph_parallel${seed}_dnn${downstream_seed}_${recipe}_gpu${gpu}.log" \
+                            python scripts/train_graph_refiner.py --config "$CONFIG" \
+                            --seed "$seed" --downstream-seed "$downstream_seed" \
+                            --recipe "$recipe" --skip-complete
+                        ;;
+                    dnn)
+                        launch_job "$gpu" "dnn_parallel${seed}_dnn${downstream_seed}_${recipe}" \
+                            "$LOG_DIR/dnn_parallel${seed}_dnn${downstream_seed}_${recipe}_gpu${gpu}.log" \
+                            python scripts/train_dnn.py --config "$CONFIG" \
+                            --seed "$seed" --downstream-seed "$downstream_seed" \
+                            --recipe "$recipe" --skip-complete
+                        ;;
+                    *)
+                        echo "ERROR: unknown model kind ${recipe_kind} for recipe ${recipe}" >&2
+                        exit 1
+                        ;;
+                esac
+            done
         done
         wait_for_jobs
     done
