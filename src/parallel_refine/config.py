@@ -398,6 +398,12 @@ def load_study_config(path: str | Path) -> StudyConfig:
             continue
         _require_positive_int(sizes, split)
     _require_nonnegative_int(sizes, "b_train")
+    shared_validation = values["data"].get("shared_validation", False)
+    if not isinstance(shared_validation, bool):
+        raise ValueError("data.shared_validation must be a boolean")
+    if shared_validation and sizes["a_val"] != sizes["b_val"]:
+        raise ValueError(
+            "shared validation requires data.sizes.a_val == data.sizes.b_val")
     _require_positive_int(values["data"], "data_seed")
     for key in ("train_file", "split_dir", "processed_cache_dir"):
         if not isinstance(values["data"].get(key), str) or not values["data"][key]:
@@ -719,6 +725,7 @@ def parallel_values(study: StudyConfig, run: SeedRun, *, stage: str) -> dict[str
         "truth_vertex": copy.deepcopy(data["truth_vertex"]),
         "normalization": copy.deepcopy(data["normalization"]),
         "kinematic_resampling": copy.deepcopy(data["kinematic_resampling"]),
+        "shared_validation": data.get("shared_validation", False),
         **data["sizes"],
     })
     values.update(parallel.get("model", {}))

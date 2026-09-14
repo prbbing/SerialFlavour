@@ -36,7 +36,7 @@ def _hash(values: np.ndarray) -> str:
 
 def _split_request(config) -> dict[str, Any]:
     stat = os.stat(config.train_file)
-    return {
+    request = {
         "train_file": os.path.abspath(config.train_file),
         "source_size": int(stat.st_size),
         "source_mtime_ns": int(stat.st_mtime_ns),
@@ -47,6 +47,11 @@ def _split_request(config) -> dict[str, Any]:
         "sizes": {name: int(getattr(config, name)) for name in SPLIT_NAMES},
         "kinematic_resampling": config.kinematic_resampling,
     }
+    # Keep historical split manifests valid: the key is only part of the
+    # request identity for the opt-in shared-validation protocol.
+    if getattr(config, "shared_validation", False):
+        request["shared_validation"] = True
+    return request
 
 
 def _reserve_natural(order, counts, requested, name):
@@ -179,24 +184,36 @@ def build_split_indices(
     rng = np.random.default_rng(config.data_seed)
     remaining = rng.permutation(len(unique_events))
     reserved: dict[str, np.ndarray] = {}
+    shared_validation = bool(getattr(config, "shared_validation", False))
     reserved["y_test"], remaining = _reserve_natural(
         remaining, event_counts, config.y_test, "y_test")
-    reserved["b_val"], remaining = _reserve_natural(
-        remaining, event_counts, config.b_val, "b_val")
+    if shared_validation:
+        reserved["a_val"], remaining = _reserve_natural(
+            remaining, event_counts, config.a_val, "a_val")
+        reserved["b_val"] = reserved["a_val"]
+    else:
+        reserved["b_val"], remaining = _reserve_natural(
+            remaining, event_counts, config.b_val, "b_val")
     if config.b_train:
         reserved["b_train"], remaining = _reserve_balanced(
             remaining, event_class_counts,
             _candidate_targets(config, config.b_train), "b_train")
     else:
         reserved["b_train"] = np.empty(0, dtype=remaining.dtype)
-    reserved["a_val"], remaining = _reserve_natural(
-        remaining, event_counts, config.a_val, "a_val")
+    if not shared_validation:
+        reserved["a_val"], remaining = _reserve_natural(
+            remaining, event_counts, config.a_val, "a_val")
     reserved["a_train"], remaining = _reserve_balanced(
         remaining, event_class_counts,
         _candidate_targets(config, config.a_train), "a_train")
 
     arrays: dict[str, np.ndarray] = {}
     for name in SPLIT_NAMES:
+        if name == "b_val" and shared_validation:
+            # Both training stages must make early-stopping decisions on the
+            # identical jet set, not merely on the same reserved events.
+            arrays[name] = arrays["a_val"].copy()
+            continue
         requested = int(getattr(config, name))
         if requested == 0:
             arrays[name] = np.empty(0, dtype=np.int64)
@@ -227,7 +244,12 @@ def build_split_indices(
                 "jet_overlap": jet_overlap,
                 "event_overlap": event_overlap,
             }
-            if jet_overlap or event_overlap:
+            is_shared_validation_pair = (
+                shared_validation and {left, right} == {"a_val", "b_val"})
+            if is_shared_validation_pair:
+                if not np.array_equal(arrays[left], arrays[right]):
+                    raise RuntimeError("shared validation indices differ")
+            elif jet_overlap or event_overlap:
                 raise RuntimeError(f"split overlap detected for {left}/{right}")
 
     class_counts = {

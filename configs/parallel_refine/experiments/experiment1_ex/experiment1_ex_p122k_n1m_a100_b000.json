@@ -1,0 +1,5 @@
+{
+  "components": {"data": "../../data/experiment1_ex_n1m.json", "parallel": "../../parallel/experiment1_p122k.json", "refiner": "../../refiner/dnn_default.json"},
+  "config_kind": "experiment",
+  "experiment": {"name": "experiment1_ex_p122k_n1m_a100_b000", "output_root": "/data/yuyang/SerialFlavour/results/parallel_refine", "markers": {"label": "Experiment 1 EX | Parallel 122k | total 1M | A/B 100/0", "tags": ["experiment-1-ex", "fixed-total-data-scaling", "transformer-only"], "comparison_group": "experiment1_ex_p122k_fixed_total_data", "variables": {"parallel_parameters": 122077, "total_dataset_jets": 1000000, "train_pool_jets": 700000, "validation_jets": 100000, "test_jets": 200000, "a_train_jets": 700000, "b_train_jets": 0, "a_fraction_percent": 100, "b_fraction_percent": 0, "dnn_enabled": false}}}
+}
