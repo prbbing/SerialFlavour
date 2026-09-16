@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import queue
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -13,7 +15,8 @@ import numpy as np
 import torch
 
 from src.parallel_refine.config import (
-    FEATURE_RECIPES, SeedRun, StudyConfig, active_parallel_config)
+    FEATURE_RECIPES, GRAPH_RECIPES, SeedRun, StudyConfig,
+    active_parallel_config)
 from src.parallel_refine.data import create_loader
 from src.parallel_refine.upstream import (
     build_parallel, checkpoint_config, frozen_parallel_outputs)
@@ -234,6 +237,96 @@ class _Writer:
         self.marker.unlink(missing_ok=True)
 
 
+class ThreadedWriter:
+    """Run a cache writer's ``write`` calls on a background thread.
+
+    The forward pass only has to enqueue CPU arrays; the wrapped writer performs
+    the memmap assignment and hashing while the next batch is computed.  A
+    bounded queue keeps at most ``maxsize`` batches in flight.  Bookkeeping
+    attributes such as ``cursor`` are proxied to the wrapped writer so existing
+    progress reporting keeps working.
+
+    Failure handling is queue-safe: enqueuing polls the worker with a timeout so
+    a dead or failed worker can never block the producer forever; after a write
+    error the worker keeps draining (discarding) queued items, and ``finalize``
+    /``abort`` stop the worker before touching the underlying writer so its
+    ``.building`` marker and temporary files are always cleaned up.
+    """
+
+    _POLL_SECONDS = 0.1
+
+    def __init__(self, writer, maxsize: int = 4):
+        self.writer = writer
+        self._queue: queue.Queue = queue.Queue(maxsize=maxsize)
+        self._error: BaseException | None = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._drain, daemon=True)
+        self._thread.start()
+
+    def __getattr__(self, name):
+        return getattr(self.__dict__["writer"], name)
+
+    def _drain(self):
+        while not self._stop.is_set():
+            try:
+                item = self._queue.get(timeout=self._POLL_SECONDS)
+            except queue.Empty:
+                continue
+            if item is None:
+                break
+            if self._error is not None:
+                # Discard queued batches after a failed write so a full queue
+                # can never block the producer waiting to enqueue more.
+                continue
+            args, kwargs = item
+            try:
+                self.writer.write(*args, **kwargs)
+            except BaseException as error:
+                self._error = error
+
+    def _enqueue(self, item):
+        while True:
+            if self._error is not None:
+                raise self._error
+            if not self._thread.is_alive():
+                raise RuntimeError("cache writer thread stopped unexpectedly")
+            try:
+                self._queue.put(item, timeout=self._POLL_SECONDS)
+                return
+            except queue.Full:
+                continue
+
+    def write(self, *args, **kwargs):
+        self._enqueue((args, kwargs))
+
+    def _shutdown(self):
+        self._stop.set()
+        try:
+            self._queue.put_nowait(None)
+        except queue.Full:
+            pass
+        self._thread.join()
+
+    def finalize(self, metadata):
+        try:
+            if self._error is not None:
+                raise self._error
+            self._enqueue(None)
+        except BaseException:
+            self._shutdown()
+            self.writer.abort()
+            raise
+        self._thread.join()
+        if self._error is not None:
+            self.writer.abort()
+            raise self._error
+        return self.writer.finalize(metadata)
+
+    def abort(self):
+        self._shutdown()
+        self.writer.abort()
+
+
 def _load_arrays(directory: Path, manifest) -> FrozenFeatureCache:
     arrays = {
         name: np.load(directory / specification["file"], mmap_mode="r")
@@ -298,27 +391,126 @@ def load_frozen_cache(
 def generate_frozen_cache(
         study: StudyConfig, run: SeedRun, split: str, device: torch.device,
         *, force: bool = False) -> FrozenFeatureCache:
+    """Build (or load) only the structured-pool cache for one split."""
+    frozen, _ = generate_frozen_and_graph_cache(
+        study, run, split, device, force=force, include_graph=False)
+    return frozen
+
+
+def _frozen_metadata(
+        study, run, split, checkpoint, split_hash, active_config, raw,
+        feature_names, feature_groups):
+    return {
+        "version": FEATURE_SCHEMA_VERSION,
+        "study_name": study.cache_identity_name,
+        "experiment_config": str(study.path),
+        "experiment_config_sha256": study.source_sha256,
+        "experiment_markers": study.experiment_markers,
+        "parallel_seed": run.seed,
+        "parallel_output_name": run.output_name,
+        "split": split,
+        "checkpoint": str(checkpoint.resolve()),
+        "checkpoint_sha256": sha256_file(checkpoint),
+        "split_index_sha256": split_hash,
+        "source_index_sha256": sha256_array(np.asarray(raw["source_index"])),
+        "source_count": int(len(raw["source_index"])),
+        "top_k": int(active_config.top_k),
+        "track_fields": list(active_config.track_fields),
+        "jet_fields": list(active_config.jet_fields),
+        "normalization": active_config.normalization,
+        "kinematic_resampling": active_config.kinematic_resampling,
+        "truth_vertex": active_config.truth_vertex,
+        "storage_dtype": study.cache.get("dtype", "float32"),
+        "feature_names": feature_names,
+        "groups": feature_groups,
+        "recipes": {name: list(groups) for name, groups in FEATURE_RECIPES.items()},
+    }
+
+
+def _graph_metadata(
+        version, study, run, split, checkpoint, split_hash, active_config, raw):
+    return {
+        "version": version,
+        "study_name": study.cache_identity_name,
+        "parallel_seed": run.seed,
+        "parallel_output_name": run.output_name,
+        "split": split,
+        "checkpoint": str(checkpoint.resolve()),
+        "checkpoint_sha256": sha256_file(checkpoint),
+        "split_index_sha256": split_hash,
+        "source_index_sha256": sha256_array(np.asarray(raw["source_index"])),
+        "source_count": int(len(raw["source_index"])),
+        "top_k": int(active_config.top_k),
+        "storage_dtype": study.cache.get("graph_dtype", "float32"),
+    }
+
+
+def _threaded(writer, threaded):
+    return ThreadedWriter(writer) if threaded else writer
+
+
+@torch.no_grad()
+def generate_frozen_and_graph_cache(
+        study: StudyConfig, run: SeedRun, split: str, device: torch.device,
+        *, force: bool = False, threaded: bool = True, progress: bool = True,
+        include_frozen: bool = True, include_graph: bool | None = None):
+    """Build the structured-pool and (when configured) pair-graph caches.
+
+    Both frozen caches are derived from the same ``frozen_parallel_outputs``
+    result, so a single loader and forward pass serves both, avoiding a
+    duplicate model load, DataLoader traversal and forward pass.  CPU-side
+    writes and hashing run on a :class:`ThreadedWriter` background thread so
+    they overlap with the next batch's forward pass.
+
+    ``include_graph=None`` builds the graph table only when a graph recipe is
+    configured; pass an explicit boolean to force or forbid it.  Returns
+    ``(frozen_cache, graph_cache)``; an entry is ``None`` when that cache is
+    excluded.  Splits whose manifest already exists are not rebuilt unless
+    ``force`` is set.  The produced files and manifests are identical to calling
+    :func:`generate_frozen_cache` and :func:`generate_graph_cache` separately.
+    """
+    from src.parallel_refine.graph_cache import (
+        GRAPH_CACHE_VERSION, _GraphWriter, graph_cache_directory,
+        load_graph_cache)
+
     checkpoint = study.checkpoint(run)
     if not checkpoint.is_file():
         raise FileNotFoundError(f"missing Parallel checkpoint: {checkpoint}")
     active_config = active_parallel_config(study, run)
     bundle = load_split_bundle(active_config.split_dir, config=active_config)
     split_hash = bundle.summary["index_sha256"][split]
-    directory = cache_directory(study, run, split, checkpoint, split_hash)
-    if (directory / "manifest.json").is_file() and not force:
-        return load_frozen_cache(study, run, split)
+
+    if include_graph is None:
+        include_graph = any(
+            recipe in GRAPH_RECIPES for recipe in study.refiners["recipes"])
+    frozen_directory = cache_directory(
+        study, run, split, checkpoint, split_hash)
+    need_frozen = (
+        include_frozen
+        and (force or not (frozen_directory / "manifest.json").is_file()))
+    graph_directory = None
+    need_graph = False
+    if include_graph:
+        graph_directory = graph_cache_directory(
+            study, run, split, checkpoint, split_hash)
+        need_graph = force or not (graph_directory / "manifest.json").is_file()
+
+    if not need_frozen and not need_graph:
+        return (load_frozen_cache(study, run, split) if include_frozen else None,
+                load_graph_cache(study, run, split) if include_graph else None)
 
     loader, raw = create_loader(
-        active_config, split, shuffle=False, progress=True,
+        active_config, split, shuffle=False, progress=progress,
         batch_size=study.cache.get("batch_size", active_config.batch_size),
         fields=("X", "jet_X", "mask", "y", "source_index", "event_number"))
-    model_config = checkpoint_config(checkpoint, active_config)
-    model = build_parallel(model_config).to(device)
+    model = build_parallel(checkpoint_config(checkpoint, active_config)).to(device)
     model.load_state_dict(torch.load(
         checkpoint, map_location=device, weights_only=True))
     model.eval()
 
-    writer = None
+    total = len(raw["y"])
+    frozen_writer = None
+    graph_writer = None
     feature_names = None
     feature_groups = None
     try:
@@ -326,57 +518,68 @@ def generate_frozen_cache(
             batch = {name: values.to(device) for name, values in raw_batch.items()}
             output = frozen_parallel_outputs(
                 model, batch["X"], batch["jet_X"], batch["mask"])
-            table = build_feature_table(output)
-            if writer is None:
-                writer = _Writer(
-                    directory, len(raw["y"]), table.values.shape[-1],
-                    study.cache.get("dtype", "float32"))
+            table = build_feature_table(output) if need_frozen else None
+            if need_frozen and frozen_writer is None:
+                frozen_writer = _threaded(_Writer(
+                    frozen_directory, total, table.values.shape[-1],
+                    study.cache.get("dtype", "float32")), threaded)
                 feature_names = list(table.names)
                 feature_groups = {
                     name: list(bounds) for name, bounds in table.groups.items()}
-            elif tuple(feature_names) != table.names or feature_groups != {
-                    name: list(bounds) for name, bounds in table.groups.items()}:
+            elif need_frozen and (
+                    tuple(feature_names) != table.names
+                    or feature_groups != {
+                        name: list(bounds)
+                        for name, bounds in table.groups.items()}):
                 raise ValueError("feature schema changed between batches")
-            writer.write(
-                table.values.detach().cpu().numpy(),
-                batch["y"].cpu().numpy(),
-                batch["source_index"].cpu().numpy(),
-                batch["event_number"].cpu().numpy())
-            print(f"  {run.output_name}/{split}: {writer.cursor:,}/{len(raw['y']):,}")
-        if writer is None:
+            if need_graph and graph_writer is None:
+                graph_writer = _threaded(_GraphWriter(
+                    graph_directory, length=total,
+                    tracks=batch["mask"].shape[1],
+                    embedding_dim=output["track_embedding"].shape[-1],
+                    dtype=study.cache.get("graph_dtype", "float32")), threaded)
+            if need_frozen:
+                frozen_writer.write(
+                    table.values.detach().cpu().numpy(),
+                    batch["y"].cpu().numpy(),
+                    batch["source_index"].cpu().numpy(),
+                    batch["event_number"].cpu().numpy())
+                if progress:
+                    print(f"  {run.output_name}/{split}: "
+                          f"{frozen_writer.cursor:,}/{total:,}")
+            if need_graph:
+                graph_writer.write(
+                    pair_probs=output["pair_probs"].cpu().numpy(),
+                    track_mask=output["track_mask"].cpu().numpy(),
+                    origin_probs=output["origin_probs"].cpu().numpy(),
+                    track_embedding=output["track_embedding"].cpu().numpy(),
+                    labels=batch["y"].cpu().numpy(),
+                    source_index=batch["source_index"].cpu().numpy(),
+                    event_number=batch["event_number"].cpu().numpy())
+                if progress:
+                    print(f"  graph {run.output_name}/{split}: "
+                          f"{graph_writer.cursor:,}/{total:,}")
+        if need_frozen and frozen_writer is None:
             raise ValueError(f"cannot cache empty split {split}")
-        metadata = {
-            "version": FEATURE_SCHEMA_VERSION,
-            "study_name": study.cache_identity_name,
-            "experiment_config": str(study.path),
-            "experiment_config_sha256": study.source_sha256,
-            "experiment_markers": study.experiment_markers,
-            "parallel_seed": run.seed,
-            "parallel_output_name": run.output_name,
-            "split": split,
-            "checkpoint": str(checkpoint.resolve()),
-            "checkpoint_sha256": sha256_file(checkpoint),
-            "split_index_sha256": split_hash,
-            "source_index_sha256": sha256_array(np.asarray(raw["source_index"])),
-            "source_count": int(len(raw["source_index"])),
-            "top_k": int(active_config.top_k),
-            "track_fields": list(active_config.track_fields),
-            "jet_fields": list(active_config.jet_fields),
-            "normalization": active_config.normalization,
-            "kinematic_resampling": active_config.kinematic_resampling,
-            "truth_vertex": active_config.truth_vertex,
-            "storage_dtype": study.cache.get("dtype", "float32"),
-            "feature_names": feature_names,
-            "groups": feature_groups,
-            "recipes": {name: list(groups) for name, groups in FEATURE_RECIPES.items()},
-        }
-        writer.finalize(metadata)
+        if need_graph and graph_writer is None:
+            raise ValueError(f"cannot cache empty split {split}")
+        if need_frozen:
+            frozen_writer.finalize(_frozen_metadata(
+                study, run, split, checkpoint, split_hash, active_config, raw,
+                feature_names, feature_groups))
+        if need_graph:
+            graph_writer.finalize(_graph_metadata(
+                GRAPH_CACHE_VERSION, study, run, split, checkpoint, split_hash,
+                active_config, raw))
     except BaseException:
-        if writer is not None:
-            writer.abort()
+        if frozen_writer is not None:
+            frozen_writer.abort()
+        if graph_writer is not None:
+            graph_writer.abort()
         raise
     finally:
         del model
         if device.type == "cuda":
             torch.cuda.empty_cache()
-    return load_frozen_cache(study, run, split)
+    return (load_frozen_cache(study, run, split) if include_frozen else None,
+            load_graph_cache(study, run, split) if include_graph else None)

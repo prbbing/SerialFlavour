@@ -13,10 +13,9 @@ if str(ROOT) not in sys.path:
 
 import torch
 
-from src.parallel_refine.cache import generate_frozen_cache
+from src.parallel_refine.cache import generate_frozen_and_graph_cache
 from src.parallel_refine.config import (
-    GRAPH_RECIPES, load_study_config, write_experiment_manifest)
-from src.parallel_refine.graph_cache import generate_graph_cache
+    load_study_config, write_experiment_manifest)
 
 
 def _device():
@@ -42,14 +41,12 @@ def main(argv=None):
         device = _device()
         print(f"seed={run.seed} device={device}")
         for split in splits:
-            cache = generate_frozen_cache(
+            cache, graph = generate_frozen_and_graph_cache(
                 study, run, split, device, force=args.force)
             print(
                 f"cache seed={run.seed} split={split} rows={len(cache.labels):,} "
                 f"features={cache.features.shape[1]} dir={cache.directory}")
-            if any(recipe in GRAPH_RECIPES for recipe in study.refiners["recipes"]):
-                graph = generate_graph_cache(
-                    study, run, split, device, force=args.force)
+            if graph is not None:
                 print(
                     f"graph_cache seed={run.seed} split={split} "
                     f"rows={len(graph.labels):,} tracks={graph.track_mask.shape[1]} "

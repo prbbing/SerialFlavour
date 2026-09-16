@@ -16,12 +16,10 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from src.parallel_refine.cache import sha256_array, sha256_file
+from src.parallel_refine.cache import (
+    generate_frozen_and_graph_cache, sha256_array, sha256_file)
 from src.parallel_refine.config import SeedRun, StudyConfig, active_parallel_config
-from src.parallel_refine.data import create_loader
 from src.parallel_refine.splits import load_split_bundle
-from src.parallel_refine.upstream import (
-    build_parallel, checkpoint_config, frozen_parallel_outputs)
 
 
 GRAPH_CACHE_VERSION = "parallel_refine_pair_graph_v1"
@@ -185,62 +183,7 @@ def load_graph_cache(study: StudyConfig, run: SeedRun, split: str) -> GraphFeatu
 def generate_graph_cache(study: StudyConfig, run: SeedRun, split: str,
                          device: torch.device, *, force: bool = False):
     """Run a frozen Parallel checkpoint once and persist graph-only inputs."""
-    checkpoint = study.checkpoint(run)
-    active_config = active_parallel_config(study, run)
-    bundle = load_split_bundle(active_config.split_dir, config=active_config)
-    split_hash = bundle.summary["index_sha256"][split]
-    directory = graph_cache_directory(study, run, split, checkpoint, split_hash)
-    if (directory / "manifest.json").is_file() and not force:
-        return load_graph_cache(study, run, split)
-    loader, raw = create_loader(
-        active_config, split, shuffle=False, progress=True,
-        batch_size=study.cache.get("batch_size", active_config.batch_size),
-        fields=("X", "jet_X", "mask", "y", "source_index", "event_number"))
-    model = build_parallel(checkpoint_config(checkpoint, active_config)).to(device)
-    model.load_state_dict(torch.load(checkpoint, map_location=device, weights_only=True))
-    model.eval()
-    writer = None
-    try:
-        for raw_batch in loader:
-            batch = {name: values.to(device) for name, values in raw_batch.items()}
-            output = frozen_parallel_outputs(
-                model, batch["X"], batch["jet_X"], batch["mask"])
-            if writer is None:
-                writer = _GraphWriter(
-                    directory, length=len(raw["y"]), tracks=batch["mask"].shape[1],
-                    embedding_dim=output["track_embedding"].shape[-1],
-                    dtype=study.cache.get("graph_dtype", "float32"))
-            writer.write(
-                pair_probs=output["pair_probs"].cpu().numpy(),
-                track_mask=output["track_mask"].cpu().numpy(),
-                origin_probs=output["origin_probs"].cpu().numpy(),
-                track_embedding=output["track_embedding"].cpu().numpy(),
-                labels=batch["y"].cpu().numpy(),
-                source_index=batch["source_index"].cpu().numpy(),
-                event_number=batch["event_number"].cpu().numpy())
-            print(f"  graph {run.output_name}/{split}: {writer.cursor:,}/{len(raw['y']):,}")
-        if writer is None:
-            raise ValueError(f"cannot cache empty split {split}")
-        writer.finalize({
-            "version": GRAPH_CACHE_VERSION,
-            "study_name": study.cache_identity_name,
-            "parallel_seed": run.seed,
-            "parallel_output_name": run.output_name,
-            "split": split,
-            "checkpoint": str(checkpoint.resolve()),
-            "checkpoint_sha256": sha256_file(checkpoint),
-            "split_index_sha256": split_hash,
-            "source_index_sha256": sha256_array(np.asarray(raw["source_index"])),
-            "source_count": int(len(raw["source_index"])),
-            "top_k": int(active_config.top_k),
-            "storage_dtype": study.cache.get("graph_dtype", "float32"),
-        })
-    except BaseException:
-        if writer is not None:
-            writer.abort()
-        raise
-    finally:
-        del model
-        if device.type == "cuda":
-            torch.cuda.empty_cache()
-    return load_graph_cache(study, run, split)
+    _, graph = generate_frozen_and_graph_cache(
+        study, run, split, device, force=force,
+        include_frozen=False, include_graph=True)
+    return graph
