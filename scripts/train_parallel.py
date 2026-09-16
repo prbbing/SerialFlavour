@@ -75,15 +75,15 @@ def main(argv=None):
     selected = study.selected_seeds(args.seed)
 
     for run in selected:
-        checkpoint = study.checkpoint(run)
-        if checkpoint.exists():
+        output = study.parallel_directory(run)
+        marker = output / "last.pt"
+        if marker.exists():
             if args.skip_complete:
-                print(f"skip seed={run.seed}: {checkpoint}")
+                print(f"skip seed={run.seed}: {marker}")
                 continue
             raise FileExistsError(
-                f"configured checkpoint already exists: {checkpoint}; "
+                f"configured completion marker already exists: {marker}; "
                 "use --skip-complete or choose another output_name")
-        output = study.parallel_directory(run)
         if output.exists() and any(output.iterdir()):
             raise FileExistsError(
                 f"refusing to mix with partial output directory: {output}")
@@ -183,7 +183,6 @@ def main(argv=None):
                 torch.save(raw_model.state_dict(), output / "best_total.pt")
             if epoch % config.checkpoint_interval == 0:
                 torch.save(raw_model.state_dict(), output / f"epoch_{epoch}.pt")
-            torch.save(raw_model.state_dict(), output / "last.pt")
             history.append({
                 "lr": optimiser.param_groups[0]["lr"],
                 "epoch_seconds": time.perf_counter() - epoch_start,
@@ -213,6 +212,7 @@ def main(argv=None):
                 f"val_jet={validation['jet']:.6f}")
         if writer is not None:
             writer.close()
+        torch.save(raw_model.state_dict(), output / "last.pt")
         _plot_training_history(history, output)
         write_json_atomic(output / "run_manifest.json", {
             "model": "parallel",

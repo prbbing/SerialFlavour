@@ -56,26 +56,33 @@ def resolve_graph_config(graph_config, graph: GraphFeatureCache, *, recipe=None)
 class CachedGraphDataset(Dataset):
     def __init__(self, table, graph, context_columns, recipe):
         assert_cache_alignment(table, graph)
-        self.table = table
         self.graph = graph
-        self.context_columns = np.asarray(context_columns, dtype=np.int64)
         self.recipe = recipe
+        # Small per-jet fields are materialised once so each sample only reads
+        # the two large arrays (pair_probs, track_embedding/origin_probs) from
+        # the mmap-backed cache.  The context block is a few tens of megabytes
+        # and track_mask is one byte per track.
+        self.context = np.ascontiguousarray(
+            np.asarray(table.features)[:, np.asarray(context_columns, dtype=np.int64)],
+            dtype=np.float32)
+        self.track_mask = np.array(graph.track_mask, dtype=np.bool_, copy=True)
+        self.labels = np.asarray(table.labels, dtype=np.int64)
 
     def __len__(self):
-        return len(self.table.labels)
+        return len(self.labels)
 
     def __getitem__(self, index):
+        if self.recipe == "FG0":
+            node_values = self.track_mask[index].astype(np.float32)[..., None]
+        else:
+            node_values = graph_node_values(self.graph, self.recipe, index)
         return {
-            "context": torch.from_numpy(np.array(
-                self.table.features[index, self.context_columns],
-                dtype=np.float32, copy=True)),
+            "context": torch.from_numpy(self.context[index]),
             "pair_probs": torch.from_numpy(np.array(
                 self.graph.pair_probs[index], dtype=np.float32, copy=True)),
-            "track_mask": torch.from_numpy(np.array(
-                self.graph.track_mask[index], dtype=np.bool_, copy=True)),
-            "node_values": torch.from_numpy(graph_node_values(
-                self.graph, self.recipe, index)),
-            "y": torch.tensor(int(self.table.labels[index]), dtype=torch.long),
+            "track_mask": torch.from_numpy(self.track_mask[index]),
+            "node_values": torch.from_numpy(node_values),
+            "y": torch.tensor(int(self.labels[index]), dtype=torch.long),
         }
 
 

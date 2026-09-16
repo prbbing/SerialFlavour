@@ -35,38 +35,42 @@ def _device(config):
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-@torch.no_grad()
-def _evaluate(model, loader, device):
+@torch.inference_mode()
+def _evaluate(model, loader, device, *, collect=True):
     model.eval()
     total = correct = count = 0
     probabilities = []
     labels = []
     for values, target in loader:
-        values = values.to(device)
-        target = target.to(device)
+        values = values.to(device, non_blocking=True)
+        target = target.to(device, non_blocking=True)
         logits = model(values)
         loss = torch.nn.functional.cross_entropy(logits, target)
         total += float(loss) * len(target)
         correct += int((logits.argmax(-1) == target).sum())
         count += len(target)
-        probabilities.append(torch.softmax(logits, dim=-1).cpu())
-        labels.append(target.cpu())
-    return {
+        if collect:
+            probabilities.append(torch.softmax(logits, dim=-1).cpu())
+            labels.append(target.cpu())
+    result = {
         "loss": total / max(count, 1),
         "accuracy": correct / max(count, 1),
-        "probabilities": torch.cat(probabilities).numpy(),
-        "labels": torch.cat(labels).numpy(),
     }
+    if collect:
+        result["probabilities"] = torch.cat(probabilities).numpy()
+        result["labels"] = torch.cat(labels).numpy()
+    return result
 
 
 def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
     config = study.refiners["dnn"]
     output = study.refiner_directory(run, recipe, downstream_seed)
     checkpoint = output / "best_dnn.pt"
-    if checkpoint.exists() and skip_complete:
+    marker = output / "last_dnn.pt"
+    if marker.exists() and skip_complete:
         print(
             f"skip DNN parallel_seed={run.seed} "
-            f"downstream_seed={downstream_seed} recipe={recipe}: {checkpoint}")
+            f"downstream_seed={downstream_seed} recipe={recipe}: {marker}")
         return
     if output.exists() and any(output.iterdir()):
         raise FileExistsError(f"refusing to overwrite DNN output: {output}")
@@ -118,8 +122,8 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
         model.train()
         total = correct = count = 0
         for values, target in train_loader:
-            values = values.to(device)
-            target = target.to(device)
+            values = values.to(device, non_blocking=True)
+            target = target.to(device, non_blocking=True)
             optimiser.zero_grad(set_to_none=True)
             logits = model(values)
             loss = torch.nn.functional.cross_entropy(logits, target)
@@ -128,7 +132,7 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
             total += float(loss.detach()) * len(target)
             correct += int((logits.argmax(-1) == target).sum())
             count += len(target)
-        val = _evaluate(model, val_loader, device)
+        val = _evaluate(model, val_loader, device, collect=False)
         improved = val["loss"] < best
         if improved:
             best = val["loss"]
@@ -137,7 +141,6 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
             torch.save(model.state_dict(), checkpoint)
         else:
             stale += 1
-        torch.save(model.state_dict(), output / "last_dnn.pt")
         history.append({
             "epoch": epoch,
             "epoch_seconds": time.perf_counter() - started,
@@ -175,6 +178,7 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
             break
     if writer is not None:
         writer.close()
+    torch.save(model.state_dict(), marker)
 
     model.load_state_dict(torch.load(checkpoint, map_location=device, weights_only=True))
     selected = _evaluate(model, val_loader, device)

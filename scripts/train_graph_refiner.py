@@ -34,36 +34,41 @@ def _device():
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-@torch.no_grad()
-def _evaluate(model, loader, device):
+@torch.inference_mode()
+def _evaluate(model, loader, device, *, collect=True):
     model.eval()
     total = correct = count = 0
     probabilities, labels = [], []
     for batch in loader:
-        values = {name: value.to(device) for name, value in batch.items()}
+        values = {
+            name: value.to(device, non_blocking=True)
+            for name, value in batch.items()}
         logits = model(values["context"], values["node_values"],
                        values["pair_probs"], values["track_mask"])
         loss = torch.nn.functional.cross_entropy(logits, values["y"])
         total += float(loss) * len(values["y"])
         correct += int((logits.argmax(-1) == values["y"]).sum())
         count += len(values["y"])
-        probabilities.append(torch.softmax(logits, dim=-1).cpu())
-        labels.append(values["y"].cpu())
-    return {
-        "loss": total / max(count, 1), "accuracy": correct / max(count, 1),
-        "probabilities": torch.cat(probabilities).numpy(),
-        "labels": torch.cat(labels).numpy(),
-    }
+        if collect:
+            probabilities.append(torch.softmax(logits, dim=-1).cpu())
+            labels.append(values["y"].cpu())
+    result = {
+        "loss": total / max(count, 1), "accuracy": correct / max(count, 1)}
+    if collect:
+        result["probabilities"] = torch.cat(probabilities).numpy()
+        result["labels"] = torch.cat(labels).numpy()
+    return result
 
 
 def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
     requested_config = study.refiners["graph"]
     output = study.refiner_directory(run, recipe, downstream_seed)
     checkpoint = output / "best_graph_refiner.pt"
-    if checkpoint.exists() and skip_complete:
+    marker = output / "last_graph_refiner.pt"
+    if marker.exists() and skip_complete:
         print(
             f"skip graph refiner parallel_seed={run.seed} "
-            f"downstream_seed={downstream_seed} recipe={recipe}: {checkpoint}")
+            f"downstream_seed={downstream_seed} recipe={recipe}: {marker}")
         return
     if output.exists() and any(output.iterdir()):
         raise FileExistsError(f"refusing to overwrite graph-refiner output: {output}")
@@ -119,7 +124,9 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
         model.train()
         total = correct = count = 0
         for batch in train_loader:
-            values = {name: value.to(device) for name, value in batch.items()}
+            values = {
+                name: value.to(device, non_blocking=True)
+                for name, value in batch.items()}
             optimiser.zero_grad(set_to_none=True)
             logits = model(values["context"], values["node_values"],
                            values["pair_probs"], values["track_mask"])
@@ -129,14 +136,13 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
             total += float(loss.detach()) * len(values["y"])
             correct += int((logits.argmax(-1) == values["y"]).sum())
             count += len(values["y"])
-        val = _evaluate(model, val_loader, device)
+        val = _evaluate(model, val_loader, device, collect=False)
         improved = val["loss"] < best
         if improved:
             best, stale, best_epoch = val["loss"], 0, epoch
             torch.save(model.state_dict(), checkpoint)
         else:
             stale += 1
-        torch.save(model.state_dict(), output / "last_graph_refiner.pt")
         row = {
             "epoch": epoch, "epoch_seconds": time.perf_counter() - started,
             "train_samples": count,
@@ -167,6 +173,7 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
             break
     if writer is not None:
         writer.close()
+    torch.save(model.state_dict(), marker)
     model.load_state_dict(torch.load(checkpoint, map_location=device, weights_only=True))
     selected = _evaluate(model, val_loader, device)
     np.savez(output / "validation_predictions.npz", y=selected["labels"],
