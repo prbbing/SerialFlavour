@@ -1,5 +1,6 @@
 """Reusable non-interactive plots for locked-Y evaluation artifacts."""
 
+import json
 from pathlib import Path
 
 import numpy as np
