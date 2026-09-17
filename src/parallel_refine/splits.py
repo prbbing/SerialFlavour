@@ -36,7 +36,7 @@ def _hash(values: np.ndarray) -> str:
 
 def _split_request(config) -> dict[str, Any]:
     stat = os.stat(config.train_file)
-    return {
+    request = {
         "train_file": os.path.abspath(config.train_file),
         "source_size": int(stat.st_size),
         "source_mtime_ns": int(stat.st_mtime_ns),
@@ -45,8 +45,15 @@ def _split_request(config) -> dict[str, Any]:
             str(key): int(value) for key, value in config.flavour_to_label.items()
         },
         "sizes": {name: int(getattr(config, name)) for name in SPLIT_NAMES},
+        "flavour_sampling": getattr(
+            config, "flavour_sampling", {"mode": "balanced"}),
         "kinematic_resampling": config.kinematic_resampling,
     }
+    # Keep historical split manifests valid: the key is only part of the
+    # request identity for the opt-in shared-validation protocol.
+    if getattr(config, "shared_validation", False):
+        request["shared_validation"] = True
+    return request
 
 
 def _reserve_natural(order, counts, requested, name):
@@ -66,13 +73,32 @@ def _balanced_targets(total: int, n_classes: int) -> np.ndarray:
     return targets
 
 
-def _reserve_balanced(order, event_class_counts, targets, name):
+def _flavour_targets(config, total: int) -> np.ndarray:
+    """Return exact per-class counts for the configured training mixture."""
+    specification = getattr(config, "flavour_sampling", {"mode": "balanced"})
+    if specification["mode"] == "balanced":
+        return _balanced_targets(total, config.n_jet_classes)
+    ratios = np.asarray([
+        specification["class_ratios"][name]
+        for name in config.jet_class_names
+    ], dtype=np.float64)
+    expected = ratios / ratios.sum() * total
+    targets = np.floor(expected).astype(np.int64)
+    remainder = int(total - targets.sum())
+    if remainder:
+        # A stable largest-remainder allocation preserves the requested total.
+        order = np.argsort(-(expected - targets), kind="stable")
+        targets[order[:remainder]] += 1
+    return targets
+
+
+def _reserve_targets(order, event_class_counts, targets, name):
     cumulative = np.cumsum(event_class_counts[order], axis=0, dtype=np.int64)
     ready = np.flatnonzero(np.all(cumulative >= targets, axis=1))
     if not len(ready):
         available = cumulative[-1].tolist() if len(cumulative) else []
         raise ValueError(
-            f"not enough balanced jets for {name}: need {targets.tolist()}, "
+            f"not enough jets for {name}: need {targets.tolist()}, "
             f"have {available}")
     stop = int(ready[0]) + 1
     return order[:stop], order[stop:]
@@ -88,7 +114,7 @@ def _reference_class(config) -> int:
 
 
 def _candidate_targets(config, total: int) -> np.ndarray:
-    targets = _balanced_targets(total, config.n_jet_classes)
+    targets = _flavour_targets(config, total)
     factor = float(config.kinematic_resampling["candidate_pool_factor"])
     reference = _reference_class(config)
     expanded = np.ceil(targets * factor).astype(np.int64)
@@ -112,8 +138,8 @@ def _kinematic_bins(config, pt, eta):
 
 def _sample_kinematic_matched(
         config, candidates, candidate_labels, jet_pt, jet_eta, total, rng):
-    """Sample every non-reference class to the reference pT/eta density."""
-    targets = _balanced_targets(total, config.n_jet_classes)
+    """Use configured class counts while matching non-reference pT/eta density."""
+    targets = _flavour_targets(config, total)
     reference = _reference_class(config)
     reference_candidates = candidates[candidate_labels == reference]
     selected_reference = rng.choice(
@@ -179,31 +205,50 @@ def build_split_indices(
     rng = np.random.default_rng(config.data_seed)
     remaining = rng.permutation(len(unique_events))
     reserved: dict[str, np.ndarray] = {}
+    shared_validation = bool(getattr(config, "shared_validation", False))
     reserved["y_test"], remaining = _reserve_natural(
         remaining, event_counts, config.y_test, "y_test")
-    reserved["b_val"], remaining = _reserve_natural(
-        remaining, event_counts, config.b_val, "b_val")
-    reserved["b_train"], remaining = _reserve_balanced(
-        remaining, event_class_counts,
-        _candidate_targets(config, config.b_train), "b_train")
-    reserved["a_val"], remaining = _reserve_natural(
-        remaining, event_counts, config.a_val, "a_val")
-    reserved["a_train"], remaining = _reserve_balanced(
+    if shared_validation:
+        reserved["a_val"], remaining = _reserve_natural(
+            remaining, event_counts, config.a_val, "a_val")
+        reserved["b_val"] = reserved["a_val"]
+    else:
+        reserved["b_val"], remaining = _reserve_natural(
+            remaining, event_counts, config.b_val, "b_val")
+    if config.b_train:
+        reserved["b_train"], remaining = _reserve_targets(
+            remaining, event_class_counts,
+            _candidate_targets(config, config.b_train), "b_train")
+    else:
+        reserved["b_train"] = np.empty(0, dtype=remaining.dtype)
+    if not shared_validation:
+        reserved["a_val"], remaining = _reserve_natural(
+            remaining, event_counts, config.a_val, "a_val")
+    reserved["a_train"], remaining = _reserve_targets(
         remaining, event_class_counts,
         _candidate_targets(config, config.a_train), "a_train")
 
     arrays: dict[str, np.ndarray] = {}
     for name in SPLIT_NAMES:
+        if name == "b_val" and shared_validation:
+            # Both training stages must make early-stopping decisions on the
+            # identical jet set, not merely on the same reserved events.
+            arrays[name] = arrays["a_val"].copy()
+            continue
+        requested = int(getattr(config, name))
+        if requested == 0:
+            arrays[name] = np.empty(0, dtype=np.int64)
+            continue
         candidate_mask = np.isin(inverse, reserved[name])
         candidates = valid[candidate_mask]
         if name.endswith("train"):
             candidate_labels = labels[candidate_mask]
             selected = _sample_kinematic_matched(
                 config, candidates, candidate_labels, jet_pt, jet_eta,
-                int(getattr(config, name)), rng)
+                requested, rng)
         else:
             selected = rng.choice(
-                candidates, size=int(getattr(config, name)), replace=False)
+                candidates, size=requested, replace=False)
         arrays[name] = np.sort(selected.astype(np.int64, copy=False))
 
     event_sets = {
@@ -220,7 +265,12 @@ def build_split_indices(
                 "jet_overlap": jet_overlap,
                 "event_overlap": event_overlap,
             }
-            if jet_overlap or event_overlap:
+            is_shared_validation_pair = (
+                shared_validation and {left, right} == {"a_val", "b_val"})
+            if is_shared_validation_pair:
+                if not np.array_equal(arrays[left], arrays[right]):
+                    raise RuntimeError("shared validation indices differ")
+            elif jet_overlap or event_overlap:
                 raise RuntimeError(f"split overlap detected for {left}/{right}")
 
     class_counts = {
@@ -240,6 +290,8 @@ def build_split_indices(
         "index_sha256": {name: _hash(value) for name, value in arrays.items()},
         "event_sha256": {name: _hash(value) for name, value in event_sets.items()},
         "overlaps": overlaps,
+        "flavour_sampling": getattr(
+            config, "flavour_sampling", {"mode": "balanced"}),
         "kinematic_resampling": config.kinematic_resampling,
     }
     return ParallelRefineSplits(arrays, summary)

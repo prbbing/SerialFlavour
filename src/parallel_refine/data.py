@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ProcessPoolExecutor
 import hashlib
 import json
 import os
 from pathlib import Path
+import tempfile
+import uuid
 
 import h5py
 import numpy as np
@@ -26,8 +29,9 @@ from src.data import (
 from src.parallel_refine.splits import load_split_bundle
 
 
-CACHE_VERSION = "parallel_refine_topk_normalized_v4"
+CACHE_VERSION = "parallel_refine_topk_normalized_mmap_v5"
 NORMALIZATION_VERSION = "parallel_refine_a_train_standardization_v1"
+PROCESSED_CACHE_MANIFEST_VERSION = "parallel_refine_processed_mmap_v1"
 JET_AUX_FIELDS = (
     "HadronConeExclTruthLabelID", "eventNumber", "pt_btagJes", "eta_btagJes",
 )
@@ -55,7 +59,109 @@ def _cache_path(config, split_name: str, indices: np.ndarray) -> Path:
         CACHE_VERSION.encode(),
     ))
     digest = hashlib.sha256(payload).hexdigest()[:20]
-    return Path(config.cache_dir) / f"{split_name}_{digest}.npz"
+    # This is a cache stem, rather than one archive file. Each field is stored
+    # separately as a .npy file so training processes can map the same pages
+    # instead of independently materialising a complete .npz archive in RAM.
+    return Path(config.cache_dir) / f"{split_name}_{digest}"
+
+
+def _processed_manifest_path(cache_stem: Path) -> Path:
+    return cache_stem.with_name(f"{cache_stem.name}.manifest.json")
+
+
+def _save_processed_cache_atomic(
+        cache_stem: Path, arrays: dict[str, np.ndarray]) -> None:
+    """Publish a field-wise, memory-mappable processed cache atomically.
+
+    The manifest is the commit marker. Field file names include a unique
+    generation token, so a forced rebuild never exposes a mixed old/new cache
+    to a concurrent reader. Superseded generations are intentionally kept:
+    an already-running memory-mapped reader may still reference them.
+    """
+    cache_stem.parent.mkdir(parents=True, exist_ok=True)
+    generation = f"{os.getpid()}_{uuid.uuid4().hex}"
+    published = []
+    temporary = None
+    try:
+        specifications = {}
+        for name, values in arrays.items():
+            destination = cache_stem.with_name(
+                f"{cache_stem.name}.{generation}.{name}.npy")
+            handle = tempfile.NamedTemporaryFile(
+                prefix=f".{cache_stem.name}.{generation}.{name}.",
+                suffix=".npy", dir=cache_stem.parent, delete=False)
+            temporary = Path(handle.name)
+            handle.close()
+            np.save(temporary, values, allow_pickle=False)
+            os.replace(temporary, destination)
+            temporary = None
+            published.append(destination)
+            specifications[name] = {
+                "file": destination.name,
+                "shape": list(values.shape),
+                "dtype": str(values.dtype),
+            }
+        manifest = {
+            "version": PROCESSED_CACHE_MANIFEST_VERSION,
+            "cache_version": CACHE_VERSION,
+            "arrays": specifications,
+        }
+        handle = tempfile.NamedTemporaryFile(
+            prefix=f".{cache_stem.name}.{generation}.", suffix=".json",
+            dir=cache_stem.parent, mode="w", encoding="utf-8", delete=False)
+        temporary = Path(handle.name)
+        json.dump(manifest, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+        handle.close()
+        os.replace(temporary, _processed_manifest_path(cache_stem))
+        temporary = None
+    except BaseException:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        for path in published:
+            path.unlink(missing_ok=True)
+        raise
+
+
+def _load_processed_cache(
+        cache_stem: Path, fields: tuple[str, ...] | list[str] | None):
+    manifest_path = _processed_manifest_path(cache_stem)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if (
+            manifest.get("version") != PROCESSED_CACHE_MANIFEST_VERSION
+            or manifest.get("cache_version") != CACHE_VERSION
+            or not isinstance(manifest.get("arrays"), dict)):
+        raise ValueError(f"processed cache schema mismatch: {manifest_path}")
+    specifications = manifest["arrays"]
+    selected = tuple(specifications) if fields is None else tuple(fields)
+    missing = set(selected) - set(specifications)
+    if missing:
+        raise KeyError(f"processed cache is missing fields: {sorted(missing)}")
+
+    arrays = {}
+    for name in selected:
+        specification = specifications[name]
+        if not isinstance(specification, dict):
+            raise ValueError(f"processed cache field specification is invalid: {name}")
+        filename = specification.get("file")
+        expected_prefix = f"{cache_stem.name}."
+        if (
+                not isinstance(filename, str)
+                or Path(filename).name != filename
+                or not filename.startswith(expected_prefix)
+                or not filename.endswith(f".{name}.npy")):
+            raise ValueError(f"processed cache field path is invalid: {name}")
+        # Copy-on-write maps keep the files immutable even if a future tensor
+        # operation accidentally writes to an input. They also present a
+        # writable NumPy view to torch.from_numpy without copying the array.
+        values = np.load(cache_stem.parent / filename,
+                         mmap_mode="c", allow_pickle=False)
+        if list(values.shape) != specification.get("shape"):
+            raise ValueError(f"processed cache field shape mismatch: {name}")
+        if str(values.dtype) != specification.get("dtype"):
+            raise ValueError(f"processed cache field dtype mismatch: {name}")
+        arrays[name] = values
+    return arrays
 
 
 def _allocate(
@@ -141,6 +247,100 @@ def _load_statistics(path):
         return {name: values[name] for name in required}
 
 
+def _read_track_block(tracks, names, start, stop):
+    """Read one contiguous track block.
+
+    A single full-rowstruct read is markedly faster than an h5py field-subset
+    read for compound datasets, because the subset conversion dominates.  Group
+    layouts (field-per-dataset) keep using the explicit field reads.
+    """
+    if isinstance(tracks, h5py.Dataset):
+        return tracks[start:stop]
+    return _read_fields(tracks, names, start, stop)
+
+
+def _process_selection(
+        config, jet_block, track_block, selected, start, output_k, outputs,
+        out_pos, track_fields, truth_vertex_field):
+    """Fill one split's output buffers from an already-read source block.
+
+    The selection and ordering are byte-for-byte the original per-split logic;
+    ``selected`` must be the ascending source indices of one split that fall
+    inside the block read into ``jet_block``/``track_block``.
+    """
+    local = selected - start
+    flavour = jet_block["HadronConeExclTruthLabelID"][local]
+    keep_flavour = np.isin(flavour, list(config.flavour_to_label))
+    if not keep_flavour.any():
+        return out_pos
+    selected = selected[keep_flavour]
+    local = local[keep_flavour]
+    flavour = flavour[keep_flavour]
+
+    valid = track_block["valid"][local].astype(bool)
+    d0 = track_block["lifetimeSignedD0"][local].astype(np.float32)
+    z0_sin_theta = track_block["z0SinTheta"][local].astype(np.float32)
+    significance = track_block[
+        "lifetimeSignedD0Significance"][local].astype(np.float32)
+    keep = (
+        valid
+        & (np.abs(d0) < 3.5)
+        & (np.abs(z0_sin_theta) < 5.0))
+    rank = np.abs(significance)
+    rank[~keep] = -np.inf
+    order = np.argsort(-rank, axis=1)[:, :output_k]
+    rows = np.arange(len(local))[:, None]
+    top_mask = keep[rows, order]
+    has_track = top_mask.any(axis=1)
+    if not has_track.any():
+        return out_pos
+
+    selected = selected[has_track]
+    local = local[has_track]
+    flavour = flavour[has_track]
+    order = order[has_track]
+    top_mask = top_mask[has_track]
+    rows = np.arange(len(local))[:, None]
+    count = len(local)
+    destination = slice(out_pos, out_pos + count)
+
+    features = np.stack([
+        track_block[name][local].astype(np.float32)
+        for name in track_fields
+    ], axis=-1)
+    outputs["X"][destination] = np.where(
+        top_mask[..., None], features[rows, order], 0.0)
+    outputs["jet_X"][destination] = np.stack([
+        jet_block[name][local].astype(np.float32)
+        for name in config.jet_fields
+    ], axis=-1)
+    outputs["mask"][destination] = top_mask
+    outputs["y"][destination] = np.asarray([
+        config.flavour_to_label[int(value)] for value in flavour
+    ], dtype=np.int64)
+    origin = track_block[
+        "ftagTruthOriginLabel"][local].astype(np.int64)[rows, order]
+    vertex_index = track_block[
+        truth_vertex_field][local].astype(np.int64)[rows, order]
+    outputs["origin"][destination] = np.where(top_mask, origin, -1)
+    truth_vertex_valid = top_mask & (vertex_index >= 0)
+    valid_pair = (
+        truth_vertex_valid[:, :, None]
+        & truth_vertex_valid[:, None, :])
+    same_vertex = vertex_index[:, :, None] == vertex_index[:, None, :]
+    off_diagonal = ~np.eye(output_k, dtype=bool)[None, :, :]
+    outputs["truth_pair"][destination] = np.where(
+        valid_pair & off_diagonal, same_vertex.astype(np.float32), -1.0)
+    outputs["jet_pt"][destination] = jet_block[
+        "pt_btagJes"][local].astype(np.float32)
+    outputs["jet_eta"][destination] = jet_block[
+        "eta_btagJes"][local].astype(np.float32)
+    outputs["event_number"][destination] = jet_block[
+        "eventNumber"][local].astype(np.int64)
+    outputs["source_index"][destination] = selected
+    return out_pos + count
+
+
 def _load_raw_processed_split(
         config, split_name, bundle, *, block_rows=None, progress=False):
     indices = np.asarray(bundle.arrays[split_name], dtype=np.int64)
@@ -172,84 +372,223 @@ def _load_raw_processed_split(
         for begin, end, start, stop in _block_slices(
                 indices, n_rows, chunk_rows, block_rows):
             selected = indices[begin:end]
-            local = selected - start
             jet_block = _read_fields(jets, jet_read_fields, start, stop)
-            track_block = _read_fields(tracks, track_read_fields, start, stop)
-            flavour = jet_block["HadronConeExclTruthLabelID"][local]
-            keep_flavour = np.isin(flavour, list(config.flavour_to_label))
-            if not keep_flavour.any():
-                continue
-            selected = selected[keep_flavour]
-            local = local[keep_flavour]
-            flavour = flavour[keep_flavour]
-
-            valid = track_block["valid"][local].astype(bool)
-            d0 = track_block["lifetimeSignedD0"][local].astype(np.float32)
-            z0_sin_theta = track_block[
-                "z0SinTheta"][local].astype(np.float32)
-            significance = track_block[
-                "lifetimeSignedD0Significance"][local].astype(np.float32)
-            keep = (
-                valid
-                & (np.abs(d0) < 3.5)
-                & (np.abs(z0_sin_theta) < 5.0))
-            rank = np.abs(significance)
-            rank[~keep] = -np.inf
-            order = np.argsort(-rank, axis=1)[:, :output_k]
-            rows = np.arange(len(local))[:, None]
-            top_mask = keep[rows, order]
-            has_track = top_mask.any(axis=1)
-            if not has_track.any():
-                continue
-
-            selected = selected[has_track]
-            local = local[has_track]
-            flavour = flavour[has_track]
-            order = order[has_track]
-            top_mask = top_mask[has_track]
-            rows = np.arange(len(local))[:, None]
-            count = len(local)
-            destination = slice(out_pos, out_pos + count)
-
-            features = np.stack([
-                track_block[name][local].astype(np.float32)
-                for name in track_fields
-            ], axis=-1)
-            outputs["X"][destination] = np.where(
-                top_mask[..., None], features[rows, order], 0.0)
-            outputs["jet_X"][destination] = np.stack([
-                jet_block[name][local].astype(np.float32)
-                for name in jet_fields
-            ], axis=-1)
-            outputs["mask"][destination] = top_mask
-            outputs["y"][destination] = np.asarray([
-                config.flavour_to_label[int(value)] for value in flavour
-            ], dtype=np.int64)
-            origin = track_block[
-                "ftagTruthOriginLabel"][local].astype(np.int64)[rows, order]
-            vertex_index = track_block[
-                truth_vertex_field][local].astype(np.int64)[rows, order]
-            outputs["origin"][destination] = np.where(top_mask, origin, -1)
-            truth_vertex_valid = top_mask & (vertex_index >= 0)
-            valid_pair = (
-                truth_vertex_valid[:, :, None]
-                & truth_vertex_valid[:, None, :])
-            same_vertex = vertex_index[:, :, None] == vertex_index[:, None, :]
-            off_diagonal = ~np.eye(output_k, dtype=bool)[None, :, :]
-            outputs["truth_pair"][destination] = np.where(
-                valid_pair & off_diagonal, same_vertex.astype(np.float32), -1.0)
-            outputs["jet_pt"][destination] = jet_block[
-                "pt_btagJes"][local].astype(np.float32)
-            outputs["jet_eta"][destination] = jet_block[
-                "eta_btagJes"][local].astype(np.float32)
-            outputs["event_number"][destination] = jet_block[
-                "eventNumber"][local].astype(np.int64)
-            outputs["source_index"][destination] = selected
-            out_pos += count
+            track_block = _read_track_block(
+                tracks, track_read_fields, start, stop)
+            out_pos = _process_selection(
+                config, jet_block, track_block, selected, start, output_k,
+                outputs, out_pos, track_fields, truth_vertex_field)
             if progress:
                 print(f"  {split_name}: {end:,}/{len(indices):,}")
 
     return {name: value[:out_pos] for name, value in outputs.items()}
+
+
+def _index_union(split_indices):
+    if len(split_indices) == 1:
+        return next(iter(split_indices.values()))
+    return np.unique(np.concatenate(list(split_indices.values())))
+
+
+def _combined_jobs(union, n_rows, chunk_rows, block_rows):
+    return list(_block_slices(union, n_rows, chunk_rows, block_rows))
+
+
+def _iter_combined(
+        config, tracks, jets, jobs, union, split_indices, track_fields,
+        track_read_fields, truth_vertex_field, output_k, outputs, out_pos,
+        progress):
+    """Read each block once and dispatch its rows to every split."""
+    jet_read_fields = _unique((*JET_AUX_FIELDS, *config.jet_fields))
+    for begin, end, start, stop in jobs:
+        jet_block = _read_fields(jets, jet_read_fields, start, stop)
+        track_block = _read_track_block(
+            tracks, track_read_fields, start, stop)
+        low_value = int(union[begin])
+        high_value = int(union[end - 1])
+        for name in split_indices:
+            idx = split_indices[name]
+            lo = int(np.searchsorted(idx, low_value, side="left"))
+            hi = int(np.searchsorted(idx, high_value, side="right"))
+            if lo >= hi:
+                continue
+            out_pos[name] = _process_selection(
+                config, jet_block, track_block, idx[lo:hi], start, output_k,
+                outputs[name], out_pos[name], track_fields,
+                truth_vertex_field)
+            if progress:
+                print(f"  {name}: {hi:,}/{len(idx):,}")
+
+
+def _read_raw_splits_single_process(
+        config, pending, *, block_rows=None, progress=False):
+    track_fields = list(config.track_fields)
+    truth_vertex_field = config.truth_vertex["field"]
+    track_read_fields = _unique((
+        *TRACK_AUX_FIELDS, truth_vertex_field, *track_fields))
+    jet_read_fields = _unique((*JET_AUX_FIELDS, *config.jet_fields))
+    split_indices = {
+        name: np.asarray(indices, dtype=np.int64)
+        for name, indices, _ in pending
+    }
+    with h5py.File(config.train_file, "r") as handle:
+        jets = handle["jets"]
+        tracks = handle["tracks"]
+        n_rows = _row_count(jets, JET_AUX_FIELDS[0])
+        if _row_count(tracks, TRACK_AUX_FIELDS[0]) != n_rows:
+            raise ValueError("jets and tracks must have the same first dimension")
+        _require_fields(jets, jet_read_fields, "jets")
+        _require_fields(tracks, track_read_fields, "tracks")
+        for name in split_indices:
+            split_indices[name] = _normalise_indices(split_indices[name], n_rows)
+        source_k = (
+            tracks["valid"].shape[1]
+            if isinstance(tracks, h5py.Group) else tracks.shape[1])
+        output_k = min(config.top_k, source_k)
+        chunks = (
+            tracks["valid"].chunks
+            if isinstance(tracks, h5py.Group) else tracks.chunks)
+        chunk_rows = chunks[0] if chunks else min(2048, max(n_rows, 1))
+        outputs = {
+            name: _allocate(
+                len(indices), output_k, len(track_fields), len(config.jet_fields))
+            for name, indices, _ in pending
+        }
+        out_pos = {name: 0 for name in split_indices}
+        union = _index_union(split_indices)
+        jobs = _combined_jobs(union, n_rows, chunk_rows, block_rows)
+        _iter_combined(
+            config, tracks, jets, jobs, union, split_indices, track_fields,
+            track_read_fields, truth_vertex_field, output_k, outputs, out_pos,
+            progress)
+    return {
+        name: {key: value[:out_pos[name]] for key, value in outputs[name].items()}
+        for name in split_indices
+    }
+
+
+def _read_raw_splits_worker(payload):
+    config, pending, block_range, block_rows = payload
+    track_fields = list(config.track_fields)
+    truth_vertex_field = config.truth_vertex["field"]
+    track_read_fields = _unique((
+        *TRACK_AUX_FIELDS, truth_vertex_field, *track_fields))
+    split_indices = {
+        name: np.asarray(indices, dtype=np.int64)
+        for name, indices, _ in pending
+    }
+    with h5py.File(config.train_file, "r") as handle:
+        jets = handle["jets"]
+        tracks = handle["tracks"]
+        n_rows = _row_count(jets, JET_AUX_FIELDS[0])
+        for name in split_indices:
+            split_indices[name] = _normalise_indices(split_indices[name], n_rows)
+        source_k = (
+            tracks["valid"].shape[1]
+            if isinstance(tracks, h5py.Group) else tracks.shape[1])
+        output_k = min(config.top_k, source_k)
+        chunks = (
+            tracks["valid"].chunks
+            if isinstance(tracks, h5py.Group) else tracks.chunks)
+        chunk_rows = chunks[0] if chunks else min(2048, max(n_rows, 1))
+        union = _index_union(split_indices)
+        jobs = _combined_jobs(union, n_rows, chunk_rows, block_rows)
+        lo, hi = block_range
+        my_jobs = jobs[lo:hi]
+        if my_jobs:
+            low_value = int(union[my_jobs[0][0]])
+            high_value = int(union[my_jobs[-1][1] - 1])
+        else:
+            low_value, high_value = 1, 0
+        capacity = {
+            name: max(
+                0,
+                int(np.searchsorted(idx, high_value, side="right"))
+                - int(np.searchsorted(idx, low_value, side="left")))
+            for name, idx in split_indices.items()
+        }
+        outputs = {
+            name: _allocate(
+                capacity[name], output_k, len(track_fields),
+                len(config.jet_fields))
+            for name in split_indices
+        }
+        out_pos = {name: 0 for name in split_indices}
+        _iter_combined(
+            config, tracks, jets, my_jobs, union, split_indices, track_fields,
+            track_read_fields, truth_vertex_field, output_k, outputs, out_pos,
+            False)
+    return {
+        name: {key: value[:out_pos[name]] for key, value in outputs[name].items()}
+        for name in split_indices
+    }
+
+
+def _read_raw_splits_parallel(
+        config, pending, workers, *, block_rows=None, progress=False):
+    truth_vertex_field = config.truth_vertex["field"]
+    track_read_fields = _unique((
+        *TRACK_AUX_FIELDS, truth_vertex_field, *config.track_fields))
+    with h5py.File(config.train_file, "r") as handle:
+        n_rows = _row_count(handle["jets"], JET_AUX_FIELDS[0])
+        tracks = handle["tracks"]
+        chunks = (
+            tracks["valid"].chunks
+            if isinstance(tracks, h5py.Group) else tracks.chunks)
+        chunk_rows = chunks[0] if chunks else min(2048, max(n_rows, 1))
+    split_indices = {
+        name: np.asarray(indices, dtype=np.int64)
+        for name, indices, _ in pending
+    }
+    union = _index_union(split_indices)
+    jobs = _combined_jobs(union, n_rows, chunk_rows, block_rows)
+    n_jobs = len(jobs)
+    if n_jobs == 0:
+        return _read_raw_splits_single_process(
+            config, pending, block_rows=block_rows, progress=progress)
+    workers = max(1, min(int(workers), n_jobs))
+    boundaries = [round(i * n_jobs / workers) for i in range(workers + 1)]
+    ranges = [
+        (boundaries[i], boundaries[i + 1])
+        for i in range(workers)
+        if boundaries[i] < boundaries[i + 1]
+    ]
+    payloads = [(config, pending, block_range, block_rows)
+                for block_range in ranges]
+    partials = []
+    with ProcessPoolExecutor(max_workers=len(ranges)) as executor:
+        for result in executor.map(_read_raw_splits_worker, payloads):
+            partials.append(result)
+    merged = {}
+    for name in split_indices:
+        merged[name] = {
+            key: np.concatenate([part[name][key] for part in partials])
+            for key in partials[0][name]
+        }
+    if progress:
+        for name in merged:
+            print(f"  {name}: built {len(merged[name]['y']):,} rows")
+    return merged
+
+
+def _read_raw_splits(
+        config, pending, *, block_rows=None, progress=False, workers=1):
+    if workers > 1 and len(pending):
+        return _read_raw_splits_parallel(
+            config, pending, workers, block_rows=block_rows, progress=progress)
+    return _read_raw_splits_single_process(
+        config, pending, block_rows=block_rows, progress=progress)
+
+
+def default_cache_workers() -> int:
+    """Sensible default parallelism for first-time processed-cache builds."""
+    return max(1, min(os.cpu_count() or 1, 16))
+
+
+def _validate_workers(workers) -> int:
+    if not isinstance(workers, int) or isinstance(workers, bool) or workers < 1:
+        raise ValueError("workers must be a positive integer")
+    return workers
 
 
 def _normalization_statistics(
@@ -278,14 +617,8 @@ def load_processed_split(
         raise KeyError(f"unknown Parallel Refine split {split_name!r}")
     indices = np.asarray(bundle.arrays[split_name], dtype=np.int64)
     path = _cache_path(config, split_name, indices)
-    if path.exists() and not force:
-        with np.load(path) as cached:
-            selected = cached.files if fields is None else fields
-            missing = set(selected) - set(cached.files)
-            if missing:
-                raise KeyError(
-                    f"processed cache is missing fields: {sorted(missing)}")
-            return {name: cached[name] for name in selected}
+    if _processed_manifest_path(path).exists() and not force:
+        return _load_processed_cache(path, fields)
 
     result = _load_raw_processed_split(
         config, split_name, bundle,
@@ -294,13 +627,83 @@ def load_processed_split(
         config, bundle, split_name, result, force=force,
         block_rows=block_rows, progress=progress)
     _apply_standardization(result, statistics)
-    _save_cache_atomic(str(path), result)
+    _save_processed_cache_atomic(path, result)
     if fields is None:
         return result
     missing = set(fields) - set(result)
     if missing:
         raise KeyError(f"processed cache is missing fields: {sorted(missing)}")
     return {name: result[name] for name in fields}
+
+
+def load_processed_splits(
+        config, split_names, *, force: bool = False,
+        block_rows: int | None = None, progress: bool = False,
+        workers: int = 1):
+    """Build every requested processed split in one read pass.
+
+    Outputs are identical to calling :func:`load_processed_split` per split.
+    The normalization source split is materialised first (its statistics drive
+    every other split), then the remaining splits are read together.  This keeps
+    peak memory near the largest single split instead of the sum of all splits.
+    """
+    workers = _validate_workers(workers)
+    bundle = load_split_bundle(config.split_dir, config=config)
+    pending = []
+    for name in split_names:
+        if name not in bundle.arrays:
+            raise KeyError(f"unknown Parallel Refine split {name!r}")
+        indices = np.asarray(bundle.arrays[name], dtype=np.int64)
+        path = _cache_path(config, name, indices)
+        if not (_processed_manifest_path(path).exists() and not force):
+            pending.append((name, indices, path))
+
+    stats_path = _normalization_path(config, bundle)
+    source = config.normalization["source_split"]
+    pending_names = [name for name, _, _ in pending]
+    needs_source_statistics = (
+        not stats_path.exists()) or (force and source in pending_names)
+
+    if needs_source_statistics:
+        source_entry = next(
+            (entry for entry in pending if entry[0] == source), None)
+        explicit_source = source_entry is not None
+        if source_entry is None:
+            source_entry = (
+                source, np.asarray(bundle.arrays[source], dtype=np.int64), None)
+        source_raw = _read_raw_splits(
+            config, [source_entry], block_rows=block_rows, progress=progress,
+            workers=workers)[source]
+        statistics = _standardization_statistics(source_raw, config)
+        _save_cache_atomic(str(stats_path), statistics)
+        if explicit_source:
+            _apply_standardization(source_raw, statistics)
+            _save_processed_cache_atomic(source_entry[2], source_raw)
+            pending = [entry for entry in pending if entry[0] != source]
+        del source_raw
+    else:
+        statistics = _load_statistics(stats_path)
+
+    if pending:
+        raw = _read_raw_splits(
+            config, pending, block_rows=block_rows, progress=progress,
+            workers=workers)
+        for name, _, path in pending:
+            arrays = raw[name]
+            _apply_standardization(arrays, statistics)
+            _save_processed_cache_atomic(path, arrays)
+        del raw
+
+    summary = {}
+    for name in split_names:
+        indices = np.asarray(bundle.arrays[name], dtype=np.int64)
+        path = _cache_path(config, name, indices)
+        retained = int(len(_load_processed_cache(path, ("y",))["y"]))
+        summary[name] = {
+            "cache_directory": str(Path(config.cache_dir).resolve()),
+            "retained_after_track_selection": retained,
+        }
+    return summary
 
 
 class ParallelRefineDataset(Dataset):

@@ -9,7 +9,8 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 
-from src.losses import classification_class_weights, pair_vertex_loss
+from src.losses import (
+    classification_class_weights, pair_vertex_loss, pair_vertex_loss_dense)
 
 
 def create_tensorboard_writer(log_dir: str | Path):
@@ -55,7 +56,8 @@ def move_batch(batch, device):
     return {name: value.to(device) for name, value in batch.items()}
 
 
-def parallel_losses(output, batch, config, jet_criterion, origin_criterion):
+def parallel_losses(output, batch, config, jet_criterion, origin_criterion,
+                    dense_pair=False):
     jet = jet_criterion(output["jet_logits"], batch["y"])
     origin = output["jet_logits"].new_tensor(0.0)
     if config.lambda_origin:
@@ -64,7 +66,8 @@ def parallel_losses(output, batch, config, jet_criterion, origin_criterion):
             batch["origin"].reshape(-1))
     pair = output["jet_logits"].new_tensor(0.0)
     if config.lambda_pair:
-        pair = pair_vertex_loss(
+        pair_loss = pair_vertex_loss_dense if dense_pair else pair_vertex_loss
+        pair = pair_loss(
             output["pair_logits"], batch["truth_pair"], batch["mask"])
     total = (
         config.lambda_jet * jet

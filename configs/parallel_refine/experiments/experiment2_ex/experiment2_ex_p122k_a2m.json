@@ -1,0 +1,33 @@
+{
+  "components": {
+    "data": "../../data/experiment2_a2m_b200k.json",
+    "parallel": "../../parallel/experiment2_ex_p122k.json",
+    "refiner": "../../refiner/dnn_graph_all.json"
+  },
+  "config_kind": "experiment",
+  "experiment": {
+    "name": "experiment2_ex_p122k_a2m",
+    "output_root": "/data/yuyang/SerialFlavour/results/parallel_refine",
+    "markers": {
+      "label": "Experiment 2 EX | Parallel 122k | Task head 128-64-32 | A-train 2,000,000",
+      "tags": ["experiment-2-ex", "task-head-128-64-32", "fixed-dnn-b200k", "transformer-data-scaling", "transformer-plus-dnn"],
+      "comparison_group": "experiment2_ex_task_head_128_64_32",
+      "variables": {
+        "parallel_parameter_band": "180k-200k",
+        "parallel_parameters": 185869,
+        "d_model": 48,
+        "n_heads": 4,
+        "n_layers": 6,
+        "d_ffn": 96,
+        "task_head_hidden_dims": "128-64-32",
+        "a_train_jets": 2000000,
+        "a_val_jets": 100000,
+        "b_train_jets": 200000,
+        "b_val_jets": 100000,
+        "y_test_jets": 500000,
+        "dnn_hidden_dims": "128-64-32",
+        "dnn_enabled": true
+      }
+    }
+  }
+}

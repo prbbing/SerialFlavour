@@ -20,11 +20,61 @@ COMPONENT_KEYS = {
 FEATURE_RECIPES = {
     "F0_aux": ("aux",),
     "F1_embed": ("embedding",),
+    # These two selectors are resolved by feature name so that the embedding
+    # width is inherited from the frozen Parallel checkpoint rather than from
+    # a hard-coded model dimension.
+    "F1O": ("embedding", "origin"),
+    "F1V": ("embedding", "pair_weighted_embedding"),
     "F2_jet_aux": ("jet_probability", "aux"),
     "F3_embed_aux": ("embedding", "aux"),
     "F4_all": ("jet_probability", "embedding", "aux"),
 }
-EXPERIMENT_MANIFEST_VERSION = "parallel_refine_experiment_manifest_v1"
+GRAPH_RECIPES = ("FG0", "FG1", "FG2", "FG2s", "FG4")
+RECIPE_MODEL_KIND = {
+    **{name: "dnn" for name in FEATURE_RECIPES},
+    **{name: "graph_dnn" for name in GRAPH_RECIPES},
+}
+EXPERIMENT_MANIFEST_VERSION = "parallel_refine_experiment_manifest_v2"
+
+
+def recipe_model_kind(recipe: str) -> str:
+    """Return the downstream implementation selected by a recipe name."""
+    try:
+        return RECIPE_MODEL_KIND[recipe]
+    except KeyError as error:
+        raise ValueError(f"unknown refiner recipe: {recipe}") from error
+
+
+def graph_node_source(recipe: str) -> str:
+    """Return the per-track node input for one graph recipe."""
+    sources = {
+        "FG0": "valid",
+        "FG1": "origin_probs",
+        "FG2": "track_embedding",
+        "FG2s": "track_embedding",
+        "FG4": "track_embedding",
+    }
+    try:
+        return sources[recipe]
+    except KeyError as error:
+        raise ValueError(f"{recipe} is not a graph recipe") from error
+
+
+def graph_context_recipe(recipe: str) -> str:
+    """Return the frozen pooled-feature selector for one graph recipe."""
+    contexts = {
+        "FG0": "F1O",
+        "FG1": "F1O",
+        "FG2": "F1O",
+        "FG2s": "F1O",
+        # FG4 is FG2 with the frozen three-class jet posterior at the graph-DNN
+        # classifier input; graph nodes and pair topology remain identical.
+        "FG4": "F1OJ",
+    }
+    try:
+        return contexts[recipe]
+    except KeyError as error:
+        raise ValueError(f"{recipe} is not a graph recipe") from error
 
 
 def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
@@ -116,6 +166,12 @@ class StudyConfig:
         return self.study_name
 
     @property
+    def upstream_experiment_name(self) -> str:
+        """Name owning frozen Parallel checkpoints and feature-cache identity."""
+        return str(self.values["experiment"].get(
+            "upstream_experiment_name", self.study_name))
+
+    @property
     def experiment_markers(self) -> dict[str, Any]:
         markers = self.values["experiment"].get("markers", {})
         return {
@@ -130,6 +186,54 @@ class StudyConfig:
     def output_directory(self) -> Path:
         experiment = self.values["experiment"]
         return Path(experiment["output_root"]) / experiment["name"]
+
+    @property
+    def data_directory(self) -> Path:
+        """Directory for data-stage provenance and resolved inputs."""
+        return self.output_directory / "data"
+
+    @property
+    def upstream_output_directory(self) -> Path:
+        experiment = self.values["experiment"]
+        return Path(experiment["output_root"]) / self.upstream_experiment_name
+
+    @property
+    def parallel_output_directory(self) -> Path:
+        """Directory owning the frozen Parallel checkpoints."""
+        return self.upstream_output_directory / "parallel"
+
+    @property
+    def cache_identity_name(self) -> str:
+        return self.upstream_experiment_name
+
+    @property
+    def refiner_output_experiment_name(self) -> str:
+        """Experiment directory receiving downstream-refiner artifacts.
+
+        An extension may keep its immutable manifest under a new study name
+        while deliberately placing an added recipe beside the parent study's
+        existing refiners.
+        """
+        return str(self.values["experiment"].get(
+            "refiner_output_experiment_name", self.study_name))
+
+    @property
+    def refiner_output_directory(self) -> Path:
+        experiment = self.values["experiment"]
+        return (Path(experiment["output_root"])
+                / self.refiner_output_experiment_name)
+
+    @property
+    def refiner_results_directory(self) -> Path:
+        return self.refiner_output_directory / "refiner"
+
+    @property
+    def evaluation_results_directory(self) -> Path:
+        return self.refiner_output_directory / "evaluation"
+
+    @property
+    def downstream_seeds(self) -> tuple[int, ...]:
+        return tuple(int(seed) for seed in self.refiners["downstream_seeds"])
 
     @property
     def source_sha256(self) -> str:
@@ -171,20 +275,49 @@ class StudyConfig:
             raise ValueError(f"unknown configured seed(s): {sorted(missing)}")
         return selected
 
+    def selected_downstream_seeds(
+            self, requested: Iterable[int] | None = None) -> tuple[int, ...]:
+        if requested is None:
+            return self.downstream_seeds
+        wanted = {int(value) for value in requested}
+        selected = tuple(seed for seed in self.downstream_seeds if seed in wanted)
+        missing = wanted - set(selected)
+        if missing:
+            raise ValueError(
+                f"unknown configured downstream seed(s): {sorted(missing)}")
+        return selected
+
     def parallel_directory(self, run: SeedRun) -> Path:
-        return self.output_directory / "parallel" / run.output_name
+        return self.parallel_output_directory / run.output_name
 
     def checkpoint(self, run: SeedRun) -> Path:
         return self.parallel_directory(run) / self.parallel.get(
             "checkpoint", "best_jet.pt")
 
-    def refiner_directory(self, run: SeedRun, recipe: str, model: str) -> Path:
-        return self.output_directory / "refiners" / run.output_name / recipe / model
+    def refiner_directory(
+            self, run: SeedRun, recipe: str, downstream_seed: int) -> Path:
+        """Directory of one refiner replicate under its frozen Parallel seed."""
+        return (self.refiner_results_directory / run.output_name / recipe
+                / f"dnn_seed{int(downstream_seed)}")
+
+    def evaluation_directory(
+            self, run: SeedRun, recipe: str, downstream_seed: int) -> Path:
+        """Locked-Y evaluation directory matching one refiner replicate."""
+        return (self.evaluation_results_directory / run.output_name / recipe
+                / f"dnn_seed{int(downstream_seed)}")
+
+    def parallel_evaluation_directory(self, run: SeedRun) -> Path:
+        return self.evaluation_results_directory / run.output_name / "parallel"
 
 
 def _require_positive_int(mapping: dict[str, Any], key: str) -> None:
     if not isinstance(mapping.get(key), int) or mapping[key] <= 0:
         raise ValueError(f"{key} must be a positive integer")
+
+
+def _require_nonnegative_int(mapping: dict[str, Any], key: str) -> None:
+    if not isinstance(mapping.get(key), int) or mapping[key] < 0:
+        raise ValueError(f"{key} must be a non-negative integer")
 
 
 def _require_increasing_numeric_list(mapping: dict[str, Any], key: str) -> None:
@@ -220,16 +353,24 @@ def load_study_config(path: str | Path) -> StudyConfig:
             or Path(name).name != name
             or name in {".", ".."}):
         raise ValueError("experiment.name must be a safe directory name")
-    if not isinstance(experiment.get("output_root"), str) or not experiment[
-            "output_root"]:
-        raise ValueError("experiment.output_root must be a non-empty path")
+        if not isinstance(experiment.get("output_root"), str) or not experiment[
+                "output_root"]:
+            raise ValueError("experiment.output_root must be a non-empty path")
+        upstream_name = experiment.get("upstream_experiment_name")
+        if upstream_name is not None and (
+                not isinstance(upstream_name, str)
+                or not upstream_name
+                or Path(upstream_name).name != upstream_name
+                or upstream_name in {".", ".."}):
+            raise ValueError(
+                "experiment.upstream_experiment_name must be a safe directory name")
     markers = experiment.get("markers", {})
     if not isinstance(markers, dict):
         raise ValueError("experiment.markers must be an object")
-    if set(markers) - {"label", "tags", "comparison_group", "variables"}:
-        raise ValueError(
-            "experiment.markers may only define label, tags, comparison_group, "
-            "and variables")
+        if set(markers) - {"label", "tags", "comparison_group", "variables"}:
+            raise ValueError(
+                "experiment.markers may only define label, tags, comparison_group, "
+                "and variables")
     for key in ("label", "comparison_group"):
         value = markers.get(key)
         if value is not None and (not isinstance(value, str) or not value.strip()):
@@ -253,7 +394,16 @@ def load_study_config(path: str | Path) -> StudyConfig:
 
     sizes = values["data"].get("sizes", {})
     for split in REQUIRED_SPLITS:
+        if split == "b_train":
+            continue
         _require_positive_int(sizes, split)
+    _require_nonnegative_int(sizes, "b_train")
+    shared_validation = values["data"].get("shared_validation", False)
+    if not isinstance(shared_validation, bool):
+        raise ValueError("data.shared_validation must be a boolean")
+    if shared_validation and sizes["a_val"] != sizes["b_val"]:
+        raise ValueError(
+            "shared validation requires data.sizes.a_val == data.sizes.b_val")
     _require_positive_int(values["data"], "data_seed")
     for key in ("train_file", "split_dir", "processed_cache_dir"):
         if not isinstance(values["data"].get(key), str) or not values["data"][key]:
@@ -284,6 +434,34 @@ def load_study_config(path: str | Path) -> StudyConfig:
             not isinstance(normalization.get("epsilon"), (int, float))
             or normalization["epsilon"] <= 0):
         raise ValueError("data.normalization.epsilon must be positive")
+    flavour_sampling = values["data"].get("flavour_sampling", {"mode": "balanced"})
+    mode = flavour_sampling.get("mode") if isinstance(flavour_sampling, dict) else None
+    if mode not in {"balanced", "fixed_ratio"}:
+        raise ValueError(
+            "data.flavour_sampling.mode must be 'balanced' or 'fixed_ratio'")
+    if mode == "balanced":
+        if set(flavour_sampling) != {"mode"}:
+            raise ValueError(
+                "data.flavour_sampling with mode 'balanced' may only define mode")
+    else:
+        if set(flavour_sampling) != {"mode", "class_ratios"}:
+            raise ValueError(
+                "data.flavour_sampling with mode 'fixed_ratio' must define "
+                "only mode and class_ratios")
+        class_ratios = flavour_sampling["class_ratios"]
+        # These names are production defaults, not fields repeated in every
+        # lightweight experiment component.
+        from src.config import _DEFAULTS
+        jet_class_names = values.get(
+            "jet_class_names", _DEFAULTS["jet_class_names"])
+        if set(class_ratios) != set(jet_class_names):
+            raise ValueError(
+                "data.flavour_sampling.class_ratios must define every jet class")
+        if any(
+                not isinstance(value, (int, float)) or value <= 0
+                for value in class_ratios.values()):
+            raise ValueError(
+                "data.flavour_sampling.class_ratios values must be positive")
     resampling = values["data"].get("kinematic_resampling", {})
     if resampling.get("enabled") is not True:
         raise ValueError("data.kinematic_resampling.enabled must be true")
@@ -392,6 +570,18 @@ def load_study_config(path: str | Path) -> StudyConfig:
             or ".." in Path(subdir).parts):
         raise ValueError(
             "parallel.training.tensorboard.subdir must be a safe relative path")
+    for key in ("torch_compile", "dense_pair_loss"):
+        if not isinstance(training.get(key, False), bool):
+            raise ValueError(f"parallel.training.{key} must be a boolean")
+    compile_mode = training.get("torch_compile_mode", "reduce-overhead")
+    if (
+            not isinstance(compile_mode, str)
+            or compile_mode not in {
+                "default", "reduce-overhead", "max-autotune",
+                "max-autotune-no-cudagraphs"}):
+        raise ValueError(
+            "parallel.training.torch_compile_mode must be one of default, "
+            "reduce-overhead, max-autotune, max-autotune-no-cudagraphs")
     for key, value in values["parallel"].get("loss_weights", {}).items():
         if key not in {"jet", "origin", "pair"}:
             raise ValueError(f"unknown parallel loss weight: {key}")
@@ -424,20 +614,35 @@ def load_study_config(path: str | Path) -> StudyConfig:
         "splits", ("b_train", "b_val", "y_test")))
     if not cache_splits or set(cache_splits) - set(REQUIRED_SPLITS):
         raise ValueError("feature_cache.splits contains an unknown split")
-    required_downstream = {"b_train", "b_val", "y_test"}
+    required_downstream = (
+        {"b_train", "b_val", "y_test"}
+        if values["data"]["sizes"]["b_train"] > 0
+        else {"y_test"})
     if not required_downstream.issubset(cache_splits):
         raise ValueError(
-            "feature_cache.splits must include b_train, b_val, and y_test")
+            "feature_cache.splits does not include the splits required by this route")
     if not isinstance(values["feature_cache"].get("root"), str) or not values[
             "feature_cache"]["root"]:
         raise ValueError("feature_cache.root must be a non-empty path")
     _require_positive_int(values["feature_cache"], "batch_size")
 
     recipes = values["refiners"].get("recipes", [])
-    if not recipes or set(recipes) - set(FEATURE_RECIPES):
-        raise ValueError(f"refiners.recipes must use {sorted(FEATURE_RECIPES)}")
-    if values["refiners"].get("seed_pairing", "same") != "same":
-        raise ValueError("only same Parallel/DNN seed pairing is currently supported")
+    if not recipes or set(recipes) - set(RECIPE_MODEL_KIND):
+        raise ValueError(
+            f"refiners.recipes must use {sorted(RECIPE_MODEL_KIND)}")
+    if values["refiners"].get("seed_pairing") != "cartesian":
+        raise ValueError(
+            "refiners.seed_pairing must be 'cartesian' for independent "
+            "Parallel/refiner seed replicates")
+    downstream_seeds = values["refiners"].get("downstream_seeds")
+    if (
+            not isinstance(downstream_seeds, list)
+            or not downstream_seeds
+            or any(not isinstance(seed, int) or seed < 0 for seed in downstream_seeds)
+            or len(set(downstream_seeds)) != len(downstream_seeds)):
+        raise ValueError(
+            "refiners.downstream_seeds must be a non-empty list of unique "
+            "non-negative integers")
     dnn = values["refiners"].get("dnn", {})
     if dnn.get("gpu_ids", [-1]) != [-1]:
         raise ValueError(
@@ -468,6 +673,61 @@ def load_study_config(path: str | Path) -> StudyConfig:
             or ".." in Path(dnn_tensorboard_subdir).parts):
         raise ValueError(
             "refiners.dnn.tensorboard.subdir must be a safe relative path")
+
+    if any(recipe in GRAPH_RECIPES for recipe in recipes):
+        graph_root = values["feature_cache"].get("graph_root")
+        if not isinstance(graph_root, str) or not graph_root:
+            raise ValueError(
+                "feature_cache.graph_root is required for graph refiners")
+        graph_dtype = values["feature_cache"].get("graph_dtype", "float32")
+        if graph_dtype not in {"float16", "float32"}:
+            raise ValueError(
+                "feature_cache.graph_dtype must be float16 or float32")
+        graph = values["refiners"].get("graph")
+        if not isinstance(graph, dict):
+            raise ValueError("refiners.graph is required for graph refiners")
+        if graph.get("gpu_ids", [-1]) != [-1]:
+            raise ValueError(
+                "refiners.graph.gpu_ids must remain [-1]; select physical GPUs "
+                "in the run script")
+        for key in ("hidden_dim", "num_layers", "batch_size", "epochs",
+                    "early_stopping_patience"):
+            _require_positive_int(graph, key)
+        output_dim = graph.get("output_dim")
+        if output_dim != "track_embedding_dim" and (
+                not isinstance(output_dim, int) or output_dim <= 0):
+            raise ValueError(
+                "refiners.graph.output_dim must be a positive integer or "
+                "'track_embedding_dim'")
+        if not isinstance(graph.get("hidden_dims"), list) or not graph["hidden_dims"]:
+            raise ValueError("refiners.graph.hidden_dims must be a non-empty list")
+        if any(not isinstance(width, int) or width <= 0
+               for width in graph["hidden_dims"]):
+            raise ValueError(
+                "all refiners.graph.hidden_dims must be positive integers")
+        for key in ("learning_rate", "dropout", "weight_decay"):
+            if not isinstance(graph.get(key), (int, float)) or graph[key] < 0:
+                raise ValueError(f"refiners.graph.{key} must be non-negative")
+        recipe_overrides = graph.get("recipe_overrides", {})
+        if not isinstance(recipe_overrides, dict):
+            raise ValueError("refiners.graph.recipe_overrides must be an object")
+        unknown_override_recipes = set(recipe_overrides) - set(GRAPH_RECIPES)
+        if unknown_override_recipes:
+            raise ValueError(
+                "refiners.graph.recipe_overrides contains unknown graph recipe(s): "
+                f"{sorted(unknown_override_recipes)}")
+        for recipe, override in recipe_overrides.items():
+            if not isinstance(override, dict) or set(override) != {"num_layers"}:
+                raise ValueError(
+                    "refiners.graph.recipe_overrides entries may define only "
+                    "num_layers")
+            _require_positive_int(override, "num_layers")
+        graph_tensorboard = graph.get("tensorboard", {})
+        if not isinstance(graph_tensorboard, dict):
+            raise ValueError("refiners.graph.tensorboard must be an object")
+        if set(graph_tensorboard) - {"enabled", "subdir"}:
+            raise ValueError(
+                "refiners.graph.tensorboard may only define enabled and subdir")
     return StudyConfig(source, values, tuple(runs))
 
 
@@ -498,13 +758,16 @@ def parallel_values(study: StudyConfig, run: SeedRun, *, stage: str) -> dict[str
         "cache_dir": data["processed_cache_dir"],
         "feature_cache_dir": study.cache["root"],
         "feature_cache_dtype": study.cache.get("dtype", "float32"),
-        "output_dir": str(study.output_directory / "parallel"),
+        "output_dir": str(study.parallel_output_directory),
         "top_k": data.get("top_k", _DEFAULTS["top_k"]),
         "num_workers": data.get("num_workers", _DEFAULTS["num_workers"]),
         "jet_fields": data.get("jet_fields", _DEFAULTS["jet_fields"]),
         "truth_vertex": copy.deepcopy(data["truth_vertex"]),
         "normalization": copy.deepcopy(data["normalization"]),
+        "flavour_sampling": copy.deepcopy(
+            data.get("flavour_sampling", {"mode": "balanced"})),
         "kinematic_resampling": copy.deepcopy(data["kinematic_resampling"]),
+        "shared_validation": data.get("shared_validation", False),
         **data["sizes"],
     })
     values.update(parallel.get("model", {}))
@@ -567,10 +830,12 @@ def write_json_atomic(path: str | Path, payload: Any) -> None:
 
 def write_experiment_manifest(study: StudyConfig) -> Path:
     """Write one immutable-identity manifest shared by all study stages."""
-    path = study.output_directory / "experiment_manifest.json"
+    path = study.data_directory / "experiment_manifest.json"
     payload = {
         "version": EXPERIMENT_MANIFEST_VERSION,
         "study_name": study.study_name,
+        "upstream_experiment_name": study.upstream_experiment_name,
+        "refiner_output_experiment_name": study.refiner_output_experiment_name,
         "experiment_markers": study.experiment_markers,
         "experiment_config": str(study.path),
         "experiment_config_sha256": study.source_sha256,
@@ -589,7 +854,12 @@ def write_experiment_manifest(study: StudyConfig) -> Path:
 
 def materialize_parallel_config(
         study: StudyConfig, run: SeedRun, *, stage: str) -> Path:
-    directory = study.output_directory / "configs" / "resolved" / stage
+    if stage == "data":
+        directory = study.data_directory / "resolved_configs"
+    elif stage == "parallel":
+        directory = study.parallel_output_directory / "resolved_configs"
+    else:
+        raise ValueError(f"unknown result stage for resolved config: {stage}")
     path = directory / f"{run.output_name}.json"
     write_json_atomic(path, parallel_values(study, run, stage=stage))
     return path

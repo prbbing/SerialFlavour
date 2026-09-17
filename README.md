@@ -52,7 +52,23 @@ flowchart LR
 
 Experiment configurations in `configs/parallel_refine/` combine independent data, Parallel-model, and refiner components. The optional `experiment.markers` fields record an experiment label, tags, comparison group, and scalar variables in every generated manifest, so model/data variations can be identified without relying only on directory names.
 
-Each Parallel and DNN run saves checkpoints, JSON/CSV training histories, TensorBoard logs, and a run manifest. The final Y-test evaluation saves predictions and metrics for both models, jet probability and discriminant plots, auxiliary origin/pair diagnostics for the Parallel model, and DNN-versus-Parallel rejection comparison plots. Rejection ratios are evaluated at common target signal efficiencies, with each model setting its own score threshold.
+The current experiment defaults use 100k jets for each A/B validation split, 200k for B-train, and 500k for the locked Y-test split. The default readout is `input → 128 → 64 → 32 → output`. Every configured Parallel seed is paired with all five downstream initialization seeds (`1`–`5`), so a standard five-Parallel-seed configuration trains and evaluates 25 refiner replicas per recipe, including graph recipes. Older `b500k/y200k` data components remain available only for reproducing earlier runs.
+
+`refiner/dnn_default.json` selects `F1_embed`, `F3_embed_aux`, `F4_all`, `FG2`, `FG2s`, and `FG4`; `FG2s` is the one-layer variant of two-layer `FG2`. The generic runner reads `refiners.recipes` from the selected experiment at launch, so a new experiment JSON can add or remove any implemented recipe through `overrides.refiners.recipes` without editing the runner.
+
+Result artifacts are kept separate for download and post-processing:
+
+```text
+<result-root>/<experiment>/
+├── data/                              # data-stage manifest and resolved config
+├── parallel/parallel_seed<p>/          # Parallel checkpoints and training artifacts
+├── refiner/parallel_seed<p>/<recipe>/dnn_seed<d>/
+└── evaluation/parallel_seed<p>/<recipe>/dnn_seed<d>/
+```
+
+The Parallel-only Y evaluation is stored at `evaluation/parallel_seed<p>/parallel/`. The configured split and feature-cache locations remain shared cache inputs; `data/data_preparation_manifest.json` records their exact identities and split hashes rather than duplicating those large files.
+
+Each Parallel and refiner run saves checkpoints, JSON/CSV training histories, TensorBoard logs, and a run manifest. The final Y-test evaluation saves predictions and metrics for both models, jet probability and discriminant plots, auxiliary origin/pair diagnostics for the Parallel model, and DNN-versus-Parallel rejection comparison plots. Rejection ratios are evaluated at common target signal efficiencies, with each model setting its own score threshold.
 
 Run the stages from the repository root:
 

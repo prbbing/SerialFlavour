@@ -36,17 +36,21 @@ def fit_normalization(
 
 class CachedTabularDataset(Dataset):
     def __init__(self, cache: FrozenFeatureCache, columns: np.ndarray):
-        self.cache = cache
+        # Materialise the selected columns once so each __getitem__ returns a
+        # view instead of gathering columns from the (possibly mmap-backed)
+        # table on every sample.  The selected block is at most a few tens of
+        # megabytes for the configured B splits.
         self.columns = np.asarray(columns, dtype=np.int64)
+        self.values = np.ascontiguousarray(
+            np.asarray(cache.features)[:, self.columns], dtype=np.float32)
+        self.labels = np.asarray(cache.labels, dtype=np.int64)
 
     def __len__(self):
-        return len(self.cache.labels)
+        return len(self.labels)
 
     def __getitem__(self, index):
-        features = np.array(
-            self.cache.features[index, self.columns], dtype=np.float32, copy=True)
-        label = int(self.cache.labels[index])
-        return torch.from_numpy(features), torch.tensor(label, dtype=torch.long)
+        return (torch.from_numpy(self.values[index]),
+                torch.tensor(int(self.labels[index]), dtype=torch.long))
 
 
 def create_tabular_loader(

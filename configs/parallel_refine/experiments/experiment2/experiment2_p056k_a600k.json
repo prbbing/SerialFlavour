@@ -1,0 +1,37 @@
+{
+  "components": {
+    "data": "../../data/experiment2_a600k_b200k.json",
+    "parallel": "../../parallel/experiment1_p056k.json",
+    "refiner": "../../refiner/dnn_default.json"
+  },
+  "config_kind": "experiment",
+  "experiment": {
+    "name": "experiment2_p056k_a600k",
+    "output_root": "/data/yuyang/SerialFlavour/results/parallel_refine",
+    "markers": {
+      "label": "Experiment 2 | Parallel 056k | A-train 600,000",
+      "tags": [
+        "experiment-2",
+        "fixed-dnn-b200k",
+        "transformer-data-scaling",
+        "transformer-plus-dnn"
+      ],
+      "comparison_group": "experiment2_fixed_transformer_dnn_b200k",
+      "variables": {
+        "parallel_parameter_band": "50k-60k",
+        "parallel_parameters": 56381,
+        "d_model": 32,
+        "n_heads": 2,
+        "n_layers": 6,
+        "d_ffn": 64,
+        "a_train_jets": 600000,
+        "a_val_jets": 100000,
+        "b_train_jets": 200000,
+        "b_val_jets": 100000,
+        "y_test_jets": 500000,
+        "dnn_hidden_dims": "128-64-32",
+        "dnn_enabled": true
+      }
+    }
+  }
+}

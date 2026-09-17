@@ -13,8 +13,8 @@ if str(ROOT) not in sys.path:
 
 from src.parallel_refine.config import (
     active_parallel_config, load_study_config, materialize_parallel_config,
-    write_experiment_manifest)
-from src.parallel_refine.data import load_processed_split
+    write_experiment_manifest, write_json_atomic)
+from src.parallel_refine.data import default_cache_workers, load_processed_splits
 from src.parallel_refine.splits import generate_split_bundle
 
 
@@ -28,9 +28,16 @@ def main(argv=None):
         help=("Build only this processed split; repeat for multiple splits. "
               "Requires --build-processed-caches. The default builds all splits."))
     parser.add_argument("--force", action="store_true")
+    parser.add_argument(
+        "--workers", type=int, default=None,
+        help=("parallel processes for --build-processed-caches "
+              "(default: min(cpu_count, 16))"))
     args = parser.parse_args(argv)
     if args.processed_split and not args.build_processed_caches:
         parser.error("--processed-split requires --build-processed-caches")
+    if args.workers is not None and args.workers < 1:
+        parser.error("--workers must be a positive integer")
+    workers = args.workers or default_cache_workers()
     study = load_study_config(args.config)
     print(f"experiment_manifest={write_experiment_manifest(study)}")
     run = study.seeds[0]
@@ -38,6 +45,7 @@ def main(argv=None):
     config = active_parallel_config(study, run, stage="data")
     bundle = generate_split_bundle(config, force=args.force)
     processed_splits = set(args.processed_split or bundle.arrays)
+    processed = {}
     print(f"resolved_config={resolved}")
     print(f"split_dir={config.split_dir}")
     for name, indices in bundle.arrays.items():
@@ -45,10 +53,26 @@ def main(argv=None):
             f"{name}: jets={len(indices):,} "
             f"events={bundle.summary['unique_events'][name]:,} "
             f"sha256={bundle.summary['index_sha256'][name]}")
-        if args.build_processed_caches and name in processed_splits:
-            processed = load_processed_split(
-                config, name, force=args.force, progress=True)
-            print(f"  retained_after_track_selection={len(processed['y']):,}")
+    if args.build_processed_caches:
+        requested = [
+            name for name in bundle.arrays if name in processed_splits]
+        summary = load_processed_splits(
+            config, requested, force=args.force, progress=True,
+            workers=workers)
+        for name in requested:
+            processed[name] = summary[name]
+            print(
+                f"  retained_after_track_selection="
+                f"{processed[name]['retained_after_track_selection']:,}")
+    write_json_atomic(study.data_directory / "data_preparation_manifest.json", {
+        "stage": "data",
+        "experiment_config": str(study.path),
+        "experiment_config_sha256": study.source_sha256,
+        "split_directory": str(Path(config.split_dir).resolve()),
+        "split_manifest": bundle.summary,
+        "processed": processed,
+        "resolved_config": str(resolved.resolve()),
+    })
     return 0
 
 
