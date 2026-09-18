@@ -13,6 +13,9 @@ validation examples.
 | 1M | 700,000 | 100,000 | 200,000 |
 | 2M | 1,400,000 | 200,000 | 400,000 |
 | 3M | 2,100,000 | 300,000 | 600,000 |
+| 4M | 2,800,000 | 400,000 | 800,000 |
+| 5M | 3,500,000 | 500,000 | 1,000,000 |
+| 6M | 4,200,000 | 600,000 | 1,200,000 |
 
 For every row, the training pool is partitioned without overlap between
 Parallel A-train and DNN B-train.
@@ -24,8 +27,10 @@ Parallel A-train and DNN B-train.
 | 90/10 | 90% | 10% | Transformer + default DNN refiners |
 | 85/15 | 85% | 15% | Transformer + default DNN refiners |
 | 80/20 | 80% | 20% | Transformer + default DNN refiners |
+| 75/25 | 75% | 25% | Transformer + default DNN refiners |
+| 70/30 | 70% | 30% | Transformer + default DNN refiners |
 
-The nine config files form the Cartesian product of these totals and
-allocations. `shared_validation: true` is an explicit split protocol: it makes
+The 1M--3M totals use every listed allocation; 4M--6M currently add the
+80/20 point only, for 24 experiment config files in total. `shared_validation: true` is an explicit split protocol: it makes
 `a_val` and `b_val` identical at both jet and event level, while every other
 cross-split pair remains event-disjoint.
