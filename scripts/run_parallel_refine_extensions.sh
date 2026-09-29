@@ -148,4 +148,8 @@ for index in "${!SEEDS[@]}"; do
 done
 wait_for_jobs
 
+echo "STAGE 5: aggregate rejection curves across completed Parallel seeds"
+python scripts/evaluate.py --config "$CONFIG" --model parallel_dnn \
+    --aggregate-parallel-seeds
+
 echo "EXTENSION STAGES COMPLETE. Logs: $LOG_DIR"

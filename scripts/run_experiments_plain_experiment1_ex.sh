@@ -90,4 +90,7 @@ CUDA_VISIBLE_DEVICES=2 python scripts/evaluate.py --config configs/parallel_refi
 CUDA_VISIBLE_DEVICES=2 python scripts/evaluate.py --config configs/parallel_refine/experiments/experiment1_ex/experiment1_ex_p122k_n1m_a095_b005.json --seed 5 --model parallel_dnn >logs/parallel_refine/experiment1_ex_p122k_n1m_a095_b005/plain/y_evaluate_seed5_gpu2.log 2>&1 &
 wait
 
+echo "STAGE 7: aggregate rejection curves across completed Parallel seeds"
+python scripts/evaluate.py --config configs/parallel_refine/experiments/experiment1_ex/experiment1_ex_p122k_n1m_a095_b005.json --model parallel_dnn --aggregate-parallel-seeds 2>&1 | tee logs/parallel_refine/experiment1_ex_p122k_n1m_a095_b005/plain/parallel_seed_aggregate.log
+
 echo "ALL STAGES COMPLETE. Logs: logs/parallel_refine/experiment1_ex_p122k_n1m_a095_b005/plain"

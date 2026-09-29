@@ -30,8 +30,8 @@ Parallel A-train and DNN B-train.
 | 75/25 | 75% | 25% | Transformer + default DNN refiners |
 | 70/30 | 70% | 30% | Transformer + default DNN refiners |
 
-The 1M--3M totals use every listed allocation; 4M--6M currently add the
-80/20, 75/25, and 70/30 points, for 30 experiment config files in total.
+Every total from 1M through 6M uses every listed allocation, for 42 experiment
+config files in total.
 `shared_validation: true` is an explicit split protocol: it makes
 `a_val` and `b_val` identical at both jet and event level, while every other
 cross-split pair remains event-disjoint.
