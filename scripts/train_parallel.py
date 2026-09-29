@@ -28,6 +28,14 @@ from src.training import (
     origin_class_weights, parallel_losses, save_history)
 
 
+def _positive_int(value: str) -> int:
+    """Parse a strictly positive command-line integer."""
+    number = int(value)
+    if number <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return number
+
+
 def _plot_training_history(history, output_directory):
     if not history:
         return
@@ -66,6 +74,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True)
     parser.add_argument("--seed", type=int, action="append")
+    parser.add_argument(
+        "--patience", type=_positive_int, default=100,
+        help=("Stop after this many consecutive epochs without a lower "
+              "validation jet cross-entropy (default: 100, which does not "
+              "stop early for the standard 100-epoch configuration)."))
     parser.add_argument(
         "--skip-complete", action="store_true",
         help="Skip a seed when its configured checkpoint already exists.")
@@ -133,6 +146,8 @@ def main(argv=None):
         best_total = float("inf")
         best_jet_epoch = None
         best_total_epoch = None
+        stale_jet_epochs = 0
+        stopped_early = False
         history_metadata = {
             "stage": "parallel",
             "experiment_name": study.experiment_name,
@@ -145,6 +160,10 @@ def main(argv=None):
             "checkpoint_policy": {
                 "best_jet.pt": "minimum validation jet cross-entropy",
                 "best_total.pt": "minimum validation total loss",
+            },
+            "early_stopping": {
+                "metric": "minimum validation jet cross-entropy",
+                "patience": args.patience,
             },
         }
         for epoch in range(1, config.epochs + 1):
@@ -176,7 +195,10 @@ def main(argv=None):
             if saved_best_jet:
                 best_jet = validation["jet"]
                 best_jet_epoch = epoch
+                stale_jet_epochs = 0
                 torch.save(raw_model.state_dict(), output / "best_jet.pt")
+            else:
+                stale_jet_epochs += 1
             if saved_best_total:
                 best_total = validation["total"]
                 best_total_epoch = epoch
@@ -195,6 +217,7 @@ def main(argv=None):
                 "best_total_epoch_so_far": best_total_epoch,
                 "saved_best_jet": saved_best_jet,
                 "saved_best_total": saved_best_total,
+                "stale_jet_epochs": stale_jet_epochs,
             })
             if writer is not None:
                 log_tensorboard_epoch(
@@ -210,6 +233,16 @@ def main(argv=None):
                 f"seed={run.seed} epoch={epoch} "
                 f"train={train['total']:.6f} "
                 f"val_jet={validation['jet']:.6f}")
+            if (
+                    stale_jet_epochs >= args.patience
+                    and epoch < config.epochs):
+                stopped_early = True
+                print(
+                    f"early stop seed={run.seed} epoch={epoch} "
+                    f"patience={args.patience} "
+                    f"best_jet_epoch={best_jet_epoch} "
+                    f"best_jet={best_jet:.6f}")
+                break
         if writer is not None:
             writer.close()
         torch.save(raw_model.state_dict(), output / "last.pt")
@@ -232,6 +265,12 @@ def main(argv=None):
                 "wall_seconds": sum(row["epoch_seconds"] for row in history),
                 "train_samples": int(len(train_loader.dataset)),
                 "validation_samples": int(len(val_loader.dataset)),
+            },
+            "early_stopping": {
+                "metric": "minimum validation jet cross-entropy",
+                "patience": args.patience,
+                "stopped_early": stopped_early,
+                "stale_jet_epochs": stale_jet_epochs,
             },
             "artifacts": {
                 "config": "config.json",

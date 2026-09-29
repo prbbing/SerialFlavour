@@ -109,6 +109,10 @@ def main(argv=None):
         "--model",
         choices=("parallel", "dnn", "parallel_dnn"),
         default="parallel_dnn")
+    parser.add_argument(
+        "--aggregate-parallel-seeds", action="store_true",
+        help=("Only write the cross-Parallel-seed rejection aggregates. Run "
+              "this once after all per-seed evaluations have completed."))
     args = parser.parse_args(argv)
     study = load_study_config(args.config)
     print(f"experiment_manifest={write_experiment_manifest(study)}")
@@ -116,6 +120,14 @@ def main(argv=None):
     unknown = set(recipes) - set(study.refiners["recipes"])
     if unknown:
         raise ValueError(f"recipe(s) not enabled by config: {sorted(unknown)}")
+    if args.aggregate_parallel_seeds:
+        if args.model == "parallel":
+            parser.error("--aggregate-parallel-seeds requires a DNN model")
+        if args.seed or args.downstream_seed:
+            parser.error(
+                "--aggregate-parallel-seeds cannot be combined with seed selection")
+        write_parallel_seed_mean(study, recipes)
+        return 0
     downstream_seeds = study.selected_downstream_seeds(args.downstream_seed)
 
     for run in study.selected_seeds(args.seed):
@@ -248,7 +260,11 @@ def main(argv=None):
                     cache=cache, result=result, checkpoint=checkpoint)
             if set(seeds) == set(study.downstream_seeds):
                 write_dnn_seed_mean(run, recipe, directories, curve_sets)
-    if args.model in {"dnn", "parallel_dnn"}:
+    # A per-seed process must not write this shared aggregate: the parallel
+    # runners launch one such process per Parallel seed.  The runner invokes
+    # --aggregate-parallel-seeds once after its wait barrier instead.
+    if (args.model in {"dnn", "parallel_dnn"}
+            and args.seed is None and args.downstream_seed is None):
         write_parallel_seed_mean(study, recipes)
     return 0
 

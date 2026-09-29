@@ -7,15 +7,26 @@ SerialFlavour studies multi-task jet-flavour tagging with a GN2-inspired Transfo
 ```text
 SerialFlavour/
 ├── src/
-│   ├── config.py                Shared Parallel defaults and seed utilities
-│   ├── data.py                  Shared HDF5 and atomic-cache helpers
-│   ├── losses.py                Origin weighting and pair BCE
-│   ├── parallel_model.py         Parallel Transformer implementation
-│   ├── training.py               Reusable Parallel training and validation loop
-│   └── parallel_refine/         A/B/Y split, cache, refiner, evaluation, and plots
-├── configs/parallel_refine/     Component and experiment configurations
-└── scripts/                     Python preparation, training, and evaluation entry points
+│   ├── config.py                Shared configuration and seed utilities
+│   ├── data.py                  HDF5 loading and atomic caches
+│   ├── losses.py                Multi-task loss definitions
+│   ├── parallel_model.py        Parallel Transformer model
+│   ├── training.py              Shared training utilities
+│   └── parallel_refine/         A/B/Y frozen-feature refinement workflow
+├── configs/parallel_refine/     Reusable components and experiment configurations
+└── scripts/
+    ├── compose_experiment.py    Compose experiment configurations
+    ├── prepare_data.py          Prepare splits and processed caches
+    ├── train_parallel.py        Train Parallel models
+    ├── generate_cache.py        Generate frozen and graph caches
+    ├── train_dnn.py             Train tabular refiners
+    ├── train_graph_refiner.py   Train graph refiners
+    ├── evaluate.py              Evaluate and aggregate results
+    ├── run_parallel_refine_experiment.sh  Generic single-experiment runner
+    └── production/              Experiment 1 EX production scheduler
 ```
+
+`scripts/run_parallel_refine_experiment.sh` is the generic single-experiment runner. The coupled files under `scripts/production/` provide the multi-GPU production scheduler and should be deployed together.
 
 ## Model architecture
 

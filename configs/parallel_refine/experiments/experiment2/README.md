@@ -22,23 +22,15 @@ The existing 1M 56k run is represented explicitly by `experiment2_p056k_a1m.json
 
 Each new A scale has its own split and processed-cache directory because normalization is fitted from that scale's A-train split.
 
-## Shared-split preparation
+## Running one configuration
 
-Before training, run the standalone preparation script once from the repository root:
-
-```bash
-python scripts/prepare_experiment2_shared_splits.py
-```
-
-The script generates the A=3M master split with the existing splitter, then derives nested A-train subsets for all six scales while copying the exact A-val, B-train, B-val, and Y-test indices. It writes the standard `indices.npz` and `split_manifest.json` files consumed by the existing training pipeline. Use `--force` only when intentionally regenerating the anchor and all derived bundles.
-
-After the shared split is ready, the matrix can be run in the background with:
+The one-off shared-split materializer and matrix queue have been retired. Select an experiment JSON with the repository's single plain runner, either by editing its `CONFIG` line or by overriding it for one invocation:
 
 ```bash
-bash scripts/run_experiment2_matrix_queue.sh start
-bash scripts/run_experiment2_matrix_queue.sh status
+PARALLEL_REFINE_CONFIG=configs/parallel_refine/experiments/experiment2/experiment2_p122k_a1m.json \
+  bash scripts/run_parallel_refine_experiment.sh
 ```
 
-The queue uses its own logs/PID/completion directory under `logs/parallel_refine/experiment2_matrix_queue`. It contains the 11 outstanding entries; `experiment2_p056k_a1m.json` remains in this matrix but is omitted because the prior `parallel_refine_a1m_6layers` result is recorded separately. Use `run` for foreground debugging or `prepare` to run only the shared-split preparation.
+The runner executes data preparation, the five Parallel seeds, B caches, configured DNN or graph recipes, Y caches, evaluation, and cross-Parallel-seed aggregation. Completed training units are skipped through their existing completion checks.
 
-For one configuration with explicit, manually staged commands, edit the `CONFIG` line in `scripts/run_experiments_plain_experiment2.sh` and run it from the repository root. The script prepares or verifies the shared split, then runs the five Parallel seeds, B caches, all five DNN recipes, Y caches, and final evaluation with explicit GPU assignments.
+Existing Experiment 2 results may depend on previously materialized split bundles whose A-val, B-train, B-val, and Y-test indices were shared across A-train scales. Keep those `indices.npz` and `split_manifest.json` artifacts when reproducing the archived results. If the split directories are absent, the generic runner can create config-sized splits, but that does not by itself reconstruct the retired cross-configuration shared-split procedure.

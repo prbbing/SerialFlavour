@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Generic end-to-end Parallel Refine runner.
+# Single plain end-to-end runner for every Parallel Refine experiment.
 #
 # Usage:
 #   1. Activate the SerialFlavour/GN2 environment.
 #   2. Change only CONFIG below to select an experiment JSON, or set the
-#      PARALLEL_REFINE_CONFIG environment variable from a queue script.
+#      PARALLEL_REFINE_CONFIG environment variable for one invocation.
 #   3. Run: bash scripts/run_parallel_refine_experiment.sh
 
 set -euo pipefail
@@ -211,5 +211,11 @@ for index in "${!SEEDS[@]}"; do
         --seed "$seed" --model "$EVALUATION_MODEL"
 done
 wait_for_jobs
+
+if ((B_TRAIN > 0)); then
+    echo "STAGE 7: aggregate rejection curves across completed Parallel seeds"
+    python scripts/evaluate.py --config "$CONFIG" --model parallel_dnn \
+        --aggregate-parallel-seeds
+fi
 
 echo "ALL STAGES COMPLETE. Logs: $LOG_DIR"
