@@ -111,6 +111,14 @@ MTAN（Multi-Task Attention Network）在共享 SegNet 编码—解码网络上�
 
 冻结后缓存共享解码特征、任务注意力特征及深度/法向预测。第一轮读出沿用原模型的卷积预测头类型：embedding-only 与 embedding＋预测图保留相同空间分辨率，并匹配训练参数量；不把空间辅助图的效果仅与一个全局向量 MLP 比较。语义 logits 可以另作共同输入，两组必须一致；辅助法向保持连续向量，辅助深度保留连续预测。
 
+### 3.4 已有 refinement 先例与架构创新边界
+
+MTAN 本身主要通过共享特征和任务注意力进行联合学习，不能直接称为已经完成冻结后的辅助预测 refinement。但在同一 NYUv2 任务族中，**PAD-Net（Xu et al., CVPR 2018）**已经先生成分割、深度、法向、轮廓等中间任务预测，再通过多模态蒸馏模块改进最终分割与深度。其蒸馏涉及任务分支特征，不能一概描述为拼接最终预测图。论文虽有前端预训练和整网联合训练两个阶段，后一个阶段仍更新整个网络；这不等于我们的 A 上训练后全部冻结、在独立 B 上训练主任务读出。[PAD-Net 正文，§3.4–3.6、§4.1](https://openaccess.thecvf.com/content_cvpr_2018/papers/Xu_PAD-Net_Multi-Tasks_Guided_CVPR_2018_paper.pdf)
+
+**PAP（Zhang et al., CVPR 2019，Pattern-Affinitive Propagation Across Depth, Surface Normal and Semantic Segmentation）**进一步在 NYUv2 等数据上学习任务内非局部 affinity，组合跨任务 affinity，并通过迭代传播改进密集预测。它是关系传播与 refinement 的架构先例，采用联合任务学习，不能当作严格冻结协议的直接证据。[PAP 正文](https://openaccess.thecvf.com/content_CVPR_2019/papers/Zhang_Pattern-Affinitive_Propagation_Across_Depth_Surface_Normal_and_Semantic_Segmentation_CVPR_2019_paper.pdf)
+
+**本项目判断：简单的辅助图融合、attention 或跨任务 affinity 传播已有较强先例，架构创新风险高。** NYUv2＋MTAN 更适合检验：在局部表示访问、容量和训练预算可比时，冻结的深度/法向预测是否仍提供主任务读出增量。即使得到正结果，也不能仅凭增加一个卷积读出就宣称首次用几何辅助预测改善分割。共用判断标准见第 14 节。
+
 ## 4. CV：NYUv2 / PASCAL-Context 与 MTI-Net
 
 ### 4.1 已发表架构和可导出的辅助读出
@@ -161,6 +169,12 @@ MTI-Net 的 NYUv2 基准以分割和深度为输出任务；已发表扩展加�
 
 冻结后分别缓存 backbone 多尺度特征、任务交互后的主任务特征、已有辅助头的预测与任务隐藏特征。至少对照“同尺度特征＋辅助预测”与“同尺度特征”，并另对照辅助 hidden features。已有 MTI-Net native 已进行任务交互，post-refinement 能否再获益需要实测，不能由论文的端到端收益直接推出。
 
+### 4.5 已有多尺度 refinement 与本项目的差别
+
+MTI-Net 本身就是已发表的 refinement 性质架构：在各尺度生成受监督的任务特征和初始预测，通过跨任务蒸馏、跨尺度传播与聚合得到最终输出；论文在 NYUv2 和 PASCAL-Context 上验证，并明确端到端优化完整架构。其主要交互对象是任务隐藏特征，不能把它简化为最终辅助 logits 的 stacking。PAD-Net/PAP 的单尺度蒸馏与 affinity 传播先例见第 3.4 节。[MTI-Net 正文，§2、§3](https://www.ecva.net/papers/eccv_2020/papers_ECCV/papers/123490511.pdf)
+
+**本项目判断：NYUv2/PASCAL＋MTI-Net 的普通多尺度融合与关系传播架构创新风险很高。** 我们的协议差别在于冻结已有交互模块后，再用独立 B 的主任务监督读出；这仍是待验证的实验问题。强 embedding-only 应能访问同尺度、交互后的主任务特征，辅助任务 hidden-feature 另作对照，才能判断辅助预测是否超过 native 已有的任务交互。正结果可支持“已交互的冻结上游仍有可利用的读出增量”，不能自动支持“发明了新的任务交互架构”。
+
 ## 5. Science：Materials Project 与 CrystalTransformer
 
 ### 5.1 数据版本、目标与已发表任务组合
@@ -190,6 +204,14 @@ CrystalTransformer 将原子种类 one-hot 与坐标分别线性嵌入、拼接�
 建议先取一个固定快照、通过质量筛选后的 20k 材料试验池，按 56/5/14/5/20 分成 A_train / A_val / B_train / B_val / Y，即 11,200 / 1,000 / 2,800 / 1,000 / 4,000。按 material ID 和等价结构去重分组；必要时增加组成分组测试作为单独泛化协议。记录 CIF、晶胞规范、原子顺序和坐标单位；首 token 的选择使原子排序尤其需要审计。不要为修补对称性临时开发新架构；发现缺陷先评估作者处理方法是否满足用途，再决定是否保留候选。
 
 正式实验不能直接加载在更大 MP* 上训练的权重而忽略它与 B/Y 的材料重叠。作者 ct-UAEv1.0 可作为版本核对来源；严格实验应锁定代码 commit 与数据快照，独立训练。材料级辅助输出只能支持性质间读出检验，不能写成有逐原子量监督的局部任务案例。[作者仓库](https://github.com/fduabinitio/ct-UAE)、[论文归档版本](https://doi.org/10.5281/zenodo.14557908)
+
+### 5.4 已有冻结嵌入迁移与创新风险
+
+CrystalTransformer 原论文不仅有多任务元素嵌入迁移，也在 Table 3 报告 **CT^{freeze}-CGCNN**：保持预训练 ct-UAE 元素嵌入冻结，训练 CGCNN 后端预测材料性质。因此，“冻结前端学到的表示，再训练后端”已经有本案例内的直接先例。[论文 Table 3 与 Transferability of ct-UAEs](https://pmc.ncbi.nlm.nih.gov/articles/PMC11782585/)、[出版社版本](https://www.nature.com/articles/s41467-025-56481-x)
+
+但该实验迁移的是元素嵌入表/原子种类的嵌入参数，并非把整个 CrystalTransformer encoder 与全部任务头冻结后，在 B 上读取完整材料表示和预测形成能来改进带隙。它也没有直接提供本文严格 A/B/Y 及 embedding＋辅助预测增量的证据。已有 Table 2 多任务嵌入收益和 Table 3 冻结嵌入收益应分开理解。
+
+**本项目判断：二阶段表示迁移已有先例；完整冻结后的跨性质预测读出直接重合较少，但普通标量拼接仍面临 stacking 的一般先例。** 本案例适合作为材料领域验证，不能把“冻结”本身或在材料 embedding 后增加 MLP 当作架构创新。相关多目标回归先例见第 14.3 节。
 
 ## 6. Science：QM9 的保留案例与已发表备选
 
@@ -221,6 +243,14 @@ DeepMoleNet 发表信息与上述数值分别见 [JCIM 论文](https://pubs.acs.
 当前配置的 backbone 为 hidden 64、3 个 interaction blocks、32 个 RBF、5 Å cutoff；上游最多 100 epochs、batch 128、学习率 1e-3、weight decay 1e-5，以 gap 验证 MAE 选模型，patience 20。下游最多 300 epochs、patience 10；MLP 和 set/graph 读出的学习率分别为 1e-3 与 3e-4，native 初始化另有配置。该预算属于本项目，不是 SchNet 原论文复现。
 
 保持电荷单位、pair 对称性、完整键类型概率及同容量读出对照；不因为更换领域而丢弃这些严谨性要求。此处仅登记路线，本文没有启动新训练或改动配置。
+
+### 6.4 QM9 上已有两阶段性质 stacking 的直接先例
+
+**Tan、Li、Shi、Yang，JCIM 2021，A Multitask Approach to Learn Molecular Properties** 是此前候选讨论遗漏的相关工作。出版社摘要明确说明：方法基于基础回归器/分类器的 stacking，在扩展的分子特征空间中增加训练阶段，并在 **QM9、Alchemy、Tox21** 上评估。因此，QM9 上“利用其他性质预测构造第二阶段输入，再预测目标性质”的基本架构思路已有直接先例；不能仅引用 EMPP/DeepMoleNet 的辅助监督，就把二阶段预测读出视为尚无人研究。[出版社摘要与发表信息](https://pubs.acs.org/doi/10.1021/acs.jcim.1c00646)、[PubMed 摘要](https://pubmed.ncbi.nlm.nih.gov/34289687/)
+
+**核查深度：本轮确认到出版社/索引摘要，尚未取得全文核验精确输入、阶段划分、目标组合、代码和泄漏控制。** 不据摘要补写其采用了共同训练的神经上游、完整冻结、独立 B 或主标签-only 的协议；摘要中的总体收益也不能当作我们的 gap、电荷、键组合的预计收益。
+
+**本项目判断：材料/分子级多性质 stacking 的架构创新风险高；逐原子电荷和 pair 键结构的完整重合尚未由该文证明。** 若希望提出结构层面的贡献，需要说明并验证局部身份、原子对应关系或 pair 结构带来的作用，超过简单性质 stacking、同层级 embedding-only 和辅助分支 hidden-feature。已有 TinySchNet 负例与第 6.2 节候选接入限制继续保留；该先例的加入不表示自动新增上游模型或改选任务。
 
 ## 7. Science：rMD17 与 TorchMD-Net ET
 
@@ -255,6 +285,12 @@ TorchMD-Net ET 使用旋转等变注意力，维护标量/向量原子表示，�
 缓存标量/向量表示、预测能量及预测力。能量读出须保持旋转不变；若采用力范数等不变量摘要，要明确这是**本项目推荐的下游输入适配**，不是 ET 原论文的 post-refinement。向量表示不能直接展平后用不具旋转一致性的 MLP 宣称保留原模型对称性。embedding-only 也应拥有相同局部/向量信息处理机会。
 
 仅修正能量而保留原力，通常不能保证新的能量—力对仍满足上述梯度关系。本案例第一阶段只评估静态能量预测，不据此宣称可用于保守分子动力学。
+
+### 7.4 导数监督先例与 post-refinement 的边界
+
+ET 原论文在 MD17 上通过能量对原子坐标的负梯度预测力，并联合优化能量与力；这已经是明确的导数监督先例。它没有独立辅助力 head，也没有报告本文拟定的“完整冻结 ET 后，用预测力摘要在独立 B 上重读出能量”的实验。将该架构移到 rMD17 也不等于原论文已验证同一数据协议。[ET 正文，§3、MD17 实验](https://arxiv.org/pdf/2202.02541)
+
+**本项目判断：不能以已有能量—力联合学习断言同类 post-refinement 已被完成，也不能因未确认精确先例就宣称架构空白。** 本案例主要检验导数信息与有限读出的关系；任何方法贡献都需交代旋转不变性、坐标导数访问、推理成本及修正后能量—力的一致性。仅改善静态能量 MAE 不支持新的保守势能模型或动力学部署结论。路线延后状态不变。
 
 ## 8. Science：ADMET 与 MTGL-ADMET
 
@@ -306,6 +342,16 @@ MTGL-ADMET 使用共享 ResGCN 原子表示、任务专用 attention pooling、�
 
 公开示例依赖较旧的 DGL/PyTorch，存在五任务固定配置。第一轮使用作者同一任务组合并锁定依赖，不把“仓库存在”当成运行已验证；若必须更换主任务，再核查 gate 数和任务顺序是否支持，不自动开发新 gate 架构。
 
+### 8.5 跨端点两阶段预测先例与创新风险
+
+MTGL-ADMET 自身已经采用“一个主任务、多个辅助任务”和主任务中心的 gate，但 gate 融合任务隐藏特征，整网端到端训练；不能把它当成冻结后融合辅助预测的直接证据，也不能把主任务中心的普通 gate 再作为我们的新架构。[MTGL-ADMET 正文，Figure 2 与模型说明](https://pmc.ncbi.nlm.nih.gov/articles/PMC10654589/)
+
+更接近两阶段预测读出的是 **Feature Net**。Walter et al. 的 **Analysis of the benefits of imputation models over traditional QSAR models for toxicity prediction（Journal of Cheminformatics 2022）**先为各 assay 训练单任务模型，再为目标 assay 训练第二阶段模型，输入包括化学特征与其他 assay 的已知/预测值；在 Ames、Tox21 等毒性数据上评估。测试时作者另设全部辅助值来自预测的情形，其讨论报告相对单任务模型没有一致提升。[正式论文，Methods：Feature Net；Discussion](https://link.springer.com/article/10.1186/s13321-022-00611-w)
+
+**Walter et al., Multi-Task ADME/PK Prediction at Industrial Scale: Leveraging Large and Diverse Experimental Datasets（Molecular Informatics 2024）**也将跨端点 **stacked RF** 作为基线：先训练各端点 RF，再将化学描述符和辅助端点列拼接给第二阶段 RF；辅助列可用实测值，缺失时由第一阶段预测补齐。该细节来自作者公开稿的 Methods，正式期刊发表信息另行核实。[正式发表版本](https://onlinelibrary.wiley.com/doi/10.1002/minf.202400079)、[作者稿，Methods：Stacked RF](https://chemrxiv.org/engage/api-gateway/chemrxiv/assets/orp/resource/item/659d3878e9ebbb4db9c3088f/original/multi-task-adme-pk-prediction-at-industrial-scale-leveraging-large-and-diverse-experimental-datasets.pdf)
+
+**本项目判断：跨端点辅助预测再训练目标模型的架构创新风险高。** 上述先例并非本文 CYP2C9 五任务组合的精确复现，也不等于共同多任务上游＋严格独立 B：第一阶段可由分别训练的模型组成，第二阶段训练的辅助输入还可包含实验真值。我们必须坚持 B/Y 使用冻结预测，并区分纯预测和有辅助实测值的结果。这些差别可以支撑协议比较与机制研究，但仅把 RF 换成 MLP、把描述符换成 embedding，不足以自动构成架构创新。
+
 ## 9. NLP：MASSIVE 与官方 XLM-R 并行双头
 
 ### 9.1 数据集、版本与任务
@@ -347,6 +393,14 @@ ST 使用相同基础预训练、tokenizer、意图头和训练样本，只优�
 缓存 H、原意图 logits 和槽位 logits / 概率，保留作者实际标签通道。B 仅用 intent 标签优化句子读出，使用 B_val intent accuracy 选择。推荐先沿用已有小型分类读出：逐 token 投影后 masked mean/max pooling，再接分类 MLP；embedding-only 和 H＋slot 采用相同 token 层级、池化、深度、搜索预算并匹配参数量。槽位分支 hidden-feature 另列对照。
 
 下游最多 100 epochs、学习率候选 {1e-3, 3e-4}、patience 15 是推荐起点。B 样本有限，先验证线性/小型读出，再扩大容量；辅助标签不参与 B 训练或早停。正式测试同时报告 ST-native、MT-native、两种上游的 embedding-only，以及 MT embedding＋slot；只有最后一项超过强、同容量的 MT embedding-only，才支持冻结辅助输出的增量作用。
+
+### 9.5 同任务家族的先例与本案例定位
+
+MASSIVE 原论文的官方 XLM-R 是并行双头，未在两头之间加入显式的 intent→slot 或 slot→intent refinement；不能把它的联合训练成绩写成冻结后的辅助读出收益。[MASSIVE 正文，§5.1](https://aclanthology.org/2023.acl-long.235.pdf)
+
+但同一 intent/slot 任务家族已有 **SF-ID（ACL 2019）**在 SNIPS/ATIS 上通过双向任务表示和迭代交互增强预测；Stack-Propagation 的显式预测传递见第 10.3 节。这些是任务关系利用的架构先例，不是在 MASSIVE 上采用本文严格冻结协议的证据。[SF-ID 正文](https://aclanthology.org/P19-1544.pdf)、[Stack-Propagation 正式条目](https://aclanthology.org/D19-1214/)
+
+**本项目判断：官方并行模型与我们的冻结读出直接重合较少，但 intent/slot 普通融合的架构先例很多。** MASSIVE 更适合检验完整 token 表示和同容量读出下，显式槽位预测是否仍改善意图。更换数据集或语言不能单独作为架构创新；本轮未确认完全匹配的 MASSIVE 冻结工作，也不能据此断言不存在。
 
 ## 10. NLP：SNIPS 的 parallel joint 与 Stack-Propagation 两条路线
 
@@ -404,6 +458,14 @@ ST 不使用槽位监督；同结构监督消融保留原模块、关闭槽位�
 冻结后缓存完整 H、槽位分布和 token / sentence 意图原预测。B 仅用句子意图标签，读出和容量匹配遵循第 2.3、9.4 节；下游最多 100 epochs、patience 15。Stack 的槽位输出已受到主任务预测影响，主分析应让两组共同访问相同原意图 logits / token 意图分布，再测槽位增量；另报 H-only 对照，避免将对原意图预测的重新加工解释为独立槽位信息。
 
 在 NLP 内，**parallel 是更清楚的首轮机制案例，Stack 是已有任务预测传递的扩展案例**。这是一项实验优先级建议，不表示 parallel 的性能必然更高，也不取消用户保留的两条路线。
+
+### 10.5 已有双向迭代增强与连接方向的区别
+
+**Haihong E et al., A Novel Bi-directional Interrelated Model for Joint Intent Detection and Slot Filling（ACL 2019，SF-ID）**在 SNIPS/ATIS 上设置槽位与意图子网络，借助 reinforce/context 表示进行双向交互，并迭代更新后生成最终预测。SF-First 模式允许槽位相关表示帮助意图预测，是与本项目“局部辅助帮助全局主任务”相关的先例；交互对象主要是任务表示，不应写成冻结后直接拼接最终槽位 logits。[SF-ID 正文，§2.2、§3](https://aclanthology.org/P19-1544.pdf)
+
+另一方面，本文已选 Stack-Propagation 的显式前向连接是 **intent→slot**，而本项目下游目标是 **slot→intent**；前者本身不能证明后者的冻结增量。两者都与 SF-ID 的双向联合交互不同。尤其 Stack 的槽位输出已经受原意图预测影响，必须按第 10.4 节让两种读出共同访问原意图输出，再检验槽位增量。[Stack-Propagation 正文，§2.2–3](https://aclanthology.org/D19-1214.pdf)
+
+**本项目判断：在 SNIPS 上，仅提出任务拼接、双向 attention 或迭代任务交互的架构创新风险高。** Parallel 路线可用于较清楚的冻结机制检验；Stack 路线可检验已有单向预测传递之后是否仍有增量。SF-ID 的联合训练、任务表示交换并非共同上游全冻结、独立 B 主标签-only 的精确先例，不能混为同一训练协议。
 
 ## 11. NLP：SemEval Restaurant14 / Laptop14 与 RACL
 
@@ -472,6 +534,14 @@ SC 在非 aspect token 上缺少直接监督，其未掩码输出并不自动成
 
 作者 GloVe 环境为 Python 3.6.10 / TensorFlow-GPU 1.5，BERT 版本 README 要求 TensorFlow-GPU 1.12。旧环境可运行性尚未验证；先评估隔离环境与原版小批次，再决定是否实施。兼容性修补和缓存接口适配应记录，不把完整重写成新 PyTorch 上游视为已经复现。[环境说明](https://github.com/NLPWM-WHU/RACL)
 
+### 11.6 已有任务关系 refinement 与架构创新风险
+
+**He et al., An Interactive Multi-Task Learning Network for End-to-End Aspect-Based Sentiment Analysis（ACL 2019，IMN）**通过消息传递将 token 级抽取/情感和 document 级相关任务的信息迭代回写共享潜变量，使各任务进一步利用其他任务的信息。这是同一 ABSA 任务族的迭代增强先例，但任务组合不等于 RACL 的 AE/OE/SC 三任务。[IMN 正式条目与摘要](https://aclanthology.org/P19-1048/)、[IMN 正文](https://aclanthology.org/P19-1048.pdf)
+
+**RACL（ACL 2020）**本身已经以多层关系传播交换 AE、OE、SC 的任务表示，并通过联合损失反向传播训练所有参数。因而，本案例已有较强的 extraction/opinion/sentiment 交互架构，不能把冻结后再加普通关系融合模块描述为首次利用这些任务关系。[RACL 正文，§3 与训练目标](https://aclanthology.org/2020.acl-main.340.pdf)
+
+**本项目判断：普通任务关系融合与迭代传播的架构创新风险高；冻结后的显式辅助预测增量仍待实测。** 需要区分辅助任务 hidden features 与最终 logits，并按第 11.5 节匹配 AE 隐藏表示访问、上下文窗口和读出容量。IMN/RACL 的整体 ABSA 收益不能替代同结构 AE-only 正迁移证据，也不能证明我们的 B 阶段只用 AE 标签就一定受益。SC 输入仍不得使用真实 AE span。
+
 ## 12. 建议的实施次序、预算与成功判据
 
 ### 12.1 实施次序
@@ -521,3 +591,52 @@ NLP 内建议先验证 **SNIPS parallel 或非 BERT Stack 的最小闭环**，�
 正式实现前，每个案例需要保存数据来源/版本与许可、文件 hash、身份分组、标签来源/缺失情况、划分 manifest、预训练暴露记录、代码 commit、解析后的参数与随机种子。未知字段或无法运行的版本先明确标为待核查，不补写假定的配置。
 
 本清单补充 [相关工作](related_work.md) 中的候选讨论；此前探索性的新辅助任务设计不自动成为本轮实施方案。工程阶段仍遵循 [项目 README](../README.md) 与 [pipeline 说明](PIPELINE.md)，只在 cross-domain 路线推进，保留已有 QM9 历史结果与用户文档。
+
+## 14. 既有 post-refinement 先例与架构创新边界
+
+本节补充核查日期为 2026-10-03。**“已有 refinement 性质工作”与“完整做过本项目冻结协议”是两个问题。** 本轮发现的 QM9 性质 stacking、ADMET Feature Net、CV 多尺度蒸馏和 NLP 任务关系传播，已经限制了普通辅助融合架构的新颖性；这些发现不意味着候选必须取消，也不证明相同主辅任务与严格 A/B/Y 已全部被研究。第 3–11 节末尾分别给出案例对应的论文、链接和核查边界。
+
+### 14.1 先区分四类工作
+
+| 类型 | 已有先例 | 与本文协议的关系 |
+| --- | --- | --- |
+| 端到端任务交互与 refinement | PAD-Net、PAP、MTI-Net、SF-ID、IMN、RACL | 在任务分支特征、affinity 或预测之间传播，联合更新网络；有多阶段前向不等于上游冻结或训练数据独立 |
+| 两阶段预测 stacking | QM9 的 Tan et al. 2021；ADMET/毒性 Feature Net、stacked RF；通用 SST | 用第一阶段任务预测扩展输入，再训练目标模型；上游可分别训练，辅助输入可混用真值/预测，需逐项核对 |
+| 冻结表示或任务模块后迁移 | CT^{freeze}-CGCNN、ScaLearn；语义中间量方向的 PCBM | 已有“先学表示/任务知识，再冻结并学习目标读出”的先例；组合对象不一定是共同多任务模型的辅助预测 |
+| 本项目的严格冻结辅助读出检验 | A 上训练并选择共同 ST/MT 上游，全部冻结；独立 B 仅用主标签；Y 锁定；比较强 embedding-only 与 embedding＋预测辅助 | 本轮未确认完整匹配全部条件的论文；这是当前核查范围的结论，不是不存在此类工作的证明 |
+
+比较文献时应逐项记录：交互发生在隐藏特征还是最终预测；第一阶段是共同多任务还是分别训练；冻结哪些参数与归一化状态；第二阶段样本是否被第一阶段见过；第二阶段是否读取辅助真值；是否有同容量、同局部/多尺度输入的 embedding-only。不能只凭论文标题有 post-hoc、stack、refine 或有两个阶段，就认定与本文相同。
+
+### 14.2 各案例的创新风险判断
+
+下表的风险指**仅用拼接、普通 MLP/卷积、attention、gate 或既有关系传播实现辅助融合时，宣称新架构的风险**，不是该领域“已无创新空间”的断言，也不是方法有效性的预测。
+
+| 案例 | 判断 | 主要理由与仍可检验的问题 |
+| --- | --- | --- |
+| NYUv2＋MTAN | 高 | MTAN 本身未做严格冻结 refinement，但同任务族已有 PAD-Net/PAP；可检验并行任务输出的冻结增量（第 3.4 节） |
+| NYUv2 / PASCAL＋MTI-Net | 很高 | native 已包含多尺度任务特征 refinement；可检验已有交互后是否仍有辅助预测增量（第 4.5 节） |
+| MP＋CrystalTransformer | 中等直接重合，通用 stacking 风险仍在 | 已有冻结元素嵌入迁移，尚未确认完整 encoder＋辅助性质预测的本文协议（第 5.4 节） |
+| QM9 | 分子级性质 stacking 高；局部/pair 完整重合待核查 | 已有同数据集两阶段先例；电荷/键对应结构的增量需超过简单 stacking 和强局部读出（第 6.4 节） |
+| rMD17＋ET | 导数监督边界案例，不按普通独立辅助头分级 | 原 ET 不等于能量的冻结力增强读出；需处理导数访问、对称性与物理一致性（第 7.4 节） |
+| ADMET＋MTGL-ADMET | 高 | 跨端点两阶段 Feature Net 已存在；本文纯预测、独立 B 和同任务组合需另验证（第 8.5 节） |
+| MASSIVE＋XLM-R | 精确案例直接重合较少，任务族融合先例多 | 官方是并行双头，同任务族已有意图/槽位交互；可用于清楚的冻结检验（第 9.5 节） |
+| SNIPS parallel / Stack | 高 | SF-ID 已有双向迭代交互；Stack 的 intent→slot 与本文 slot→intent 应区分（第 10.5 节） |
+| SemEval＋RACL | 高 | IMN/RACL 已有抽取与情感的关系传播；可检验显式预测相对任务隐藏特征的冻结增量（第 11.6 节） |
+
+### 14.3 通用先例：独立划分和冻结本身不构成新架构
+
+**Spyromitros-Xioufis et al., Multi-Target Regression via Input Space Expansion: Treating Targets as Inputs（Machine Learning 2016）**提出 Stacked Single-Target（SST）与 Ensemble of Regressor Chains，把其他目标的估计值作为额外输入；原文还讨论样本内估计与推理预测的差异，并使用内部交叉验证产生样本外估计。因此，“先预测辅助目标，再利用这些预测训练目标读出”，以及控制第二阶段输入的样本外性质，均有通用方法先例。[作者论文，§2、SSTcv 与 meta-input generation](https://arxiv.org/pdf/1211.6581)
+
+在冻结组合方向，**ScaLearn（Frohmann et al., Findings ACL 2024）**先获得源任务 adapters，再冻结源任务模块并学习目标任务的缩放/组合及任务头；它主要组合分别训练的内部任务模块，实验不是本文的 MASSIVE/SNIPS 辅助预测协议。[正式论文，§2–3](https://aclanthology.org/2024.findings-acl.699.pdf)。**Post-hoc Concept Bottleneck Models（Yuksekgonul, Wang and Zou, ICLR 2023）**将已有 embedding 投影到 concept bank 再训练目标分类器，PCBM-h 还加入 embedding residual predictor；概念投影不等于本文物理/语义辅助头，但为训练完成后的语义中间量读出提供了邻近先例。[ICLR 论文](https://openreview.net/pdf?id=nA5AZ8CEyow)、[作者 arXiv 版本](https://arxiv.org/abs/2205.15480)。更详细的邻近方向比较见 [相关工作 §3.3](related_work.md#33-更接近二阶段协议的工作)。
+
+由这些先例可作的判断是：**把输入描述符换成冻结 embedding、把第二阶段 RF 换成 MLP，或仅增加一次拼接，并不会自动产生新的架构贡献。** 严格 A/B/Y、冻结边界和纯预测输入能够强化实验可信度，区分联合学习与目标读出，但不能仅因划分更严格就宣称架构首次提出。反过来，不能因存在 stacking 就否定特定结构机制或可重复的跨领域证据；需要比较的是实际功能、输入访问和训练协议。
+
+### 14.4 本项目仍可提出什么贡献，以及需要什么证据
+
+**跨领域验证贡献。** 在已发表上游上重复检验：辅助监督是否改善 native、冻结 embedding-only 是否改善 native、预测辅助是否进一步超过强 embedding-only。这可以回答任务知识在联合训练后是否仍可被有限读出更有效地利用，但应报告逐案例适用条件、负结果与不确定性，不能从一种普通融合架构的多数据集成功推出普遍机制。
+
+**结构与机制贡献。** 若强调逐原子、逐 token 或 pair 信息，需要在相同局部/多尺度输入访问下，对比辅助 hidden features、显式预测、简单 stacking，以及对应关系打乱、uniform/no-edge/重连等适用控制。破坏对应关系的比较组也应按相同预算重新训练，避免把任意 test-time 扰动导致的退化当作结构因果证明。辅助预测若是同一完整冻结表示的确定性函数，其价值可以是有限样本/有限容量下更易学习的表述，不能直接称为增加了原始信息；ET 的坐标导数访问须单列。
+
+**架构贡献。** 只有提出了超出现有拼接、任务特征蒸馏、affinity 传播或冻结模块组合的具体机制，并在合理数据、容量、优化与计算预算下与相关先例比较，才有依据讨论架构创新。现阶段普通读出适配应标为本项目的实验实现；不能以尚未查到完全相同的任务组合代替新颖性论证，也不因创新风险自行开发新上游或改变第 12 节实施顺序。
+
+**核查与结论边界。** QM9 的 Tan et al. 2021 当前核查到出版社/索引摘要，精确模型、数据划分和代码未全文核验；ADMET 2024 的 stacked RF 实现细节依据作者公开稿，正式发表状态由期刊页面确认；CV/NLP 的训练与交互判断依据上面链接的正文。本轮是针对候选的定向调研，尚未完成各领域全部历史与最新文献的系统检索，也没有复现这些新增先例。所有风险分级是基于已核查方法的研究判断，不是论文原作者对本项目的评价。
