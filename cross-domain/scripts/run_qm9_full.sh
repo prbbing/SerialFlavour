@@ -9,7 +9,7 @@
 #   GPU_POOL="0 1 2 3" bash cross-domain/scripts/run_qm9_full.sh
 #
 # Environment overrides:
-#   CONFIG      config path (default cross-domain/config/qm9_gap_charge_bond_full.json)
+#   CONFIG      config path (default cross-domain/config/qm9_gap_charge_bond_full_100k.json)
 #   GPU_POOL    space-separated physical GPU ids (default 0)
 #   RETRIES     per-seed retries inside run_seed (default 1)
 #   PYTHON      interpreter (default python; use the cluster env interpreter)
@@ -20,7 +20,7 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$root"
 
-config=${CONFIG:-cross-domain/config/qm9_gap_charge_bond_full.json}
+config=${CONFIG:-cross-domain/config/qm9_gap_charge_bond_full_100k.json}
 gpu_pool=${GPU_POOL:-0}
 retries=${RETRIES:-1}
 python_bin=${PYTHON:-python}

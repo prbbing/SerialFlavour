@@ -462,10 +462,69 @@ def test_analysis_rejects_incomplete_grid_and_groups_upstream(tmp_path):
 
 
 def test_v2_configuration_is_separate_and_complete(tmp_path):
-    config = json.loads((ROOT / "config" / "qm9_gap_charge_bond_refine_v2.json").read_text())
+    config = json.loads((ROOT / "config" / "qm9_gap_charge_bond_refine_v2_100k.json").read_text())
     assert config["experiment"] != "qm9_gap_charge_bond_full" and not config["data"]["shared_validation"]
     assert sum(config["data"]["sizes"].values()) == 100000
     splits = allocate_splits(100000, config["data"], np.arange(100000))
     assert not np.intersect1d(splits["a_val"], splits["b_val"]).size
     context = Context(config, ROOT, tmp_path / "v2.json")
     assert len(enumerate_units(context)) == 423
+
+
+
+@pytest.mark.parametrize("mode", ["min", "max"])
+def test_plateau_scheduler_reduces_lr_without_resetting_early_stop(tmp_path, mode):
+    model = torch.nn.Linear(1, 1)
+    loader = [{"x": torch.ones(2, 1), "y": torch.zeros(2, 1)}]
+    settings = {"epochs": 20, "learning_rate": 0.1, "weight_decay": 0.0,
+                "selection_mode": mode, "early_stopping_patience": 6,
+                "scheduler": {"type": "reduce_on_plateau", "factor": 0.5,
+                              "patience": 1, "min_lr_ratio": 0.25}}
+    def loss(current, batch):
+        return (current(batch["x"]) - batch["y"]).square().mean(), 2
+    # A constant validation metric drives reductions, independently of the training loss.
+    def score(current, batches, device):
+        return 1.0
+    fit(model, loader, loader, loss, score, tmp_path, settings, {}, torch.device("cpu"))
+    history = read_json(tmp_path / "history.json")
+    np.testing.assert_allclose([row["learning_rate"] for row in history],
+                               [0.1, 0.1, 0.1, 0.05, 0.05, 0.025, 0.025])
+    assert [row["epoch"] for row in history if row["lr_reduced"]] == [3, 5]
+    manifest = read_json(tmp_path / "training_manifest.json")
+    assert manifest["early_stopped"] and manifest["epochs_run"] == 7
+    assert manifest["best_epoch"] == 1 and manifest["lr_reductions"] == 2
+    assert manifest["scheduler"]["min_lr"] == pytest.approx(0.025)
+    assert manifest["scheduler"]["mode"] == mode
+    assert manifest["final_learning_rate"] == pytest.approx(0.025)
+
+
+def test_plateau_scheduler_respects_native_epoch_zero_baseline(tmp_path):
+    model = torch.nn.Linear(1, 1)
+    loader = [{"x": torch.ones(2, 1), "y": torch.zeros(2, 1)}]
+    settings = {"epochs": 10, "learning_rate": 0.1, "weight_decay": 0.0,
+                "selection_mode": "min", "include_initial_checkpoint": True,
+                "early_stopping_patience": 4,
+                "scheduler": {"type": "reduce_on_plateau", "patience": 1,
+                              "factor": 0.5, "min_lr_ratio": 0.01}}
+    values = iter([1.0, 2.0, 2.0, 2.0, 2.0])
+    def loss(current, batch):
+        return (current(batch["x"]) - batch["y"]).square().mean(), 2
+    fit(model, loader, loader, loss, lambda *_: next(values), tmp_path, settings, {}, torch.device("cpu"))
+    checkpoint = torch.load(tmp_path / "best.pt", weights_only=True)
+    assert checkpoint["epoch"] == 0 and checkpoint["validation_metric"] == 1.0
+    history = read_json(tmp_path / "history.json")
+    np.testing.assert_allclose([row["learning_rate"] for row in history], [0.1, 0.1, 0.05, 0.05])
+    assert read_json(tmp_path / "training_manifest.json")["epochs_run"] == 4
+
+
+@pytest.mark.parametrize("scheduler", [
+    {"type": "unknown"},
+    {"type": "reduce_on_plateau", "patience": 10},
+    {"type": "reduce_on_plateau", "factor": 1.0},
+    {"type": "reduce_on_plateau", "min_lr_ratio": 0.0},
+])
+def test_plateau_scheduler_rejects_invalid_policy(tmp_path, scheduler):
+    settings = {"epochs": 2, "learning_rate": 0.1, "weight_decay": 0.0,
+                "early_stopping_patience": 10, "scheduler": scheduler}
+    with pytest.raises(ValueError, match="scheduler"):
+        fit(torch.nn.Linear(1, 1), [], [], None, None, tmp_path, settings, {}, torch.device("cpu"))

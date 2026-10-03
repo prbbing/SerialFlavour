@@ -1,6 +1,6 @@
 {
   "dataset": "qm9",
-  "experiment": "qm9_gap_charge_bond_refine_v2_20k",
+  "experiment": "qm9_gap_charge_bond_full",
   "data_root": "/mnt/d/hep_analysis/gn2_study/dataset_ex/qm9",
   "output_root": "cross-domain/results",
   "log_root": "cross-domain/logs",
@@ -23,13 +23,12 @@
     "split_seed": 2026,
     "candidate_multiplier": 2,
     "max_file_bytes": 5000000000,
-    "shared_validation": false,
+    "shared_validation": true,
+    "validation_size": 10000,
     "sizes": {
-      "a_train": 11200,
-      "a_val": 1000,
-      "b_train": 2800,
-      "b_val": 1000,
-      "y_test": 4000
+      "a_train": 56000,
+      "b_train": 14000,
+      "y_test": 20000
     },
     "sources": [
       {
@@ -110,20 +109,12 @@
     "early_stopping_patience": 10,
     "recipes": [
       "R0",
-      "R0-native",
       "R1",
       "R2",
-      "R2-native",
       "R3",
-      "R3-graph",
       "R4",
-      "R4-nocharge",
-      "R4-existence",
-      "R4-uniform",
       "R4-shuffle"
     ],
-    "native_learning_rate": 0.0003,
-    "native_weight_decay": 1e-05,
     "scheduler": {
       "type": "reduce_on_plateau",
       "factor": 0.5,

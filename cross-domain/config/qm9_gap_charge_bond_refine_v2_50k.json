@@ -67,7 +67,7 @@
       4,
       5
     ],
-    "epochs": 100,
+    "epochs": 500,
     "batch_size": 128,
     "learning_rate": 0.001,
     "weight_decay": 1e-05,
@@ -75,7 +75,14 @@
     "charge_weight": 1.0,
     "bond_weight": 1.0,
     "selection_mode": "min",
-    "early_stopping_patience": 20
+    "early_stopping_patience": 20,
+    "scheduler": {
+      "type": "reduce_on_plateau",
+      "factor": 0.5,
+      "patience": 8,
+      "min_lr_ratio": 0.01,
+      "threshold": 0.0
+    }
   },
   "refiner": {
     "seeds": [
@@ -116,6 +123,13 @@
       "R4-shuffle"
     ],
     "native_learning_rate": 0.0003,
-    "native_weight_decay": 1e-05
+    "native_weight_decay": 1e-05,
+    "scheduler": {
+      "type": "reduce_on_plateau",
+      "factor": 0.5,
+      "patience": 4,
+      "min_lr_ratio": 0.01,
+      "threshold": 0.0
+    }
   }
 }

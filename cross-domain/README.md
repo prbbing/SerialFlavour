@@ -2,7 +2,7 @@
 
 本目录用于在 jet tagging 之外的领域复现 SerialFlavour 的 frozen post-refinement 方法，检验多任务上游冻结后，辅助预测或局部结构是否能改善主任务读出。研究背景和候选数据集见 `docs/related_work.md`，工作约定见 `../AGENTS.md`。
 
-QM9 已实现完整闭环（`src/data/`、`src/model/`、`src/training/`、`src/refine/`、`src/evaluate/`、`src/analysis/` 各一个 `qm9.py`）。实验设计与运行（含集群单元调度）见 `docs/qm9/qm9_experiment_zh.md`，本地结果见 `docs/qm9/qm9_smoke_test_results_zh.md`，集群操作速查见 `docs/qm9/cluster_handoff_qm9_full_zh.md`。配置：`config/qm9_gap_charge_bond.json`（本地 smoke）与 `config/qm9_gap_charge_bond_full.json`（集群 100k）。严谨对照使用 `config/qm9_gap_charge_bond_refine_v2.json`（native 初始化与同容量键级/电荷图消融、独立验证）；历史 full 结果及修正边界见 `docs/qm9/qm9_gap_charge_bond_full_results_zh.md`。修改代码后必须使用新实验名。rMD17 路线延后。其他候选数据集的模型和指标仍须随具体实验确定。
+QM9 已实现完整闭环（`src/data/`、`src/model/`、`src/training/`、`src/refine/`、`src/evaluate/`、`src/analysis/` 各一个 `qm9.py`）。实验设计与运行（含集群单元调度）见 `docs/qm9/qm9_experiment_zh.md`，本地结果见 `docs/qm9/qm9_smoke_test_results_zh.md`，集群操作速查见 `docs/qm9/cluster_handoff_qm9_full_zh.md`。配置：`config/qm9_gap_charge_bond.json`（本地 smoke）与 `config/qm9_gap_charge_bond_full_100k.json`（集群 100k）。严谨对照使用 `config/qm9_gap_charge_bond_refine_v2_100k.json`（native 初始化与同容量键级/电荷图消融、独立验证）；历史 full 结果及修正边界见 `docs/qm9/qm9_gap_charge_bond_full_results_zh.md`。修改代码后必须使用新实验名。rMD17 路线延后。其他候选数据集的模型和指标仍须随具体实验确定。
 
 ## 目录职责
 

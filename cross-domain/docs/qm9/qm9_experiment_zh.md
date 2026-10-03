@@ -4,10 +4,10 @@
 
 ## 0. 2026-10-03 实现修正与运行入口
 
-当前严谨对照配置为 `cross-domain/config/qm9_gap_charge_bond_refine_v2.json`，使用新实验名、
+当前严谨对照配置为 `cross-domain/config/qm9_gap_charge_bond_refine_v2_100k.json`，使用新实验名、
 独立 A-val/B-val、native 初始化 R0/R2 和同容量的图消融。各配方、精确划分、统计口径与
 历史结果边界见 [full 结果报告第 11 节](qm9_gap_charge_bond_full_results_zh.md#11-修正后的-post-refinement-协议尚无正式性能结果)。
-原 `qm9_gap_charge_bond_full.json` 保留为历史配置记录，不能用修改后的代码覆盖旧输出。
+`qm9_gap_charge_bond_full_100k.json` 保留原共享验证结构，训练预算和 LR 调度已更新；历史运行的原始配置以其 manifest 为准，不能用当前配置覆盖旧输出。
 下文 full 数量、共享验证、约 4 万参数的旧图读出及旧运行命令是历史方案；正式新运行使用 v2 配置。原 smoke 是工程入口，
 代码 identity 变化后同样必须换新实验名，不应覆盖原 smoke 证据。
 
@@ -15,7 +15,32 @@
 R0-native/R2-native 在初始化时复现 native，并仅用 B-val 选择是否保留 epoch 0。
 R3-graph/R4-nocharge/R4-uniform/R4-existence/R4/R4-shuffle 使用相同容量；shuffle 在分子内部进行。
 新分析同时报告 native 与 warm-start、连接/电荷/键级/shuffle 的配对增量，并检查完整网格。
-测试数量以实际输出为准；当前 21 项 CPU 协议与微型闭环测试通过，100k v2 正式训练未执行。
+测试数量以实际输出为准；当前 28 项 CPU 协议与微型闭环测试通过，100k v2 正式训练未执行。
+
+
+### 验证集驱动的 LR 衰减（2026-10-03）
+
+20k、50k 和两份 100k 配置已启用 `ReduceLROnPlateau`。上游最大 500 epoch，初始 LR 为 1e-3，
+使用 A-val 的物理单位 gap MAE；下游最大 300 epoch，使用 B-val 的物理单位 gap MAE。
+上游衰减 patience=8，下游=4；factor=0.5，最低 LR 为各次训练实际初始 LR 的 1%。
+下游普通 MLP 初始 LR 为 1e-3，set/GNN 和 native 初始化读出为 3e-4，
+因此对应最低 LR 分别为 1e-5 和 3e-6。所有 ST/MT、下游 recipe 采用相同的阶段内调度规则。
+Smoke 保留短训练预算和固定 LR。
+
+衰减与 checkpoint 选择监控同一个验证指标，绝对改善阈值为 0，cooldown=0。
+PyTorch 的 patience 表示允许的连续未改善轮数：超过 patience 后才衰减，
+因此 patience=8/4 分别在连续 9/5 个未改善 epoch 后触发。每轮验证后调用调度器，
+新的 LR 用于下一轮训练。上游/下游早停 patience 仍为 20/10，衰减不重置早停计数；
+最佳 checkpoint 的选择规则不变。Native 初始化读出的 epoch 0 验证值也建立调度基线，
+训练后的验证表现未改善时仍可保留 epoch 0。测试集 Y 不参与调度、早停或模型选择。
+
+`history.json/csv` 记录 `learning_rate`（本轮实际使用）、`next_learning_rate`（验证后设置）、
+`lr_reduced`；`training_manifest.json` 记录解析后的 scheduler 参数、衰减次数和最终 LR。
+停止轮次的 next LR 可能不再用于训练，不能将其误读为实际完成了一轮低 LR 优化。
+当前只实现并验证调度机制，尚无正式多 seed 性能结论；可在 20k 上用相同划分和 seeds
+比较固定 LR 与衰减 LR，固定 LR 对照通过删除 `scheduler` 字段启用，并使用独立 experiment 名称。
+代码/配置身份变化后必须更换已有 experiment 名称，不能覆盖旧结果或复用旧完成标记。
+历史结果报告的指标属于原训练协议，不能据此声称 LR 衰减已改善性能。
 
 ## 1. 背景与研究问题
 
@@ -113,7 +138,7 @@ bond 头:   [h_i+h_j, |h_i-h_j|, g]     → 5 logits （逐对，近似 pair）
 
 - 通用 pipeline（无 QM9 判断）：`src/pipeline/context.py`、`io.py`、`runtime.py`、`fit.py`、`readout.py`、`metrics.py`、`stages.py`、`units.py`；命令入口：`scripts/run.py`、`scripts/run_unit.py`、`scripts/run_seed.py`、`scripts/run_pool.py`。
 - QM9 领域模块：`src/data/qm9.py`、`src/model/qm9.py`、`src/training/qm9.py`、`src/refine/qm9.py`、`src/evaluate/qm9.py`、`src/analysis/qm9.py`。
-- 配置：`config/qm9_gap_charge_bond_full.json`（集群）、`config/qm9_gap_charge_bond.json`（本地 smoke）。
+- 配置：`config/qm9_gap_charge_bond_full_100k.json`（集群）、`config/qm9_gap_charge_bond.json`（本地 smoke）。
 - 测试：`tests/test_contracts.py`（14 项）。
 - 启动器：`scripts/run_qm9_full.sh`。
 
@@ -152,7 +177,7 @@ flowchart LR
 
 ### 5.3 配置字段
 
-`config/qm9_gap_charge_bond_full.json` 关键项：
+`config/qm9_gap_charge_bond_full_100k.json` 关键项：
 
 - `data_root`（集群需改）、`output_root`（默认 `cross-domain/results`）、`log_root`（默认 `cross-domain/logs`）。
 - `tasks`：`main gap`、`auxiliary []`、`local [charge, bond]`。
@@ -160,7 +185,7 @@ flowchart LR
 
   `sizes`：共享验证下为 `{a_train, b_train, y_test}`（a_val/b_val 由验证块派生）；非共享下需全 5 键。
 - `model`：smoke 尺寸（见 3.3）。
-- `upstream`：`variants`、`seeds`、`epochs 100`、`batch_size 128`、`early_stopping_patience 20`。
+- `upstream`：`variants`、`seeds`、`epochs 500`、`batch_size 128`、`early_stopping_patience 20`。
 - `refiner`：`seeds`、`recipes`、`epochs 300`、`set_epochs 300`、`set_learning_rate 3e-4`、`dropout 0.2`、`weight_decay 5e-4`、`clip_grad 1.0`、`early_stopping_patience 10`、`set_hidden 64`、`set_layers 2`。
 - `runtime`：`device cuda`、`threads 8`、`num_workers 4`、`deterministic true`。
 

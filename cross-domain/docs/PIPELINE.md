@@ -30,6 +30,16 @@
 
 标签形状、输入结构、回归/分类目标及指标解释由领域模块定义。`src/pipeline/readout.py` 提供可复用的表格 MLP 和训练集标准化，`src/pipeline/metrics.py` 提供回归指标；不强制其他领域使用相同模型或损失。
 
+### 可选验证指标调度
+
+训练配置可指定 `scheduler`：`type=reduce_on_plateau`、`factor`、`patience`、`min_lr_ratio`、`threshold`。
+未提供该字段时保持固定 LR。调度继承 `selection_mode`，每轮验证后消费同一个 `score`；
+绝对阈值默认继承 `min_delta`，最低 LR 按当前训练实际初始 LR 计算，cooldown=0。
+有早停时调度 patience 必须小于早停 patience。降低 LR 不重置早停计数，也不改变最佳 checkpoint 选择。
+存在 epoch 0 验证时先用它建立调度基线。history 保存本轮 LR、验证后的下一轮 LR 和是否衰减；
+manifest 保存解析后的调度参数、衰减次数与最终 LR。当前 checkpoint 用于模型选择及推理，
+没有增加 optimizer/scheduler 状态的中途训练恢复功能。
+
 ## 环境与 QM9 入口
 
 统一使用 WSL conda 环境 `gn2_study_cross`，首次由 `gn2_study` 克隆。领域新增依赖写入对应 requirements 文件，只安装到 cross 环境；实验 manifest 记录实际运行版本。不要把不同领域所需包加入原 Jet 环境。
