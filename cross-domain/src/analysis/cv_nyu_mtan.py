@@ -25,6 +25,7 @@ def analyze(context):
                           'miou_difference': r['miou'] - baseline['miou']})
     return [write_json(context.output_dir / 'summary.json', {
         'identity': context.identity, 'summaries': summaries, 'paired_contrasts': contrasts,
-        'scope': 'real data CPU smoke; no claim of method efficacy, no scene-grouped generalization',
+        'scope': context.config['data']['split_mode'],
+        'scene_grouped': context.config['data']['split_mode'] == 'scene_grouped',
         'aggregation': 'downstream seeds averaged within upstream seed, SD over upstream means with ddof=1; null if n=1',
     })]

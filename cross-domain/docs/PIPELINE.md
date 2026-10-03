@@ -54,6 +54,8 @@ python -m pytest cross-domain/tests -q
 
 新机器的 QM9 增量依赖：`python -m pip install -r cross-domain/requirements-qm9.txt`。配置默认是 WSL 本地数据路径；其他主机修改 data_root，并更换实验名称。大型运行产物位于 `results/<dataset>/<experiment>/`，由本目录 `.gitignore` 排除；原始数据与处理缓存位于配置指定的数据根目录。
 
+NYUv2 使用 `scripts/cv_nyu_mtan/run_cluster.sh` 复用通用 `run_unit.py`，提供带 SHA256 校验的 seed 队列续跑与逐图像磁盘缓存；完整配置和运行边界见 [集群 agent 操作说明](cv_nyu_mtan/cluster_agent_handoff_zh.md)。集群直接运行完整矩阵；当前仅静态检查与单元枚举通过，GPU 执行尚未验证。
+
 ## 单节点多卡集群调度
 
 `scripts/run.py` 是本地单进程阶段运行器。集群（单节点多卡、无批处理）使用通用单元调度层：

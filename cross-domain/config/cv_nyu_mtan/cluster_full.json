@@ -1,0 +1,31 @@
+{
+  "dataset": "cv_nyu_mtan",
+  "experiment": "cluster_full_image_v1",
+  "data_root": "cross-domain/local_data/cv_nyu_mtan",
+  "output_root": "cross-domain/results",
+  "log_root": "cross-domain/logs",
+  "runtime": {"device": "cuda:0", "threads": 4, "deterministic": false},
+  "loader": {"workers": 2},
+  "data": {
+    "download_scope": "all_shards", "storage": "per_image",
+    "split_mode": "image_disjoint_exploratory", "scene_manifest": null,
+    "train_samples": 795, "test_samples": 654, "resolution": [128, 160], "split_seed": 20261003,
+    "split_counts": {"a_train": 477, "a_val": 80, "b_train": 159, "b_val": 79}
+  },
+  "model": {"widths": [16, 32, 64, 128, 128]},
+  "cache": {"batch_size": 4},
+  "upstream": {
+    "variants": ["single_task", "multi_task"], "seeds": [17, 23, 31, 43, 59],
+    "epochs": 200, "batch_size": 4, "learning_rate": 0.0001,
+    "weight_decay": 0.0, "selection_mode": "max", "clip_grad": 5.0,
+    "early_stopping_patience": 30, "min_delta": 0.00001,
+    "scheduler": {"type": "reduce_on_plateau", "factor": 0.5, "patience": 10, "min_lr_ratio": 0.01}
+  },
+  "refiner": {
+    "recipes": ["embedding", "embedding_matched", "aux_prediction", "aux_hidden"],
+    "seeds": [29, 37, 47, 61, 71], "epochs": 100, "batch_size": 4,
+    "learning_rate": 0.001, "weight_decay": 0.0, "selection_mode": "max", "clip_grad": 5.0,
+    "include_initial_checkpoint": true, "early_stopping_patience": 20, "min_delta": 0.00001,
+    "scheduler": {"type": "reduce_on_plateau", "factor": 0.5, "patience": 6, "min_lr_ratio": 0.01}
+  }
+}

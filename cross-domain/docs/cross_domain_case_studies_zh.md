@@ -6,19 +6,18 @@
 
 ## 1. 案例总览与筛选原则
 
-| 领域 / 数据集 | 对应上游架构 | 本项目拟定主任务 | 辅助任务与输出 | 证据和接入状态 |
-|---|---|---|---|---|
-| CV / NYUv2 | MTAN，CVPR 2019 | 语义分割 | 深度图、表面法向图 | 已发表三任务组合，独立密集输出；适合先做最小闭环 |
-| CV / NYUv2 | MTI-Net，ECCV 2020 | 语义分割 | 深度；已发表扩展还加入法向、边缘的多尺度预测 | 有单任务与辅助配置消融；需区分最终输出与中间辅助输出 |
-| CV / PASCAL-Context | MTI-Net，ECCV 2020 | 语义分割 | 人体部件、显著性、边缘、法向 | 已发表五任务组合，密集辅助读出丰富；部分监督是教师生成标签 |
-| Science / Materials Project（MP） | CrystalTransformer / ct-UAE，Nature Communications 2025 | PBE 带隙 | 形成能；三、四任务版本再加入总能、总磁矩 | 已发表多性质头；论文的多任务收益主要是元素嵌入迁移收益，完整冻结协议是本项目建议 |
-| Science / QM9 | 现有 TinySchNet；另考察 Equiformer＋EMPP、DeepMoleNet | HOMO–LUMO gap | 现有电荷、键类型；文献中的位置重建或 ACSF 重建 | 现有组合是本项目实现且历史结果为负；另外两个已发表方案均有直接接入限制 |
-| Science / rMD17 | TorchMD-Net 的 Equivariant Transformer（ET），ICLR 2022 | 构型能量 | 各原子的力，来自能量对坐标的负梯度 | 已发表能量—力联合架构；将该架构用于本文 rMD17 协议是推荐，属于导数监督边界案例 |
-| Science / ADMET | MTGL-ADMET，iScience 2023 | CYP2C9 抑制分类 | CYP2D6 抑制、呼吸毒性、Caco-2 渗透性、血浆蛋白结合率（PPB） | 作者已有五任务示例及输出头；需重建分子级划分，不能直接继承公开 CSV 分区 |
-
-| NLP / MASSIVE | 官方 XLM-R 并行双头，ACL 2023 | 句子意图分类 | token 槽位预测 | 已发表架构及作者代码；没有匹配 intent-only 消融，正迁移待本项目验证 |
-| NLP / SNIPS | 并行 Joint BERT（2019 预印本）；或 Stack-Propagation，EMNLP-IJCNLP 2019 | 句子意图分类 | token 槽位预测 | 前者有联合/分别训练消融，但常用代码为第三方；后者有作者代码，但辅助输出已受意图预测影响 |
-| NLP / SemEval Restaurant14 / Laptop14 | RACL，ACL 2020 | aspect term extraction（AE） | opinion extraction（OE）、aspect sentiment classification（SC） | 已发表三任务架构；AE 作为唯一主任务是本项目建议，关系消融不是 AE-only 正迁移证明 |
+| 领域 / 数据集                         | 对应上游架构                                                            | 本项目拟定主任务             | 辅助任务与输出                                                  | 证据和接入状态                                                                          |
+| ------------------------------------- | ----------------------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| CV / NYUv2                            | MTAN，CVPR 2019                                                         | 语义分割                     | 深度图、表面法向图                                              | 已发表三任务组合，独立密集输出；适合先做最小闭环                                        |
+| CV / NYUv2                            | MTI-Net，ECCV 2020                                                      | 语义分割                     | 深度；已发表扩展还加入法向、边缘的多尺度预测                    | 有单任务与辅助配置消融；需区分最终输出与中间辅助输出                                    |
+| CV / PASCAL-Context                   | MTI-Net，ECCV 2020                                                      | 语义分割                     | 人体部件、显著性、边缘、法向                                    | 已发表五任务组合，密集辅助读出丰富；部分监督是教师生成标签                              |
+| Science / Materials Project（MP）     | CrystalTransformer / ct-UAE，Nature Communications 2025                 | PBE 带隙                     | 形成能；三、四任务版本再加入总能、总磁矩                        | 已发表多性质头；论文的多任务收益主要是元素嵌入迁移收益，完整冻结协议是本项目建议        |
+| Science / QM9                         | 现有 TinySchNet；另考察 Equiformer＋EMPP、DeepMoleNet                   | HOMO–LUMO gap                | 现有电荷、键类型；文献中的位置重建或 ACSF 重建                  | 现有组合是本项目实现且历史结果为负；另外两个已发表方案均有直接接入限制                  |
+| Science / rMD17                       | TorchMD-Net 的 Equivariant Transformer（ET），ICLR 2022                 | 构型能量                     | 各原子的力，来自能量对坐标的负梯度                              | 已发表能量—力联合架构；将该架构用于本文 rMD17 协议是推荐，属于导数监督边界案例          |
+| Science / ADMET                       | MTGL-ADMET，iScience 2023                                               | CYP2C9 抑制分类              | CYP2D6 抑制、呼吸毒性、Caco-2 渗透性、血浆蛋白结合率（PPB）     | 作者已有五任务示例及输出头；需重建分子级划分，不能直接继承公开 CSV 分区                 |
+| NLP / MASSIVE                         | 官方 XLM-R 并行双头，ACL 2023                                           | 句子意图分类                 | token 槽位预测                                                  | 已发表架构及作者代码；没有匹配 intent-only 消融，正迁移待本项目验证                     |
+| NLP / SNIPS                           | 并行 Joint BERT（2019 预印本）；或 Stack-Propagation，EMNLP-IJCNLP 2019 | 句子意图分类                 | token 槽位预测                                                  | 前者有联合/分别训练消融，但常用代码为第三方；后者有作者代码，但辅助输出已受意图预测影响 |
+| NLP / SemEval Restaurant14 / Laptop14 | RACL，ACL 2020                                                          | aspect term extraction（AE） | opinion extraction（OE）、aspect sentiment classification（SC） | 已发表三任务架构；AE 作为唯一主任务是本项目建议，关系消融不是 AE-only 正迁移证明        |
 
 “辅助监督先改善 upstream，才优先投入 post-refinement”可以作为资源筛选规则，但目前是研究猜想，不是已证明的必要条件。至少应分别检验：
 
@@ -34,13 +33,13 @@
 
 ### 2.1 A / B / Y 的角色
 
-| 分区 | 用途 | 可以使用的标签 | 禁止的用途 |
-|---|---|---|---|
-| A_train | 训练 ST 与 MT 上游 | ST 仅主任务；MT 使用主任务和预定辅助监督 | 接触 B/Y 样本的其他任务标签进行上游训练 |
-| A_val | 上游 checkpoint、辅助权重及任务配置选择 | 按预先约定评估主任务；辅助指标仅作诊断 | 用最终 Y 调辅助组合 |
-| B_train | 上游全部冻结后训练主任务读出 | 仅主任务标签；输入辅助量必须由冻结模型预测 | 用辅助真值训练或替换预测输入，继续更新上游 |
-| B_val | 读出早停与超参数选择 | 主任务标签 | 与 A_val 共用样本后宣称两阶段选择独立 |
-| Y | 最终独立评估 | 主任务用于最终评分；辅助真值可在方案锁定后评分或作隔离 oracle 诊断 | 训练、任务筛选、归一化拟合、反复选择模型 |
+| 分区    | 用途                                    | 可以使用的标签                                                     | 禁止的用途                                 |
+| ------- | --------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------ |
+| A_train | 训练 ST 与 MT 上游                      | ST 仅主任务；MT 使用主任务和预定辅助监督                           | 接触 B/Y 样本的其他任务标签进行上游训练    |
+| A_val   | 上游 checkpoint、辅助权重及任务配置选择 | 按预先约定评估主任务；辅助指标仅作诊断                             | 用最终 Y 调辅助组合                        |
+| B_train | 上游全部冻结后训练主任务读出            | 仅主任务标签；输入辅助量必须由冻结模型预测                         | 用辅助真值训练或替换预测输入，继续更新上游 |
+| B_val   | 读出早停与超参数选择                    | 主任务标签                                                         | 与 A_val 共用样本后宣称两阶段选择独立      |
+| Y       | 最终独立评估                            | 主任务用于最终评分；辅助真值可在方案锁定后评分或作隔离 oracle 诊断 | 训练、任务筛选、归一化拟合、反复选择模型   |
 
 划分必须先于跨任务样本合并和训练，按图像/场景、分子、构型或文本来源身份执行。冻结包括编码器、任务头、任务交互模块及归一化状态；使用 eval 模式关闭 dropout 并固定 BatchNorm 统计。外部 ImageNet 等预训练可作为另行声明的公共初始条件，ST/MT 必须相同；无法排除 B/Y 暴露的领域预训练权重不用于严格实验。
 
@@ -48,17 +47,17 @@
 
 ### 2.2 需要保留的对照
 
-| 对照 | 作用 |
-|---|---|
-| ST-native | 主任务监督训练的真正单任务上游；不能以 MT 的 embedding-only 代替 |
-| MT-native | 已发表多任务上游自己的主任务输出 |
-| ST / MT embedding-only | 检查冻结表征质量与读出训练的收益；使用相同 B 和相同读出预算 |
-| MT embedding＋aux-pred | 本项目 post-refinement；辅助输入只能是冻结预测 |
-| 容量匹配 embedding-only | 排除增加通道或参数造成的收益；相同读出类型、深度和搜索预算 |
-| 局部/多尺度 embedding-only | 排除把局部辅助图与仅全局池化表示比较造成的输入层级优势 |
-| 辅助分支 hidden-feature 对照 | 区分任务专用隐藏表示与显式辅助预测的作用；已有任务交互模型尤其需要 |
-| native 初始化读出（架构兼容时） | 保留 native 作为 epoch 0 可选候选，区分优化失败与输入价值 |
-| shuffle / oracle（第二阶段诊断） | 打乱辅助预测或使用辅助真值探查机制；不与标准方法混作部署结果 |
+| 对照                             | 作用                                                               |
+| -------------------------------- | ------------------------------------------------------------------ |
+| ST-native                        | 主任务监督训练的真正单任务上游；不能以 MT 的 embedding-only 代替   |
+| MT-native                        | 已发表多任务上游自己的主任务输出                                   |
+| ST / MT embedding-only           | 检查冻结表征质量与读出训练的收益；使用相同 B 和相同读出预算        |
+| MT embedding＋aux-pred           | 本项目 post-refinement；辅助输入只能是冻结预测                     |
+| 容量匹配 embedding-only          | 排除增加通道或参数造成的收益；相同读出类型、深度和搜索预算         |
+| 局部/多尺度 embedding-only       | 排除把局部辅助图与仅全局池化表示比较造成的输入层级优势             |
+| 辅助分支 hidden-feature 对照     | 区分任务专用隐藏表示与显式辅助预测的作用；已有任务交互模型尤其需要 |
+| native 初始化读出（架构兼容时）  | 保留 native 作为 epoch 0 可选候选，区分优化失败与输入价值          |
+| shuffle / oracle（第二阶段诊断） | 打乱辅助预测或使用辅助真值探查机制；不与标准方法混作部署结果       |
 
 ST 首先复用论文的单任务基线，并对齐 backbone、预训练和主任务 head。MT 的交互模块可能带来额外容量，必须报告参数和计算差异；必要时另做“相同 MT 架构但关闭辅助损失”的监督消融。这种同结构消融不自动等于论文的 ST 模型。
 
@@ -82,11 +81,11 @@ NYU Depth V2 是室内 RGB-D 数据。原始资源含 464 个场景、1,449 个�
 
 模型输入是 RGB。深度是监督目标，不能作为“辅助输入真值”送进模型。采用 MTAN 已发表三任务组合：
 
-| 本项目角色 | 任务 | 输出 | 评价 |
-|---|---|---|---|
-| 主任务 | 13 类语义分割 | 每像素 13 类 logits / 概率 | 数据集级 mIoU，越高越好 |
-| 辅助任务 | 深度估计 | 每像素一个连续值 | AbsErr / RelErr 等，固定有效深度掩码 |
-| 辅助任务 | 表面法向估计 | 每像素三维单位向量 | 平均/中位角误差等 |
+| 本项目角色 | 任务          | 输出                       | 评价                                 |
+| ---------- | ------------- | -------------------------- | ------------------------------------ |
+| 主任务     | 13 类语义分割 | 每像素 13 类 logits / 概率 | 数据集级 mIoU，越高越好              |
+| 辅助任务   | 深度估计      | 每像素一个连续值           | AbsErr / RelErr 等，固定有效深度掩码 |
+| 辅助任务   | 表面法向估计  | 每像素三维单位向量         | 平均/中位角误差等                    |
 
 法向属于派生几何监督，需固定标签生成版本；不是完全独立采集的一套物理观测。各任务采用共同裁剪与空间增强；翻转时法向分量也要正确变换。
 
@@ -96,11 +95,11 @@ MTAN（Multi-Task Attention Network）在共享 SegNet 编码—解码网络上�
 
 原论文 Table 3 的等权 MTAN 相对单任务 attention 基线 STAN：
 
-| 指标 | STAN | MTAN（等权） |
-|---|---:|---:|
-| 历史语义分割 mIoU ↑ | 15.73 | 17.72 |
-| 深度绝对误差 ↓ | 0.6935 | 0.5906 |
-| 法向平均角误差 ↓ | 32.09 | 31.44 |
+| 指标                |   STAN | MTAN（等权） |
+| ------------------- | -----: | -----------: |
+| 历史语义分割 mIoU ↑ |  15.73 |        17.72 |
+| 深度绝对误差 ↓      | 0.6935 |       0.5906 |
+| 法向平均角误差 ↓    |  32.09 |        31.44 |
 
 这些是该论文的历史评价协议。作者 README 后来说明 mIoU 改为基于整个数据集的混淆矩阵计算，并修正无效像素及增加增强；因此不能把当前代码的 mIoU 与表中数字直接比较。重新复现 STAN 与 MTAN 时必须使用同一版指标。论文总多任务收益也不能当成分割单一主任务的收益。[论文 Table 3](https://arxiv.org/pdf/1803.10704)、[代码维护说明](https://github.com/lorenmt/mtan)
 
@@ -126,13 +125,13 @@ MTI-Net 的 NYUv2 基准以分割和深度为输出任务；已发表扩展加�
 
 论文 Table 2a：
 
-| 模型 / 任务设置 | 分割 mIoU ↑ | 深度 RMSE ↓ |
-|---|---:|---:|
-| ST 基线 | 33.18 | 0.667 |
-| 普通 MTL | 32.09 | 0.668 |
-| MTI-Net，分割＋深度 | 35.12 | 0.620 |
-| MTI-Net，增加 N | 36.22 | 0.600 |
-| MTI-Net，增加 N＋E | 37.49 | 0.607 |
+| 模型 / 任务设置     | 分割 mIoU ↑ | 深度 RMSE ↓ |
+| ------------------- | ----------: | ----------: |
+| ST 基线             |       33.18 |       0.667 |
+| 普通 MTL            |       32.09 |       0.668 |
+| MTI-Net，分割＋深度 |       35.12 |       0.620 |
+| MTI-Net，增加 N     |       36.22 |       0.600 |
+| MTI-Net，增加 N＋E  |       37.49 |       0.607 |
 
 这里有两层证据：完整方案比分割 ST 提高 4.31 个 mIoU 点；在 MTI-Net 内加入 N＋E 比基础双任务提高 2.37 点。但最后一项比只加 N 的深度结果略差，辅助任务并非对所有指标单调有益。论文 +10.91% 是跨分割/深度的聚合指标，不是分割提升 10.91%。[论文 Table 2a](https://www.ecva.net/papers/eccv_2020/papers_ECCV/papers/123490511.pdf)
 
@@ -142,13 +141,13 @@ MTI-Net 的 NYUv2 基准以分割和深度为输出任务；已发表扩展加�
 
 这里指 MTI-Net 采用的 **PASCAL-Context 多任务版本**，包含自然图像及不同来源的任务标签。它不是把任意 PASCAL VOC 下载包直接当成五任务完整数据。类别映射使用作者代码：语义分割 21 类，人体部件输出 7 类（含背景）。不能误用常见 PASCAL-Context 59/60 类语义分割配置。[数据加载器](https://github.com/SimonVandenhende/Multi-Task-Learning-PyTorch/blob/master/data/pascal_context.py)、[类别配置](https://github.com/SimonVandenhende/Multi-Task-Learning-PyTorch/blob/master/utils/config.py)
 
-| 本项目角色 | 任务 | 输出与来源 | 辅助评价 |
-|---|---|---|---|
-| 主任务 | 语义分割 | 21 通道；作者数据版本中的语义标签 | mIoU |
-| 辅助任务 | 人体部件分割 | 7 通道；人体部件标注，存在无人体/无有效标签图像 | mIoU，严格有效区域掩码 |
-| 辅助任务 | 显著性 | 单通道预测；论文版本采用教师生成监督 | 采用原版显著性指标 |
-| 辅助任务 | 边缘 | 单通道预测；由该数据版本的边界监督构造 | 原版边缘评价 |
-| 辅助任务 | 表面法向 | 三通道预测；论文版本采用教师蒸馏标签 | 角误差 |
+| 本项目角色 | 任务         | 输出与来源                                      | 辅助评价               |
+| ---------- | ------------ | ----------------------------------------------- | ---------------------- |
+| 主任务     | 语义分割     | 21 通道；作者数据版本中的语义标签               | mIoU                   |
+| 辅助任务   | 人体部件分割 | 7 通道；人体部件标注，存在无人体/无有效标签图像 | mIoU，严格有效区域掩码 |
+| 辅助任务   | 显著性       | 单通道预测；论文版本采用教师生成监督            | 采用原版显著性指标     |
+| 辅助任务   | 边缘         | 单通道预测；由该数据版本的边界监督构造          | 原版边缘评价           |
+| 辅助任务   | 表面法向     | 三通道预测；论文版本采用教师蒸馏标签            | 角误差                 |
 
 显著性和法向不应称为原始人工真值；必须记录教师、生成来源、标签有效范围，以及教师是否可能看过 Y。监督类型本身可以研究，但无法核验教师暴露时要明确该条件，而不是宣称所有训练资源与 Y 严格独立。[论文数据说明](https://www.ecva.net/papers/eccv_2020/papers_ECCV/papers/123490511.pdf)
 
@@ -168,11 +167,11 @@ MTI-Net 的 NYUv2 基准以分割和深度为输出任务；已发表扩展加�
 
 Materials Project 是持续更新的计算材料数据库，不是固定版本的数据文件。CrystalTransformer 论文使用 MP（2018-06-01，69,239 个材料，60,000/5,000/4,239 划分）与 MP*（2023-06-23，134,243 个材料，80/10/10 划分）。前端在 MP* 训练，再将元素嵌入迁移到 MP 上的后端模型。[论文数据与划分](https://www.nature.com/articles/s41467-025-56481-x)
 
-| 已发表设置 | 主任务（本项目选择） | 辅助监督 | 输出形态 |
-|---|---|---|---|
-| MT@2p，优先 | PBE 带隙 Eg，eV | 形成能 Ef，eV/atom | 两个材料级标量 |
-| MT@3p，后续消融 | Eg | Ef、总能 E | 三个材料级标量 |
-| MT@4p，后续消融 | Eg | Ef、E、总磁矩 M | 四个材料级标量 |
+| 已发表设置      | 主任务（本项目选择） | 辅助监督           | 输出形态       |
+| --------------- | -------------------- | ------------------ | -------------- |
+| MT@2p，优先     | PBE 带隙 Eg，eV      | 形成能 Ef，eV/atom | 两个材料级标量 |
+| MT@3p，后续消融 | Eg                   | Ef、总能 E         | 三个材料级标量 |
+| MT@4p，后续消融 | Eg                   | Ef、E、总磁矩 M    | 四个材料级标量 |
 
 该带隙是计算标签，不能直接称为实验基本带隙。总能、磁矩需核对快照字段、每晶胞/每原子的约定及单位。若改以形成能为主任务，总能与组成参考能存在强代数关联，不建议把该配对作为核心独立辅助任务证据。
 
@@ -204,10 +203,10 @@ QM9 是约 134k 个小有机分子的平衡构型与量子化学性质数据，�
 
 ### 6.2 已发表候选及接入限制
 
-| 候选 | 已发表辅助任务与证据 | 为什么不直接列为当前核心复现 |
-|---|---|---|
-| Equiformer＋EMPP，ICLR 2025 | 位置遮蔽后的径向/方向分布重建；gap MAE：引用基线 30 meV，1-Mask 27，3-Mask 26 | 辅助分支训练依赖真实目标性质条件；清洁输入评估时关闭该分支。B/Y 不能输入真实 gap，改用预测条件或遮蔽视图导出均需额外适配 |
-| DeepMoleNet，JCIM 2021 | 多性质预测＋径向/角向 ACSF 重建；作者稿消融 gap 35.4→33.2 meV | 该结果来自多性质模型；单目标结果 32.1 meV 更好。公开核心文件未提供可直接运行的完整网络；去掉其他性质并改成 gap＋ACSF 不等于已验证原方案 |
+| 候选                        | 已发表辅助任务与证据                                                          | 为什么不直接列为当前核心复现                                                                                                            |
+| --------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Equiformer＋EMPP，ICLR 2025 | 位置遮蔽后的径向/方向分布重建；gap MAE：引用基线 30 meV，1-Mask 27，3-Mask 26 | 辅助分支训练依赖真实目标性质条件；清洁输入评估时关闭该分支。B/Y 不能输入真实 gap，改用预测条件或遮蔽视图导出均需额外适配                |
+| DeepMoleNet，JCIM 2021      | 多性质预测＋径向/角向 ACSF 重建；作者稿消融 gap 35.4→33.2 meV                 | 该结果来自多性质模型；单目标结果 32.1 meV 更好。公开核心文件未提供可直接运行的完整网络；去掉其他性质并改成 gap＋ACSF 不等于已验证原方案 |
 
 EMPP 的 3-Mask 指分别构造三个各遮蔽一个原子的视图；30 meV 基线来自此前 Equiformer 结果，仍需同划分重跑才能作为我们的辅助收益依据。[正式论文](https://proceedings.iclr.cc/paper_files/paper/2025/file/7ab7073a147f0a4ee5c76995800d8f14-Paper-Conference.pdf)、[训练/评估实现](https://github.com/ajy112/EMPP/blob/main/engine.py)
 
@@ -265,13 +264,13 @@ ADMET 是吸收、分布、代谢、排泄、毒性性质的统称，不是一�
 
 选择作者已有五任务示例，避免重新设计任务架构：
 
-| 本项目角色 | 任务 | 类型与输出 | 主/辅助评价 |
-|---|---|---|---|
-| 主任务 | CYP2C9 inhibitor | 二分类，一个 logit | ROC-AUC 为主；同时报告 PR-AUC |
-| 辅助任务 | CYP2D6 inhibitor | 二分类，一个 logit | ROC-AUC / PR-AUC |
-| 辅助任务 | Respiratory toxicity | 二分类，一个 logit | ROC-AUC / PR-AUC |
-| 辅助任务 | Caco-2 permeability | 回归，一个标量 | MAE / RMSE / R²，核对原标签尺度 |
-| 辅助任务 | PPB | 回归，一个标量 | MAE / RMSE / R²，核对百分比/变换约定 |
+| 本项目角色 | 任务                 | 类型与输出         | 主/辅助评价                          |
+| ---------- | -------------------- | ------------------ | ------------------------------------ |
+| 主任务     | CYP2C9 inhibitor     | 二分类，一个 logit | ROC-AUC 为主；同时报告 PR-AUC        |
+| 辅助任务   | CYP2D6 inhibitor     | 二分类，一个 logit | ROC-AUC / PR-AUC                     |
+| 辅助任务   | Respiratory toxicity | 二分类，一个 logit | ROC-AUC / PR-AUC                     |
+| 辅助任务   | Caco-2 permeability  | 回归，一个标量     | MAE / RMSE / R²，核对原标签尺度      |
+| 辅助任务   | PPB                  | 回归，一个标量     | MAE / RMSE / R²，核对百分比/变换约定 |
 
 预测时不需要其他端点真值。辅助任务名单已在作者示例提供，先固定该组合；不把 A 或 Y 上事后发现相关性的端点不断加入正式实验。[作者训练示例](https://github.com/dubingxue/MTGL-ADMET/blob/main/Experiments/Training.py)
 
@@ -287,11 +286,11 @@ MTGL-ADMET 使用共享 ResGCN 原子表示、任务专用 attention pooling、�
 
 2026-10-03 对作者公开 CSV 做只读统计：共有 48,390 行、43,291 个不同原始 SMILES 字符串；CYP2C9 有标签的 test 分区为 640 行。按未规范化、未去空格的 SMILES 精确匹配：
 
-| 检查范围 | 与 CYP2C9 test 重叠的行数 |
-|---|---:|
-| CSV 全部 training 行 | 101 |
-| training 中至少有上述五任务之一标签的行 | 21 |
-| training 中有 CYP2C9 标签的行 | 1 |
+| 检查范围                                | 与 CYP2C9 test 重叠的行数 |
+| --------------------------------------- | ------------------------: |
+| CSV 全部 training 行                    |                       101 |
+| training 中至少有上述五任务之一标签的行 |                        21 |
+| training 中有 CYP2C9 标签的行           |                         1 |
 
 这是我们对**当前公开 CSV**的审计，不是对论文实际运行的数据暴露作定论；原训练预处理可能进一步筛选。它已足以说明不能直接继承 CSV 的 group 字段来建立严格归纳实验。尚未做 RDKit canonicalization，化学等价分子的重叠还需进一步核查。[被审计公开 CSV](https://github.com/dubingxue/MTGL-ADMET/blob/main/Data/admet.csv)
 
@@ -313,11 +312,11 @@ MTGL-ADMET 使用共享 ResGCN 原子表示、任务专用 attention pooling、�
 
 MASSIVE 面向个人助手的一次性指令理解，来自英语 SLURP 语句的多语言本地化。ACL 2023 论文使用 MASSIVE 1.0，含 51 种语言、18 个场景、60 个意图、55 种槽位类型；1.1 增加 Catalan，其他语言数据保持不变。它有约百万条跨语言记录，但同一源语句的本地化版本不是百万个独立语义样本。[正式论文](https://aclanthology.org/2023.acl-long.235/)、[数据与代码](https://github.com/alexa/massive)
 
-| 本项目角色 | 任务 | 输出与评价 |
-|---|---|---|
-| 主任务 | intent classification | 句子级 60 类 logits；主指标 accuracy，补报 macro-F1 |
-| 辅助任务 | slot filling | 每个有效词/子词的槽位 logits；补报作者口径的 slot F1 |
-| 联合诊断 | 完整语义 frame | intent 与全部 slots 同时正确的 exact match；不替主任务选 checkpoint |
+| 本项目角色 | 任务                  | 输出与评价                                                          |
+| ---------- | --------------------- | ------------------------------------------------------------------- |
+| 主任务     | intent classification | 句子级 60 类 logits；主指标 accuracy，补报 macro-F1                 |
+| 辅助任务   | slot filling          | 每个有效词/子词的槽位 logits；补报作者口径的 slot F1                |
+| 联合诊断   | 完整语义 frame        | intent 与全部 slots 同时正确的 exact match；不替主任务选 checkpoint |
 
 例如 “what is the temperature in new york” 的意图是 weather_query，局部槽位包括 weather_descriptor 与 place_name。槽位标签来自同一语句的实体/语义片段标注，不是把意图标签复制到各 token。55 是原始槽位类型数，最终分类头维度由作者标签编码决定。
 
@@ -355,11 +354,11 @@ ST 使用相同基础预训练、tokenizer、意图头和训练样本，只优�
 
 SNIPS 是个人助手指令理解数据，常用 train/dev/test 为 13,084 / 700 / 700，包含 7 种意图，例如播放音乐、预订餐馆、查询天气。使用已有论文和代码采用的词级槽位版本，锁定 tokenization 与 BIO schema；不要混用不同发布版本的槽位类型计数。[Joint BERT 数据说明](https://arxiv.org/pdf/1902.10909)、[Stack-Propagation 数据入口](https://github.com/LeePleased/StackPropagation-SLU)
 
-| 本项目角色 | 任务 | 输出与评价 |
-|---|---|---|
-| 主任务 | 句子意图分类 | 7 类预测；accuracy 为主，macro-F1 为补充 |
-| 辅助任务 | 词级 slot filling | token 槽位分布；词级对齐后计算严格 span-F1 |
-| 联合诊断 | semantic frame | 意图及全部槽位同时正确的 sentence accuracy |
+| 本项目角色 | 任务              | 输出与评价                                 |
+| ---------- | ----------------- | ------------------------------------------ |
+| 主任务     | 句子意图分类      | 7 类预测；accuracy 为主，macro-F1 为补充   |
+| 辅助任务   | 词级 slot filling | token 槽位分布；词级对齐后计算严格 span-F1 |
+| 联合诊断   | semantic frame    | 意图及全部槽位同时正确的 sentence accuracy |
 
 这是全局主任务＋局部辅助任务案例，但只有一个槽位辅助任务；多个槽位类别不等于多个辅助头。SNIPS 比 MASSIVE 标签空间更小，适合验证流程；主任务准确率接近上限，小测试集上的少量正确样本差异需要逐 seed 结果与不确定性支持。
 
@@ -367,10 +366,10 @@ SNIPS 是个人助手指令理解数据，常用 train/dev/test 为 13,084 / 700
 
 Chen、Zhuo 和 Wang（2019）的 Joint BERT 使用共享 BERT：CLS 表示接意图 softmax，词的首个 WordPiece 表示接槽位 softmax；两个头不读取对方预测，联合优化两类损失。原文还有槽位 CRF 变体。**本次核实到的原文是 arXiv 预印本，正式同行评审发表状态未确认；不能标成已核实的会议论文。**[原文 §3.2](https://arxiv.org/pdf/1902.10909)
 
-| SNIPS，原文 Table 3，30 epochs | No joint | Joint BERT | 增益 |
-|---|---:|---:|---:|
-| intent accuracy ↑ | 98.0% | 98.6% | +0.6 个百分点 |
-| slot F1 ↑ | 95.8% | 97.0% | +1.2 个百分点 |
+| SNIPS，原文 Table 3，30 epochs | No joint | Joint BERT |          增益 |
+| ------------------------------ | -------: | ---------: | ------------: |
+| intent accuracy ↑              |    98.0% |      98.6% | +0.6 个百分点 |
+| slot F1 ↑                      |    95.8% |      97.0% | +1.2 个百分点 |
 
 这是同一 BERT 方法联合与分别训练的消融线索，比跨不同 backbone 的比较更直接；表中未给多种子 SD，不能预设收益在我们的 A/B 划分上稳定。原文采用 uncased BERT-Base、最大长度 50、batch 128、Adam 学习率 5e-5、dropout 0.1；本项目改变数据分配后需重新按 A_val 主指标选择训练轮数。[原文 Tables 2、3 与 §4.2–4.4](https://arxiv.org/pdf/1902.10909)
 
@@ -382,11 +381,11 @@ Chen、Zhuo 和 Wang（2019）的 Joint BERT 使用共享 BERT：CLS 表示接�
 
 Qin 等人的 Stack-Propagation 正式发表于 EMNLP-IJCNLP 2019。非 BERT 版本共享 BiLSTM＋self-attention encoder，先用意图 decoder 给每个 token 预测句子意图，再将该分布与对应 encoder 表示拼接给槽位 decoder；句子意图由 token 预测投票获得。两类损失联合优化，论文的可微连接允许槽位损失沿意图输出支路回传。[正式论文 §2.2–3](https://aclanthology.org/D19-1214/)
 
-| SNIPS，原文 Table 3 | intent accuracy ↑ |
-|---|---:|
-| lstm＋token-level，意图单任务 | 97.5% |
-| 联合模型，without self-attention | 97.8% |
-| 完整 Stack-Propagation | 98.0% |
+| SNIPS，原文 Table 3              | intent accuracy ↑ |
+| -------------------------------- | ----------------: |
+| lstm＋token-level，意图单任务    |             97.5% |
+| 联合模型，without self-attention |             97.8% |
+| 完整 Stack-Propagation           |             98.0% |
 
 完整模型比意图单任务高 0.5 点，但同时改变 self-attention 等结构；这不能隔离槽位监督的全部贡献。保留真正 intent-only 与同结构关闭槽位损失的两级对照，区分表示、结构和辅助监督。[论文 Table 3](https://aclanthology.org/D19-1214.pdf)
 
@@ -413,20 +412,20 @@ ST 不使用槽位监督；同结构监督消融保留原模块、关闭槽位�
 Restaurant14（Res14）和 Laptop14（Lap14）分别是餐馆与笔记本评论的细粒度情感数据。原始 SemEval 提供 aspect term 及其情感；RACL 的 opinion 标签来自后续工作的补充标注。必须使用作者已发布的完整三任务预处理版本，并记录来源，不能把只有 aspect/sentiment 的原始下载包当成完整三任务数据。[ACL 2020 论文 §4.1](https://aclanthology.org/2020.acl-main.340.pdf)、[作者代码和数据](https://github.com/NLPWM-WHU/RACL)
 
 | 数据版本，论文 Table 2 | 原训练池 | 官方 test |
-|---|---:|---:|
-| Restaurant14 | 3,044 句 | 800 句 |
-| Laptop14 | 3,048 句 | 800 句 |
+| ---------------------- | -------: | --------: |
+| Restaurant14           | 3,044 句 |    800 句 |
+| Laptop14               | 3,048 句 |    800 句 |
 
 首轮推荐 Res14，Lap14 作为另一领域复核，分别训练并报告，不直接合并为一个模型结果。论文还使用 Res15，但它不在本轮保留清单内。已有预处理 train/dev 文件合并回开发池时须审计重复，实际数量由 manifest 决定。
 
 例如 “The food was delicious”：food 是 aspect，delicious 是 opinion，food 对应的 sentiment 为 positive。**本文把 AE 设为唯一主任务是本项目建议，原论文研究的是完整三任务 ABSA。**
 
-| 本项目角色 | 任务 | 已有输出头 | 评价 |
-|---|---|---|---|
-| 主任务 | aspect term extraction，AE | 每词 B/I/O 三类 logits | 严格 aspect span-F1 为主 |
-| 辅助任务 1 | opinion term extraction，OE | 每词 B/I/O 三类 logits | opinion span-F1 |
-| 辅助任务 2 | aspect sentiment classification，SC | 每词 positive / neutral / negative 三类 logits；训练仅有效 aspect 位置有情感监督 | SC-F1；仅作辅助诊断 |
-| 联合诊断 | 完整 ABSA | aspect span 与情感都正确 | ABSA-F1，不替代 AE 主指标 |
+| 本项目角色 | 任务                                | 已有输出头                                                                       | 评价                      |
+| ---------- | ----------------------------------- | -------------------------------------------------------------------------------- | ------------------------- |
+| 主任务     | aspect term extraction，AE          | 每词 B/I/O 三类 logits                                                           | 严格 aspect span-F1 为主  |
+| 辅助任务 1 | opinion term extraction，OE         | 每词 B/I/O 三类 logits                                                           | opinion span-F1           |
+| 辅助任务 2 | aspect sentiment classification，SC | 每词 positive / neutral / negative 三类 logits；训练仅有效 aspect 位置有情感监督 | SC-F1；仅作辅助诊断       |
+| 联合诊断   | 完整 ABSA                           | aspect span 与情感都正确                                                         | ABSA-F1，不替代 AE 主指标 |
 
 SC 不是句子整体情感三分类，也不是每个非 aspect 词都有情感真值。多词 aspect 的情感评价和 conflict 标签处理沿用作者口径；标签缺失不应解释为 neutral。
 
@@ -445,9 +444,9 @@ SC 在非 aspect token 上缺少直接监督，其未掩码输出并不自动成
 ### 11.3 论文增益与能支持的结论
 
 | Restaurant14，论文 Table 3 | AE-F1 ↑ | ABSA-F1 ↑ |
-|---|---:|---:|
-| RACL-GloVe | 85.37 | 70.67 |
-| RACL-BERT | 86.38 | 75.42 |
+| -------------------------- | ------: | --------: |
+| RACL-GloVe                 |   85.37 |     70.67 |
+| RACL-BERT                  |   86.38 |     75.42 |
 
 论文 Table 4 中，RACL-GloVe 删除各关系后，Res14 ABSA-F1 分别下降 0.98、1.91、1.76、1.86 点。这支持已发表关系交互对完整 ABSA 有用；**它不是同结构 AE-only 与 AE＋OE＋SC 的辅助监督对照**。不能用这组完整 ABSA 收益预先宣称我们的 AE 主任务有正迁移，也不能把 BERT 与 GloVe 的差值归因于多任务训练。[论文 Tables 3、4](https://aclanthology.org/2020.acl-main.340.pdf)
 
@@ -489,14 +488,14 @@ NLP 内建议先验证 **SNIPS parallel 或非 BERT Stack 的最小闭环**，�
 
 ### 12.2 起步预算
 
-| 案例 | 数据起步范围 | 上游训练起点 | 下游建议 |
-|---|---|---|---|
-| NYUv2 / MTAN | 标注 795 训练池＋654 锁定测试 | 作者 200 epochs、Adam 1e-4、batch 2 | 原卷积 head 类型；最多 100 epochs，以 B_val mIoU 选模型 |
-| NYUv2 / PASCAL / MTI-Net | 作者相应训练池内部划分 | W18 原配置 100 epochs、Adam 1e-4、batch 8 | 固定尺度/分辨率，已有卷积 head 类型；最多 100 epochs |
-| MP / CrystalTransformer | 一个快照的 20k 试验池 | 作者 MT@2p 默认设置，上限 500 epochs | 先材料级两层 MLP，最多 300 epochs；再评估已有局部读出 |
-| QM9 / 现有 TinySchNet | v2 的固定 100k 配置 | 现有上限 100 epochs | 沿用 v2 的 300 epochs 与诊断对照 |
-| rMD17 / ET | 单分子官方 1,000 开发点 | 锁定官方 ET 版本与已有小模型配置 | 能量标量读出；最多 300 epochs，保留旋转不变性 |
-| ADMET / MTGL-ADMET | 全部可解析分子，稀疏标签保留 | 作者 200 epochs、Adam 1e-3、batch 128 | 两层 MLP，最多 300 epochs；只优化 CYP2C9 |
+| 案例                     | 数据起步范围                  | 上游训练起点                              | 下游建议                                                |
+| ------------------------ | ----------------------------- | ----------------------------------------- | ------------------------------------------------------- |
+| NYUv2 / MTAN             | 标注 795 训练池＋654 锁定测试 | 作者 200 epochs、Adam 1e-4、batch 2       | 原卷积 head 类型；最多 100 epochs，以 B_val mIoU 选模型 |
+| NYUv2 / PASCAL / MTI-Net | 作者相应训练池内部划分        | W18 原配置 100 epochs、Adam 1e-4、batch 8 | 固定尺度/分辨率，已有卷积 head 类型；最多 100 epochs    |
+| MP / CrystalTransformer  | 一个快照的 20k 试验池         | 作者 MT@2p 默认设置，上限 500 epochs      | 先材料级两层 MLP，最多 300 epochs；再评估已有局部读出   |
+| QM9 / 现有 TinySchNet    | v2 的固定 100k 配置           | 现有上限 100 epochs                       | 沿用 v2 的 300 epochs 与诊断对照                        |
+| rMD17 / ET               | 单分子官方 1,000 开发点       | 锁定官方 ET 版本与已有小模型配置          | 能量标量读出；最多 300 epochs，保留旋转不变性           |
+| ADMET / MTGL-ADMET       | 全部可解析分子，稀疏标签保留  | 作者 200 epochs、Adam 1e-3、batch 128     | 两层 MLP，最多 300 epochs；只优化 CYP2C9                |
 
 | MASSIVE / XLM-R | 1.0 en-US；源语句分组，官方 test 锁定 | 建议 20 epochs、Adam 2e-5、有效 batch 32；intent 选择 | token 级表示与槽位分布对照，最多 100 epochs |
 | SNIPS / parallel | 固定论文词级槽位版本与 700 test | Joint BERT 建议 30 epochs、Adam 5e-5、batch 32；预印本/第三方实现边界单列 | 句子意图读出，完整 H 基线，最多 100 epochs |

@@ -3,7 +3,7 @@
 import math
 import torch
 from torch.utils.data import Dataset, DataLoader
-from data.cv_nyu_mtan import make_loader, load_data, processed_dir, applicable_recipes, data_identity
+from data.cv_nyu_mtan import make_loader, sample_ids, processed_dir, applicable_recipes, data_identity
 from model.cv_nyu_mtan import head
 from training.cv_nyu_mtan import load_upstream, upstream_dir
 from evaluate.cv_nyu_mtan import segmentation_loss, score
@@ -17,6 +17,8 @@ def cache_dir(context, variant, seed):
 
 
 def cache(context):
+    if context.config['data'].get('storage') == 'per_image':
+        return cache_streaming(context)
     device = configure(context.config['runtime'])
     artifacts = []
     for variant in context.config['upstream']['variants']:
@@ -47,7 +49,8 @@ def cache(context):
                             pieces.setdefault(key, []).append(value.cpu())
                 indices = read_json(processed_dir(context) / 'splits.json')[split]
                 payload = {k: torch.cat(v) for k, v in pieces.items()}
-                payload['ids'] = [load_data(context)['ids'][i] for i in indices]
+                ids = sample_ids(context)
+                payload['ids'] = [ids[i] for i in indices]
                 path = directory / f'{split}.pt'
                 torch.save(payload, path)
                 artifacts.append(path)
@@ -70,6 +73,8 @@ def load_cache(context, variant, seed, split):
         raise ValueError('cache code/data identity mismatch')
     if manifest['checkpoint_sha256'] != sha256_file(upstream_dir(context, variant, seed) / 'best.pt'):
         raise ValueError('cache upstream checkpoint changed')
+    if manifest.get('storage') == 'per_image':
+        return {'directory': directory, 'records': manifest['records'][split]}
     path = directory / f'{split}.pt'
     if manifest['records'][split]['sha256'] != sha256_file(path):
         raise ValueError('cache content changed')
@@ -111,8 +116,12 @@ class Cached(Dataset):
 
 
 def cache_loader(context, variant, us, split, recipe, ds, batch_size, shuffle=False):
-    return DataLoader(Cached(load_cache(context, variant, us, split), recipe), batch_size=batch_size,
-                      shuffle=shuffle, generator=torch.Generator().manual_seed(ds), num_workers=0)
+    payload = load_cache(context, variant, us, split)
+    dataset = DiskCached(payload, recipe) if 'directory' in payload else Cached(payload, recipe)
+    workers = int(context.config.get('loader', {}).get('workers', 0))
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle,
+                      generator=torch.Generator().manual_seed(ds), num_workers=workers,
+                      pin_memory=context.config['runtime']['device'].startswith('cuda'), persistent_workers=workers > 0)
 
 
 def readout_dir(context, variant, us, recipe, ds):
@@ -154,6 +163,12 @@ def train(context):
                     model = head(feature_channels(context, recipe), 13).to(device)
                     initialize_native(model, upstream)
                     validation = load_cache(context, variant, us, 'b_val')
+                    if 'directory' in validation:
+                        record = validation['records'][0]
+                        path = validation['directory'] / record['path']
+                        if sha256_file(path) != record['sha256']:
+                            raise ValueError('native-init validation sample corrupted')
+                        validation = torch.load(path, map_location='cpu', weights_only=True)
                     with torch.inference_mode():
                         initial_logits = model(features(validation, recipe).to(device))
                         error = (initial_logits.cpu()-validation['logits']).abs().max().item()
@@ -187,3 +202,77 @@ def load_readout(context, variant, us, recipe, ds, device):
     model = head(feature_channels(context, recipe), 13).to(device)
     model.load_state_dict(checkpoint['state_dict'])
     return model.eval()
+
+
+class DiskCached(Dataset):
+    def __init__(self, payload, recipe):
+        self.directory, self.records, self.recipe = payload['directory'], payload['records'], recipe
+        self.verified = set()
+
+    def __len__(self):
+        return len(self.records)
+
+    def __getitem__(self, i):
+        record = self.records[i]
+        path = self.directory / record['path']
+        if record['path'] not in self.verified:
+            if sha256_file(path) != record['sha256']:
+                raise ValueError('cached sample checksum mismatch')
+            self.verified.add(record['path'])
+        payload = torch.load(path, map_location='cpu', weights_only=True)
+        return {'features': features(payload, self.recipe)[0], 'segmentation': payload['segmentation'][0]}
+
+
+def cache_streaming(context):
+    device = configure(context.config['runtime'])
+    artifacts = []
+    ids = sample_ids(context)
+    splits = read_json(processed_dir(context) / 'splits.json')
+    for variant in context.config['upstream']['variants']:
+        if context.filters.get('variant') not in (None, variant):
+            continue
+        for seed in context.config['upstream']['seeds']:
+            if context.filters.get('seed') not in (None, seed):
+                continue
+            model, _ = load_upstream(context, variant, seed, device, frozen=True)
+            before = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            directory = cache_dir(context, variant, seed)
+            records = {}
+            for split in ('b_train', 'b_val', 'y_test'):
+                (directory / split).mkdir(parents=True, exist_ok=True)
+                records[split], offset = [], 0
+                batch_size = context.config.get('cache', {}).get('batch_size', context.config['upstream']['batch_size'])
+                with torch.inference_mode():
+                    for batch in make_loader(context, split, seed, batch_size, auxiliary=False):
+                        batch = to_device(batch, device)
+                        output = model(batch['image'])
+                        values = {'embedding': torch.cat((output['semantic_hidden'], output['shared']), 1),
+                                  'logits': output['logits'], 'segmentation': batch['segmentation']}
+                        if variant == 'multi_task':
+                            values.update(aux_prediction=torch.cat((output['depth'], output['normal']), 1), aux_hidden=output['aux_hidden'])
+                        if any(not torch.isfinite(v).all() for v in values.values()):
+                            raise FloatingPointError('nonfinite frozen cache')
+                        cpu = {k: v.cpu() for k, v in values.items()}
+                        for j in range(len(batch['image'])):
+                            path = directory / split / f'{offset:05d}.pt'
+                            # Clone the slice: torch.save otherwise serializes entire batch storage.
+                            payload = {k: v[j:j+1].clone() for k, v in cpu.items()}
+                            temporary = path.with_suffix('.tmp')
+                            torch.save(payload, temporary)
+                            temporary.replace(path)
+                            artifacts.append(path)
+                            records[split].append({'path': str(path.relative_to(directory)), 'sha256': sha256_file(path),
+                                                   'id': ids[splits[split][offset]],
+                                                   'shapes': {k: list(v.shape) for k, v in payload.items()}})
+                            offset += 1
+                if offset != len(splits[split]):
+                    raise AssertionError('cache count mismatch')
+            if any(not torch.equal(before[k], v.detach().cpu()) for k, v in model.state_dict().items()):
+                raise AssertionError('upstream state mutated during cache')
+            artifacts.append(write_json(directory / 'manifest.json', {
+                'identity': context.identity, 'data_identity': data_identity(context),
+                'checkpoint_sha256': sha256_file(upstream_dir(context, variant, seed) / 'best.pt'),
+                'variant': variant, 'seed': seed, 'storage': 'per_image', 'frozen': True, 'eval': True,
+                'state_unchanged': True, 'auxiliary_truth_cached': False, 'input_normalization': 'none', 'records': records,
+            }))
+    return artifacts

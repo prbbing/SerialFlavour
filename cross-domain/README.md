@@ -8,6 +8,8 @@ QM9 已实现完整闭环（`src/data/`、`src/model/`、`src/training/`、`src/
 
 NYUv2＋MTAN 已接入同一七阶段 pipeline，并完成真实数据 CPU 小规模闭环。配置为 `config/cv_nyu_mtan/smoke.json`，实现与结果见 [本地测试说明](docs/cv_nyu_mtan/nyuv2_mtan_smoke_test_zh.md)。本轮使用图像不重叠的小子集，尚不支持 scene 分组正式实验；结果不作为方法有效性证据。
 
+NYUv2 集群配置与单节点多 GPU 入口见 [集群 agent 操作说明](docs/cv_nyu_mtan/cluster_agent_handoff_zh.md)：直接使用 `cluster_full.json` 运行完整数据和 5×5 seeds。新增磁盘加载／缓存及集群入口仅完成静态检查，尚未运行验证；scene 分组需外部可靠身份映射。
+
 ```text
 cross-domain/
 ├── src/           # 可复用 Python 模块

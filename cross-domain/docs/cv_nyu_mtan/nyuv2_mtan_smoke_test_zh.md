@@ -2,6 +2,8 @@
 
 测试日期：2026-10-03。工作树：`D:\hep_analysis\gn2_study\SerialFlavour-cross`，分支 `feat/cross-domain`。
 
+后续集群适配增加了源码身份，当前 `smoke.json` 已改用新名称 `smoke_cpu_v3`；**本文全部实测数字和证据仍属于历史 `smoke_cpu_v2`，v3 未在本地执行**。新增集群接口的验证步骤见 [集群 agent 操作说明](cluster_agent_handoff_zh.md)。
+
 已经下载真实 NYUv2 分片，并在 WSL conda `gn2_study_cross` 的 CPU 上跑通 **download → prepare → train → cache → refine → evaluate → analyze** 七阶段。STAN、MTAN 和六个下游读出均实际完成训练与独立 Y 评价。该记录是工程闭环测试，不是论文成绩复现或方法有效性证明。
 
 ## 1. 实现位置与复用范围

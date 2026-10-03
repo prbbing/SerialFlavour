@@ -1,6 +1,6 @@
 {
   "dataset": "cv_nyu_mtan",
-  "experiment": "smoke_cpu_v2",
+  "experiment": "smoke_cpu_v3",
   "data_root": "/mnt/d/hep_analysis/gn2_study/dataset_ex/cv_nyu_mtan",
   "output_root": "cross-domain/results",
   "runtime": {"device": "cpu", "threads": 4, "deterministic": false},

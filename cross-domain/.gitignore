@@ -1,4 +1,5 @@
 results/*/
 logs/
+local_data/
 !tests/
 tests/.pytest_cache/
