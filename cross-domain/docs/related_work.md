@@ -584,6 +584,10 @@ GFN2-xTB 与 DFT 同一性质可形成有意义的跨精度对照，但如果在
 
 ### 10.7 Materials Project / JARVIS：近期已发表多任务 Transformer 的材料路线
 
+**本项目实施更新（2026-10-03）：** 本节保留论文与候选路线的研究背景；已选 MP＋CrystalTransformer 的实际配置以 [集群说明](sci_mp_crystran/cluster_run_zh.md) 为准。固定 MP 2018-10-18 快照，不加载预训练权重；集群 v2 上游 64/4/4/128、下游 128/64/32，总材料 20k，A_train 11,200、B_train 2,800。ST/MT 总参数分别为 145,697/145,698，读出为 43,649；完整 5×5 seed 矩阵只做静态检查。此前 10k–20k、后续 50k 为候选规模建议，不表示已扩大数据或执行集群训练；历史 CPU 结果见 [本地验证](sci_mp_crystran/mp_crystran_smoke_test_zh.md)。
+
+**样本充分性尚未确认：** 当前上游从头训练，A_train 11,200、B_train 2,800；缩小参数和严格 A/B/Y 并不证明上游或辅助预测已学好。预训练可能改善样本效率，但 MP* 与 B/Y 的材料/标签重叠、监督历史和权重形状需要核验，不能直接替换随机初始化实验。详见 [从头训练与预训练风险](sci_mp_crystran/training_data_risks_zh.md)；现有配置未扩大数据或改变初始化。
+
 **如果“已有多任务 Transformer 论文”是首要条件，选 MP 固定快照＋CrystalTransformer。** 从作者公开的 2-task 脚本出发，以带隙为主、形成能为辅助；缩小宽度/层数到预算允许的档位，保留一档原配置作后续确认。首轮取 10k–20k 晶体，按材料 ID、规范结构及必要的化学体系分组，避免重复结构跨 A/B/Y。[作者数据入口与多任务脚本](https://github.com/fduabinitio/ct-UAE)
 
 建议首先缓存该 Transformer 的**完整上游输出 H、池化/原读出表示 g、辅助性质预测**。只冻结和迁移元素嵌入表回答的是另一个问题，不足以替代本项目的 frozen-upstream 机制比较。

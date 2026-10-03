@@ -15,7 +15,8 @@ cross-domain/
 ├── experiments/
 │   ├── qm9/           # QM9 实现、配置、专用入口与测试
 │   ├── cv_nyu_mtan/   # NYUv2 MTAN 实现、配置、专用入口与测试
-│   └── nlp_massive_xlm/ # MASSIVE 官方 XLM-R 小规模实现与测试
+│   ├── nlp_massive_xlm/ # MASSIVE 官方 XLM-R 小规模实现与测试
+│   └── sci_mp_crystran/ # MP CrystalTransformer、冻结读出与集群入口
 ├── tests/             # 公共模块与实验隔离测试
 ├── docs/              # 实验设计、运行说明与历史结果
 ├── results/           # 实验产物
@@ -30,7 +31,8 @@ cross-domain/
 |---|---|---|
 | QM9 | 配置在 `experiments/qm9/config/`；集群入口为 `experiments/qm9/scripts/run_full.sh` | 已实现完整闭环；见 [实验设计](docs/qm9/qm9_experiment_zh.md)、[本地结果](docs/qm9/qm9_smoke_test_results_zh.md)、[集群说明](docs/qm9/cluster_handoff_qm9_full_zh.md) 与 [历史完整实验结果](docs/qm9/qm9_gap_charge_bond_full_results_zh.md) |
 | NYUv2＋MTAN | `experiments/cv_nyu_mtan/config/smoke.json`、`cluster_full.json`；集群入口为 `experiments/cv_nyu_mtan/scripts/run_cluster.sh` | 真实数据 CPU 小规模闭环已完成；见 [本地说明](docs/cv_nyu_mtan/nyuv2_mtan_smoke_test_zh.md) 与 [集群 agent 说明](docs/cv_nyu_mtan/cluster_agent_handoff_zh.md) |
-| MASSIVE＋官方 XLM-R | `experiments/nlp_massive_xlm/config/smoke.json`；本地入口 `experiments/nlp_massive_xlm/scripts/run_smoke.sh` | 560 条真实 en-US 分区记录的 CPU 闭环完成；复用官方双头类、随机初始化的缩小 encoder；见 [中文说明](docs/nlp_massive_xlm/massive_xlm_smoke_test_zh.md) 与 [运行证据](docs/nlp_massive_xlm/smoke_evidence.json) |
+| MASSIVE＋官方 XLM-R | `experiments/nlp_massive_xlm/config/smoke.json`、`cluster_full.json`；`scripts/run_smoke.sh` / `scripts/run_cluster.sh` 位于实验包内 | 历史 v1 CPU 闭环见 [本地说明](docs/nlp_massive_xlm/massive_xlm_smoke_test_zh.md)；预训练 Base 完整 5×5 矩阵仅静态检查，见 [集群使用说明](docs/nlp_massive_xlm/cluster_agent_handoff_zh.md) |
+| MP＋CrystalTransformer | `experiments/sci_mp_crystran/config/smoke.json`、`cluster_20k.json`；入口为实验包的 `scripts/run_smoke.sh` / `scripts/run_cluster.sh` | 历史 v3 CPU 闭环见 [本地说明](docs/sci_mp_crystran/mp_crystran_smoke_test_zh.md)；当前集群 v2 为上游 64/4/4/128、下游 128/64/32、20k 材料与完整 5×5 seeds，仅静态检查，见 [集群说明](docs/sci_mp_crystran/cluster_run_zh.md) |
 
 QM9 的 `qm9_gap_charge_bond.json` 用于本地小规模测试，`qm9_gap_charge_bond_full_100k.json` 对应历史完整方案；包含 native 初始化、同容量图消融及独立验证的对照配置为 `qm9_gap_charge_bond_refine_v2_{20k,50k,100k}.json`。历史方案的修正边界见结果文档。
 
@@ -55,9 +57,12 @@ GPU_POOL="0 1 2 3" bash cross-domain/experiments/qm9/scripts/run_full.sh
 
 # NYUv2 MTAN：默认完整数据、5 上游 seeds × 5 下游 seeds
 GPU_POOL="0 1 2 3" bash cross-domain/experiments/cv_nyu_mtan/scripts/run_cluster.sh
+
+# MP CrystalTransformer：默认 20k，15 上游训练＋225 下游训练
+GPU_POOL="0 1 2 3" bash cross-domain/experiments/sci_mp_crystran/scripts/run_cluster.sh
 ```
 
-两套入口均支持 `CONFIG`、`GPU_POOL`、`PYTHON`、`CONDA_ENV` 和 `RETRIES`。根据主机环境修改配置中的数据路径；不要将集群配置在本地启动。本地小规模测试仅在明确要求时运行，不作为集群完整矩阵的前置条件。
+上述入口均支持 `CONFIG`、`GPU_POOL`、`PYTHON`、`CONDA_ENV` 和 `RETRIES`。根据主机环境修改配置中的数据路径；不要将集群配置在本地启动。本地小规模测试仅在明确要求时运行，不作为集群完整矩阵的前置条件。
 
 离线回归测试命令：
 

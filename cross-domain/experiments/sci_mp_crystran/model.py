@@ -45,9 +45,16 @@ class Readout(nn.Module):
     """Same full H access and parameter budget for all predicted-aux comparisons."""
     def __init__(self, width, hidden, target_mean, target_std):
         super().__init__()
+        if not hidden or any(type(value) is not int or value <= 0 for value in hidden):
+            raise ValueError('readout hidden widths must be positive integers')
         self.atom_projection = nn.Sequential(nn.Linear(width, hidden[0]), nn.ReLU())
-        self.head = nn.Sequential(nn.Linear(width + hidden[0] + 2, hidden[0]), nn.ReLU(),
-                                  nn.Linear(hidden[0], hidden[1]), nn.ReLU(), nn.Linear(hidden[1], 1))
+        layers = []
+        input_width = width + hidden[0] + 2
+        for output_width in hidden:
+            layers.extend([nn.Linear(input_width, output_width), nn.ReLU()])
+            input_width = output_width
+        layers.append(nn.Linear(input_width, 1))
+        self.head = nn.Sequential(*layers)
         # Residual starts exactly at native; shared fitter selects epoch 0 on B_val too.
         nn.init.zeros_(self.head[-1].weight)
         nn.init.zeros_(self.head[-1].bias)

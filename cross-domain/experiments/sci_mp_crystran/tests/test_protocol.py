@@ -88,7 +88,8 @@ def test_shuffle_retrains_with_reproducible_predicted_features():
         torch.testing.assert_close(a[key],saved[key])
 
 
-def test_b_statistics_and_native_epoch_zero_capacity_match():
+@pytest.mark.parametrize('hidden', [[64,32], [128,64,32]])
+def test_b_statistics_and_native_epoch_zero_capacity_match(hidden):
     saved = fixture_cache()
     parameters = []
     for recipe in ('embedding','embedding_capacity','embedding_aux','embedding_aux_shuffle','embedding_hidden'):
@@ -96,7 +97,8 @@ def test_b_statistics_and_native_epoch_zero_capacity_match():
         stats = normalization(values)
         dataset = FrozenDataset(values,stats)
         torch.testing.assert_close(dataset.values['g'].mean(0),torch.zeros(32),atol=1e-6,rtol=0)
-        model = Readout(32,[64,32],1.2,0.8)
+        model = Readout(32,hidden,1.2,0.8)
+        assert model.head[-1].in_features == hidden[-1]
         torch.testing.assert_close(model(dataset.values),saved['native'])
         parameters.append(sum(p.numel() for p in model.parameters()))
     assert len(set(parameters))==1
@@ -124,3 +126,35 @@ def test_mt_main_only_has_same_parameters_and_main_loss_no_aux_gradient():
     assert all(p.grad is None for p in matched.output_linear1.parameters())
     assert all(p.grad is not None for p in matched.output_linear2.parameters())
     assert matched.atom_embed.weight.grad is not None
+
+def test_hierarchical_statistics_and_paired_differences():
+    from experiments.sci_mp_crystran.analysis import summarize_records
+    config = {'upstream': {'variants':['single_task','mt_main_only','multi_task'], 'seeds':[1,2]},
+              'refiner': {'seeds':[1,2,3], 'recipes':['embedding','embedding_capacity','embedding_aux','embedding_aux_shuffle','embedding_hidden']}}
+    rows = []
+    for variant in config['upstream']['variants']:
+        for upstream in [1,2]:
+            offset = {'single_task':1.,'mt_main_only':-0.5,'multi_task':0.}[variant]
+            recipes = ['native','embedding','embedding_capacity']
+            if variant == 'multi_task':
+                recipes += ['embedding_aux','embedding_aux_shuffle','embedding_hidden']
+            for recipe in recipes:
+                for downstream in ([None] if recipe == 'native' else [1,2,3]):
+                    extra = {'embedding':0.,'embedding_capacity':0.4,'embedding_aux':0.2,
+                             'embedding_aux_shuffle':0.6,'embedding_hidden':0.3,'native':0.}[recipe]
+                    metric = upstream*10 + offset + (downstream or 0) + extra
+                    rows.append({'variant':variant,'upstream_seed':upstream,'recipe':recipe,'seed':downstream,
+                                 'metrics':{'mae':metric,'rmse':metric,'r_squared':0.5}})
+    groups, comparisons = summarize_records(config,rows)
+    aux = next(g for g in groups if g['variant']=='multi_task' and g['recipe']=='embedding_aux')
+    assert aux['metrics']['mae']['mean'] == pytest.approx(17.2)
+    assert aux['metrics']['mae']['sample_sd'] == pytest.approx(10/np.sqrt(2))
+    assert aux['metrics']['mae']['n_upstream_seeds'] == 2
+    paired = comparisons['mt_aux_minus_embedding_capacity_mae_eV']
+    assert paired['mean'] == pytest.approx(-0.2)
+    assert paired['sample_sd'] == pytest.approx(0.,abs=1e-12)
+    assert paired['negative_upstream_seeds'] == 2
+    with pytest.raises(ValueError,match='incomplete evaluation matrix'):
+        summarize_records(config,rows[:-1])
+    with pytest.raises(ValueError,match='duplicate evaluation record'):
+        summarize_records(config,rows+[rows[0]])

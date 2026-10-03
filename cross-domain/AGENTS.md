@@ -1,44 +1,57 @@
 # Cross-domain 跨领域复现
 
-## 目的与范围
+## 目的与工作边界
 
-本 worktree 对应 `feat/cross-domain`，在 jet tagging 之外的领域检验 SerialFlavour 的 frozen post-refinement 思路：多任务训练后冻结上游，在独立数据上仅用主任务监督训练读出，比较 embedding-only 与辅助预测/局部结构读出的增量。
-这里的跨领域首先指在不同领域复现方法，不默认指跨领域迁移同一个 jet 模型。先读 `cross-domain/docs/related_work.md` 和 `README.md`；文献与候选数据集建议不等于本项目实测结果，也不等于已选定实施方案。
+本 worktree 为 `D:\hep_analysis\gn2_study\SerialFlavour-cross`，对应 `feat/cross-domain`。在 jet tagging 之外的领域检验 SerialFlavour 的 frozen post-refinement 思路：多任务训练后冻结上游，在独立数据上仅用主任务监督训练读出，比较 embedding-only 与辅助预测/局部结构读出的增量。跨领域首先指在不同领域复现方法，不默认指迁移同一个 jet 模型。
 
-## 项目结构
+- 只在本 worktree 推进 cross 路线；开始前核验目录与分支，不自行更换 worktree、分支、候选领域或同步其他路线。保留用户文档及无关修改。
+- 实现与研究记录集中于 `cross-domain/`。外部 `src/`、`scripts/`、`configs/` 为 Jet tagging 实现，仅作协议参考；确需修改时，先说明原因与范围并取得用户确认。
+- 用户指定实验子目录及修改边界时，严格遵守；修改该范围之外的公共代码、依赖文件或文档，须有用户授权。已有明确授权可以继续使用，不重复请示。
+- 提交、推送、跨 worktree/SSH 同步及远程运行分别按用户授权执行；远程操作先核验已确认的目标与范围。要求写脚本或说明不等于授权连接、同步或执行。用户要求 commit 时，仅提交本次范围内的修改，不混入其他实验的工作。
 
-- `cross-domain/docs/`：相关工作、候选领域/数据集、协议设计与研究记录。
-- `cross-domain/README.md`：本路线目录职责与实验流程；开始实现前阅读。
-- `cross-domain/scripts/`：命令入口与启动器。
-- `cross-domain/pipeline/`：通用模块，组织数据准备、上游训练、冻结缓存、下游训练与评估。
-- `cross-domain/experiments/<dataset>/`：每个实验的 data、model、training、refine、evaluate、analysis 模块、config、scripts 与 tests。
-- `cross-domain/results/<dataset>/<experiment>/`：隔离保存运行产物。
-- 外部 `src/`、`scripts/`、`configs/` 为现有 Jet tagging 实现，仅作 protocol 参考；当前 cross-domain 已实现 QM9 完整闭环（设计见 `cross-domain/docs/qm9/qm9_experiment_zh.md`，本地结果见 `cross-domain/docs/qm9/qm9_smoke_test_results_zh.md`），NYUv2 MTAN 也已接入，说明见 `cross-domain/docs/cv_nyu_mtan/`。
+## 目录与依赖职责
 
-## 研究与实现原则
+开始实现前阅读 [README](README.md)、[通用 pipeline 说明](docs/PIPELINE.md)、[相关工作](docs/related_work.md) 与 [案例建议](docs/cross_domain_case_studies_zh.md)。文献、候选数据集和案例建议不等于本项目实测结果，也不等于已选定实施方案；实验状态和历史结果保留在各实验文档中。
 
-- 所有 cross-domain 实验依赖统一维护在 `cross-domain/requirements.txt`，不再创建按数据集或实验拆分的 requirements 文件；只安装到 cross 专用环境。
+| 路径 | 职责 |
+| --- | --- |
+| `pipeline/` | 通用流程编排、阶段身份与产物检查 |
+| `scripts/` | 公共命令入口与启动器 |
+| `experiments/<experiment>/` | 专用 data、model、training、refine、evaluate、analysis 模块，以及 config、scripts、tests |
+| `docs/<experiment>/` | 中文实验说明、本地验证记录、集群使用说明与检查证据 |
+| `results/<dataset>/<experiment>/`、`logs/` | 按配置隔离的运行产物与日志 |
+| `requirements.txt` | 所有 cross-domain 实验的统一依赖清单 |
 
-- 各实验处理代码、配置、专用启动器和测试集中于 `cross-domain/experiments/<dataset>/`；公共代码放在 `pipeline/`，公共入口放在 `scripts/`。pipeline 管流程，实验包管差异；不重新拆散到按功能跨实验混放的目录。远程定向同步实验包即可，不要求远程访问 GitHub；共享 pipeline 或公共入口更新须协调正在运行的所有实验。
+pipeline 管流程，实验包管差异。优先复用通用入口和阶段接口，兼容性代码尽量放在实验包内；不重新拆散到按功能跨实验混放的目录，不为单个实验另造一套通用 pipeline。共享 pipeline 或公共入口更新须协调正在运行的所有实验。远程可定向同步实验包及所需公共文件，不要求远程访问 GitHub。
 
-- 先明确领域、主/辅助任务、标签来源、数据许可、划分单位和小规模预算，再实现最小闭环；MASSIVE、PartImageNet、QM8/QM7-X 等只是候选，不自行扩大到全部领域。
-- 保持核心协议可比：A 训练并选择多任务上游，冻结全部上游参数，B 仅用主任务标签训练下游，独立测试集用于最终评估。检查预训练暴露及辅助标签由主标签直接派生的捷径。
-- 按领域使用事件、分子/骨架、蛋白同源簇、轨迹等适当分组，控制重复与相关样本泄漏；预处理和特征选择只用训练数据。具体分组规则须在实验协议中记录。
-- 至少区分 native head、强 embedding-only、辅助增强读出；检验辅助监督时加入真正的 single-task 上游。多任务上游的 embedding-only 不能当作 single-task baseline。
-- 匹配数据、目标、容量、训练预算和模型选择；oracle/truth 辅助输入只作诊断。分类与回归按领域选指标，不机械照搬 jet rejection。
-- 记录数据版本、split、预训练来源、checkpoint、配置、冻结边界、seed 层级及计算成本；保留配对结果和不确定性，不把单一领域收益写成普遍机制。
-- 区分联合训练中的任务交互与冻结后的二阶段读出；引用文献支持的具体内容。保持实现简单，先验证数据与小批次运行，再扩大规模。
+依赖统一登记在 `cross-domain/requirements.txt`，不创建按数据集或实验拆分的 requirements 文件。只安装到 cross 专用环境；本地 WSL 使用 `gn2_study_cross`，不修改 `gn2_study`。
 
-## 工作边界
+## 研究协议与比较原则
 
-新增方法迁移、数据集测试、配置与结果分析实现集中于 `cross-domain/`，调研记录继续放在 `cross-domain/docs/`。原则上不修改外部 Jet tagging 代码；确需修改时先说明原因与范围并取得用户确认。大型数据、缓存、权重和预测不纳入 Git，产物写入前按需配置忽略规则。
+- 先明确领域、主/辅助任务、标签来源、数据版本与许可、划分单位和计算预算；只实现用户选定的案例，不自行扩展到所有候选领域。
+- 保持 A/B/Y 协议：A 训练并选择上游，随后冻结全部上游参数；B 仅用主任务标签训练并选择下游；独立 Y 仅用于最终评估。归一化、特征选择等预处理只拟合相应训练部分，不能使用验证或 Y 信息。
+- 按领域采用事件、分子/骨架、等价晶体结构、蛋白同源簇、轨迹等合适的分组，控制重复与相关样本泄漏，记录具体规则。检查预训练暴露及辅助标签由主标签直接派生的捷径。
+- 至少区分 native head、强 embedding-only 和辅助增强读出；检验辅助监督时加入真正的 single-task 上游。多任务上游的 embedding-only 不能当作 single-task baseline；原始 ST/MT 架构不一致时，增加结构匹配的 main-only 对照或明确限制。
+- 按实验需要缓存完整冻结表征、主/辅助预测与主任务标签，保留冻结边界及样本身份；下游训练和正式比较不使用辅助真值。oracle/truth 输入仅作单独标明的诊断。
+- 匹配数据、目标、读出容量、训练预算和模型选择；容量对照、打乱辅助输入等诊断按研究问题设置。分类与回归选择适合领域的指标，不机械照搬 jet rejection。
+- 采用论文或作者实现时，记录来源、版本/commit、预训练权重与许可证，区分原实现、缩小规模和本项目改动；记录未处理的对称性、几何表示或架构限制。
+- 区分联合训练的任务交互与冻结后的二阶段读出。辅助预测是冻结上游计算的结果，不能直接称为新增信息；负结果和微小差异同样如实报告，不把单次 smoke 或单一领域收益写成普遍机制。
 
-只在本 worktree 推进 cross 路线，保留用户文档和无关修改；不自行更换目录、分支、候选领域或同步其他路线。共享输入可只读复用，输出及可写缓存按领域/实验隔离并核验身份。提交、推送、跨 worktree/SSH 同步须有用户授权；远程操作先确认目标与范围。每次报告说明改动、验证证据与尚未验证部分。
+## 实验开发与交付工作流
 
-## 本地数据与运行规模
+1. **定义案例与预算。** 阅读上述说明及相关论文/实现，写清主/辅助任务、A/B/Y、模型版本、对照、seed 层级、数据路径和资源预算。保持实现简单，优先形成所选案例的最小闭环。
+2. **在实验包中实现。** 复用 `download → prepare → train → cache → refine → evaluate → analyze` 通用流程，补充专用适配模块、配置、启动器与必要测试。使用用户指定的实验名称；例如 MP＋CrystalTransformer 为 `sci_mp_crystran`，代码放在 `experiments/sci_mp_crystran/`，文档放在 `docs/sci_mp_crystran/`。
+3. **按授权进行本地小规模验证。** 用户明确要求本地测试时，下载小规模真实数据，在 WSL `gn2_study_cross` 中验证数据处理、小批次与完整阶段闭环。核验退出状态、预期 manifest/checkpoint/cache/metrics/predictions 等实际产物及适用的协议测试；在中文文档中记录配置、规模、时间、结果、失败修复与未验证部分。本地测试是工程证据，不是科学结论，也不是集群完整矩阵的强制前置条件。
+4. **准备规模化配置、脚本和中文使用说明。** 使用用户指定的完整矩阵；未指定具体数值时，将所选规模和资源需求明确写入配置与文档。说明环境与依赖、数据准备、GPU 分配、启动命令、输出目录、任务数量、恢复方式和统计口径。优先复用公共单元入口；需要专用调度器时放在实验包的 `scripts/` 内。可参考 [MP 集群说明](docs/sci_mp_crystran/cluster_run_zh.md)。
+5. **遵守“只编写、不执行”的范围。** 用户要求集群文件但不执行时，仅做 Python 语法/AST、JSON、`bash -n`、路径和计划一致性等静态检查；可使用经确认只读的 dry-run。dry-run 不应创建产物目录、启动子任务、初始化模型或 CUDA。此范围下不运行 pytest、数据处理、模型前向、训练，也不连接远程、同步、安装依赖或提交任务；记录静态证据并明确运行尚未验证。
+6. **授权后运行完整集群矩阵。** 不主动增加 pilot、缩小预算的集群试跑配置或“先跑子矩阵再放大”的前置流程。调度器应尊重 `CUDA_VISIBLE_DEVICES`，核验各单元配置与产物身份；上游、缓存与 refine 依赖满足后才执行对应任务，全部必需单元完成后才最终 evaluate/analyze。失败须明确退出并阻止不完整结果被当作完整实验。
+7. **报告与提交。** 将可复现命令、实际证据和限制写入 `docs/<experiment>/` 中文 Markdown，区分已执行、仅静态检查和未验证内容。用户授权提交时检查 diff，只纳入本次相关文件；推送和远程同步按各自授权执行。
 
-集群实验直接运行用户指定的完整矩阵。以后不主动增加 pilot、缩小预算的集群试跑配置或先试跑再放大的前置流程；不以运行验收为由要求先跑子矩阵。只读静态检查不启动训练。本地小规模测试仅在用户明确要求时进行，不作为集群完整矩阵的前置条件。
+## 数据、恢复与结果证据
 
-本地测试数据可存放在 `D:\hep_analysis\gn2_study\dataset_ex`，按数据集与实验隔离，具体路径写入配置；代码仍保留在本 worktree 的 `cross-domain/` 中。
-
-原则上本地测试尽量使用小规模数据，验证数据处理、训练与评估流程后，再在 GPU 集群上运行正式实验。未经用户批准，不在本地下载、复制或生成超过 5GB 的单个数据文件；限制按单个文件计算。若所需本地测试文件超过该大小，须在保存前说明预计大小、必要性及可行的小规模替代方案，并请示用户，获得明确批准后方可继续相关操作。
+- 本地测试数据可放在 `D:\hep_analysis\gn2_study\dataset_ex`，按数据集与实验隔离并在配置中写明路径。共享输入可只读复用；输出及可写缓存按实验隔离并核验身份。
+- 本地测试保持小规模。未经用户批准，不下载、复制或生成超过 5GB 的单个本地数据文件；限制按单个文件计算。保存前说明预计大小、必要性及可行的小规模替代方案，取得明确批准后再继续。
+- 大型数据、缓存、权重和预测不纳入 Git，写入前按需配置忽略规则。记录数据来源/版本/hash、split、配置、代码身份、checkpoint、冻结边界、seed 与计算成本。
+- 完成标记须对应实际完整产物，不能仅凭文件存在认定成功。更改影响身份的代码或配置时使用新的实验身份，不能沿用旧完成标记；区分“跳过已完成单元、重跑失败单元”和真正恢复 optimizer/scheduler/epoch 状态。
+- 上游 seed 与下游 seed 为嵌套重复时，先在每个上游 seed 内汇总下游，再报告上游之间的均值与样本标准差（`ddof=1`）；例如 5×5 不能当作 25 个独立上游实验。比较保留同 seed 配对，注明统计单位、不确定性和缺失单元，不自行宣称显著性。
+- CPU smoke、静态检查、dry-run 和实际 GPU/多 seed 集群运行是不同证据。旧 smoke 不能证明后续代码或新配置已运行；每次交付说明改动、验证证据与尚未验证部分。

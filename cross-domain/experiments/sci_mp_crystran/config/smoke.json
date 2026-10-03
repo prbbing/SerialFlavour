@@ -1,6 +1,6 @@
 {
   "dataset": "sci_mp_crystran",
-  "experiment": "mp_crystran_smoke_cpu_v3",
+  "experiment": "mp_crystran_smoke_cpu_v5",
   "data_root": "/mnt/d/hep_analysis/gn2_study/dataset_ex/sci_mp_crystran",
   "output_root": "cross-domain/results",
   "runtime": {"device": "cpu", "threads": 4, "num_workers": 0, "deterministic": true},

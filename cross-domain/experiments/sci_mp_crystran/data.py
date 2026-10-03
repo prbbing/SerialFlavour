@@ -238,3 +238,13 @@ def make_loader(context, split, seed=1, batch_size=32, shuffle=False, auxiliary=
     return DataLoader(Crystals(context, split, auxiliary), batch_size=batch_size, shuffle=shuffle,
                       collate_fn=collate, num_workers=context.config['runtime'].get('num_workers', 0),
                       generator=torch.Generator().manual_seed(seed))
+
+def applicable_recipes(context, variant):
+    """Recipe applicability is shared by scheduler enumeration and domain loops."""
+    if variant not in ('single_task', 'mt_main_only', 'multi_task'):
+        raise ValueError(f'unsupported upstream variant: {variant}')
+    configured = context.config['refiner']['recipes']
+    allowed = {'embedding', 'embedding_capacity', 'embedding_aux', 'embedding_aux_shuffle', 'embedding_hidden'}
+    if any(recipe not in allowed for recipe in configured) or len(set(configured)) != len(configured):
+        raise ValueError('unknown or duplicate refiner recipes')
+    return [recipe for recipe in configured if variant == 'multi_task' or recipe in ('embedding', 'embedding_capacity')]

@@ -5,7 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 from pipeline.fit import fit, save_checkpoint
 from pipeline.io import read_json, write_json, sha256_file
 from pipeline.runtime import configure, seed_all, to_device
-from experiments.sci_mp_crystran.data import make_loader, data_identity
+from experiments.sci_mp_crystran.data import make_loader, data_identity, applicable_recipes
 from experiments.sci_mp_crystran.model import Readout
 from experiments.sci_mp_crystran.training import load_upstream, upstream_dir, physical_output
 
@@ -19,7 +19,11 @@ def cache(context):
     artifacts = []
     norm = read_json(context.output_dir / 'target_normalization.json')
     for variant in context.config['upstream']['variants']:
+        if context.filters.get('variant') not in (None, variant):
+            continue
         for seed in context.config['upstream']['seeds']:
+            if context.filters.get('seed') not in (None, seed):
+                continue
             model, _ = load_upstream(context, variant, seed, device)
             checkpoint = upstream_dir(context, variant, seed) / 'best.pt'
             before = sha256_file(checkpoint)
@@ -128,7 +132,7 @@ def refiner_dir(context, variant, up_seed, recipe, seed):
 
 
 def recipes(context, variant):
-    return [r for r in context.config['refiner']['recipes'] if variant == 'multi_task' or r in ('embedding', 'embedding_capacity')]
+    return applicable_recipes(context, variant)
 
 
 def train(context):
@@ -137,10 +141,18 @@ def train(context):
     norm = read_json(context.output_dir / 'target_normalization.json')
     artifacts = []
     for variant in context.config['upstream']['variants']:
+        if context.filters.get('variant') not in (None, variant):
+            continue
         for up_seed in context.config['upstream']['seeds']:
+            if context.filters.get('upstream_seed') not in (None, up_seed):
+                continue
             saved = {s: load_cache(context, variant, up_seed, s) for s in ('b_train', 'b_val')}
             for recipe in recipes(context, variant):
+                if context.filters.get('recipe') not in (None, recipe):
+                    continue
                 for seed in settings['seeds']:
+                    if context.filters.get('downstream_seed') not in (None, seed):
+                        continue
                     seed_all(seed)
                     train_values = features(saved['b_train'], recipe, seed + 1000)
                     val_values = features(saved['b_val'], recipe, seed + 2000)

@@ -2,6 +2,8 @@
 
 日期：2026-10-03。工作树：`D:\hep_analysis\gn2_study\SerialFlavour-cross`，分支 `feat/cross-domain`。最终实验：`mp_crystran_smoke_cpu_v3`。
 
+> 版本说明（2026-10-03）：本文的样本、参数、测试数量和数值结果记录历史 v3 CPU 实验。当前源码的 `smoke.json` 为未运行的 v5，仍采用 32/2/4/64 上游和 64/32 下游；本文命令在当前源码下会运行 v5，不能复用历史 v3 的身份或证明结果复现。当前集群配置另为 `mp_crystran_cluster_20k_v2`：上游 64/4/4/128、下游 128/64/32、20k 材料，仅完成静态检查。详见 [集群说明](cluster_run_zh.md)；历史 v3 数据与实测结论保持原样。
+
 ## 1. 完成情况与结论边界
 
 已使用真实 Materials Project 结构和标签，在 WSL `gn2_study_cross` 环境的 CPU 上完成 `download → prepare → train → cache → refine → evaluate → analyze`，入口退出码为 0。12 项本实验科学契约测试和 37 项现有公共 pipeline / QM9 / NYUv2 回归测试通过，共 49 项。
@@ -132,7 +134,7 @@ python cross-domain/experiments/sci_mp_crystran/scripts/verify_run.py \
   --config cross-domain/experiments/sci_mp_crystran/config/smoke.json
 ```
 
-完成阶段重跑时会校验并跳过，不覆盖旧模型。修改代码或配置必须更换实验名。`v1` 保留 NaN 解析失败记录；`v2` 为补充同结构监督消融前的成功闭环；当前配置对应 `v3`。当前脚本与汇总面向单 seed smoke，完整数据/多 seed、`run_pool`、GPU/集群执行和论文完整预算尚未验证。
+完成阶段重跑时会校验并跳过，不覆盖旧模型。修改代码或配置必须更换实验名。`v1` 保留 NaN 解析失败记录；`v2` 为补充同结构监督消融前的成功闭环；本次历史运行配置对应 `v3`；当前 smoke 配置已更新为未执行的 `v5`。历史脚本与汇总面向单 seed smoke；现有集群多 seed 适配见 [集群说明](cluster_run_zh.md)，仅静态检查，GPU/集群执行和论文完整预算尚未验证。
 
 可检查的产物：
 

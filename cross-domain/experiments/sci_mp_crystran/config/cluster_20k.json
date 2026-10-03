@@ -1,0 +1,112 @@
+{
+  "dataset": "sci_mp_crystran",
+  "experiment": "mp_crystran_cluster_20k_v2",
+  "data_root": "cross-domain/local_data/sci_mp_crystran",
+  "output_root": "cross-domain/results",
+  "runtime": {
+    "device": "cuda",
+    "threads": 4,
+    "num_workers": 0,
+    "deterministic": true
+  },
+  "tasks": {
+    "main": "gap pbe",
+    "auxiliary": [
+      "e_form"
+    ]
+  },
+  "data": {
+    "sampling_seed": 2026,
+    "split_seed": 2026,
+    "candidate_multiplier": 2,
+    "max_atoms": 64,
+    "max_file_bytes": 500000000,
+    "sizes": {
+      "a_train": 11200,
+      "a_val": 1000,
+      "b_train": 2800,
+      "b_val": 1000,
+      "y_test": 4000
+    },
+    "source": {
+      "name": "mp_all_20181018.json.gz",
+      "url": "https://ndownloader.figshare.com/files/13309250",
+      "sha256": "1f3de2dc7c68959647240921b841293fce918ea1708e6f3760ba35a9cdfe0500",
+      "metadata_commit": "f89a530b76070fb613737b181381833330fb50c2"
+    }
+  },
+  "model": {
+    "feature_size": 64,
+    "num_layers": 4,
+    "num_heads": 4,
+    "dim_feedforward": 128,
+    "dropout": 0.1,
+    "st_head_hidden": 128
+  },
+  "upstream": {
+    "variants": [
+      "single_task",
+      "mt_main_only",
+      "multi_task"
+    ],
+    "seeds": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "epochs": 500,
+    "batch_size": 128,
+    "learning_rate": 0.001,
+    "weight_decay": 1E-05,
+    "auxiliary_weight": 1.0,
+    "clip_grad": 1.0,
+    "selection_mode": "min",
+    "early_stopping_patience": 40,
+    "scheduler": {
+      "factor": 0.5,
+      "patience": 15,
+      "min_lr_ratio": 0.01,
+      "threshold": 0.0001,
+      "type": "reduce_on_plateau"
+    }
+  },
+  "refiner": {
+    "seeds": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "epochs": 300,
+    "batch_size": 128,
+    "learning_rate": 0.001,
+    "weight_decay": 1E-05,
+    "hidden": [
+      128,
+      64,
+      32
+    ],
+    "clip_grad": 1.0,
+    "selection_mode": "min",
+    "early_stopping_patience": 20,
+    "include_initial_checkpoint": true,
+    "recipes": [
+      "embedding",
+      "embedding_capacity",
+      "embedding_aux",
+      "embedding_aux_shuffle",
+      "embedding_hidden"
+    ],
+    "scheduler": {
+      "factor": 0.5,
+      "patience": 8,
+      "min_lr_ratio": 0.01,
+      "threshold": 0.0001,
+      "type": "reduce_on_plateau"
+    }
+  },
+  "log_root": "cross-domain/logs"
+}
