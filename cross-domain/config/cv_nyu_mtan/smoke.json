@@ -1,0 +1,14 @@
+{
+  "dataset": "cv_nyu_mtan",
+  "experiment": "smoke_cpu_v2",
+  "data_root": "/mnt/d/hep_analysis/gn2_study/dataset_ex/cv_nyu_mtan",
+  "output_root": "cross-domain/results",
+  "runtime": {"device": "cpu", "threads": 4, "deterministic": false},
+  "data": {"split_mode": "image_disjoint_smoke", "train_samples": 40, "test_samples": 8, "resolution": [64, 96], "split_seed": 20261003,
+    "split_counts": {"a_train": 24, "a_val": 4, "b_train": 8, "b_val": 4}},
+  "model": {"widths": [8, 16, 32, 32, 32]},
+  "upstream": {"variants": ["single_task", "multi_task"], "seeds": [17], "epochs": 3, "batch_size": 2,
+    "learning_rate": 0.0001, "weight_decay": 0.0, "selection_mode": "max", "clip_grad": 5.0},
+  "refiner": {"recipes": ["embedding", "embedding_matched", "aux_prediction", "aux_hidden"], "seeds": [29], "epochs": 4, "batch_size": 2,
+    "learning_rate": 0.001, "weight_decay": 0.0, "selection_mode": "max", "clip_grad": 5.0, "include_initial_checkpoint": true}
+}

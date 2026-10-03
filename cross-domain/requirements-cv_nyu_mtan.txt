@@ -1,0 +1,3 @@
+# Install only into gn2_study_cross; torch/numpy/requests already provided.
+pyarrow>=15,<24
+requests>=2.31

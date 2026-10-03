@@ -6,6 +6,8 @@ QM9 已实现完整闭环（`src/data/`、`src/model/`、`src/training/`、`src/
 
 ## 目录职责
 
+NYUv2＋MTAN 已接入同一七阶段 pipeline，并完成真实数据 CPU 小规模闭环。配置为 `config/cv_nyu_mtan/smoke.json`，实现与结果见 [本地测试说明](docs/cv_nyu_mtan/nyuv2_mtan_smoke_test_zh.md)。本轮使用图像不重叠的小子集，尚不支持 scene 分组正式实验；结果不作为方法有效性证据。
+
 ```text
 cross-domain/
 ├── src/           # 可复用 Python 模块
