@@ -14,7 +14,8 @@ cross-domain/
 ├── scripts/           # 通用入口：run / run_unit / run_seed / run_pool
 ├── experiments/
 │   ├── qm9/           # QM9 实现、配置、专用入口与测试
-│   └── cv_nyu_mtan/   # NYUv2 MTAN 实现、配置、专用入口与测试
+│   ├── cv_nyu_mtan/   # NYUv2 MTAN 实现、配置、专用入口与测试
+│   └── nlp_massive_xlm/ # MASSIVE 官方 XLM-R 小规模实现与测试
 ├── tests/             # 公共模块与实验隔离测试
 ├── docs/              # 实验设计、运行说明与历史结果
 ├── results/           # 实验产物
@@ -29,6 +30,7 @@ cross-domain/
 |---|---|---|
 | QM9 | 配置在 `experiments/qm9/config/`；集群入口为 `experiments/qm9/scripts/run_full.sh` | 已实现完整闭环；见 [实验设计](docs/qm9/qm9_experiment_zh.md)、[本地结果](docs/qm9/qm9_smoke_test_results_zh.md)、[集群说明](docs/qm9/cluster_handoff_qm9_full_zh.md) 与 [历史完整实验结果](docs/qm9/qm9_gap_charge_bond_full_results_zh.md) |
 | NYUv2＋MTAN | `experiments/cv_nyu_mtan/config/smoke.json`、`cluster_full.json`；集群入口为 `experiments/cv_nyu_mtan/scripts/run_cluster.sh` | 真实数据 CPU 小规模闭环已完成；见 [本地说明](docs/cv_nyu_mtan/nyuv2_mtan_smoke_test_zh.md) 与 [集群 agent 说明](docs/cv_nyu_mtan/cluster_agent_handoff_zh.md) |
+| MASSIVE＋官方 XLM-R | `experiments/nlp_massive_xlm/config/smoke.json`；本地入口 `experiments/nlp_massive_xlm/scripts/run_smoke.sh` | 560 条真实 en-US 分区记录的 CPU 闭环完成；复用官方双头类、随机初始化的缩小 encoder；见 [中文说明](docs/nlp_massive_xlm/massive_xlm_smoke_test_zh.md) 与 [运行证据](docs/nlp_massive_xlm/smoke_evidence.json) |
 
 QM9 的 `qm9_gap_charge_bond.json` 用于本地小规模测试，`qm9_gap_charge_bond_full_100k.json` 对应历史完整方案；包含 native 初始化、同容量图消融及独立验证的对照配置为 `qm9_gap_charge_bond_refine_v2_{20k,50k,100k}.json`。历史方案的修正边界见结果文档。
 

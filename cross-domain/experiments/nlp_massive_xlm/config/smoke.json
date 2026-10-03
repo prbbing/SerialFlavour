@@ -1,0 +1,65 @@
+{
+  "dataset": "nlp_massive_xlm",
+  "experiment": "smoke_cpu_v1",
+  "data_root": "/mnt/d/hep_analysis/gn2_study/dataset_ex/nlp_massive_xlm",
+  "output_root": "cross-domain/results",
+  "runtime": {
+    "device": "cpu",
+    "threads": 4,
+    "deterministic": true
+  },
+  "data": {
+    "split_seed": 20261003,
+    "max_length": 64,
+    "split_counts": {
+      "a_train": 240,
+      "a_val": 60,
+      "b_train": 80,
+      "b_val": 60,
+      "y_test": 120
+    }
+  },
+  "model": {
+    "hidden_size": 64,
+    "num_hidden_layers": 2,
+    "num_attention_heads": 4,
+    "intermediate_size": 128,
+    "hidden_dropout_prob": 0.1,
+    "attention_probs_dropout_prob": 0.1
+  },
+  "upstream": {
+    "variants": [
+      "single_task",
+      "multi_task"
+    ],
+    "seeds": [
+      17
+    ],
+    "epochs": 4,
+    "batch_size": 16,
+    "learning_rate": 0.001,
+    "weight_decay": 0.01,
+    "selection_mode": "max",
+    "clip_grad": 1.0,
+    "early_stopping_patience": 3
+  },
+  "refiner": {
+    "recipes": [
+      "embedding",
+      "embedding_matched",
+      "aux_prediction"
+    ],
+    "seeds": [
+      29
+    ],
+    "epochs": 10,
+    "batch_size": 16,
+    "width": 32,
+    "learning_rate": 0.001,
+    "weight_decay": 0.01,
+    "selection_mode": "max",
+    "clip_grad": 1.0,
+    "early_stopping_patience": 5,
+    "include_initial_checkpoint": true
+  }
+}
