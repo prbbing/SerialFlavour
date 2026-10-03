@@ -1,0 +1,1 @@
+"""Domain result analysis adapters."""

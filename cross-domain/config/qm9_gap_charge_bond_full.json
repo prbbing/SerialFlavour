@@ -1,0 +1,37 @@
+{
+  "dataset": "qm9",
+  "experiment": "qm9_gap_charge_bond_full",
+  "data_root": "/mnt/d/hep_analysis/gn2_study/dataset_ex/qm9",
+  "output_root": "cross-domain/results",
+  "log_root": "logs",
+  "runtime": {"device": "cuda", "threads": 8, "num_workers": 4, "deterministic": true},
+  "tasks": {"main": "gap", "auxiliary": [], "local": ["charge", "bond"]},
+  "data": {
+    "sampling_seed": 2026,
+    "split_seed": 2026,
+    "candidate_multiplier": 2,
+    "max_file_bytes": 5000000000,
+    "shared_validation": true,
+    "validation_size": 10000,
+    "sizes": {"a_train": 56000, "b_train": 14000, "y_test": 20000},
+    "sources": [
+      {"name": "dsgdb9nsd.xyz.tar.bz2", "url": "https://ndownloader.figshare.com/files/3195389", "md5": "ad1ebd51ee7f5b3a6e32e974e5d54012"},
+      {"name": "uncharacterized.txt", "url": "https://ndownloader.figshare.com/files/3195404", "md5": "a361887bacb427b8a0ce7903d92a53b4"}
+    ]
+  },
+  "model": {"hidden_channels": 64, "num_interactions": 3, "num_gaussians": 32, "cutoff": 5.0, "head_hidden": [64, 32], "bond_classes": 5},
+  "upstream": {
+    "variants": ["single_task", "multi_task"], "seeds": [1, 2, 3, 4, 5],
+    "epochs": 100, "batch_size": 128, "learning_rate": 0.001, "weight_decay": 0.00001,
+    "auxiliary_weight": 1.0, "charge_weight": 1.0, "bond_weight": 1.0,
+    "selection_mode": "min", "early_stopping_patience": 20
+  },
+  "refiner": {
+    "seeds": [1, 2, 3, 4, 5], "epochs": 300, "batch_size": 128,
+    "learning_rate": 0.001, "weight_decay": 0.0005,
+    "hidden": [64, 32], "set_hidden": 64, "set_layers": 2, "dropout": 0.2,
+    "set_epochs": 300, "set_learning_rate": 0.0003, "clip_grad": 1.0,
+    "selection_mode": "min", "early_stopping_patience": 10,
+    "recipes": ["R0", "R1", "R2", "R3", "R4", "R4-shuffle"]
+  }
+}

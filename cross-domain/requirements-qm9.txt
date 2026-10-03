@@ -1,0 +1,2 @@
+# Add to the cloned gn2_study_cross environment; torch/numpy are inherited.
+rdkit==2025.9.3

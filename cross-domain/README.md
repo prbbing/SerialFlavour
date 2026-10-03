@@ -2,7 +2,7 @@
 
 本目录用于在 jet tagging 之外的领域复现 SerialFlavour 的 frozen post-refinement 方法，检验多任务上游冻结后，辅助预测或局部结构是否能改善主任务读出。研究背景和候选数据集见 `../docs/related_work.md`，工作约定见 `../AGENTS.md`。
 
-当前仅建立目录结构，尚无可运行的数据集实现。候选数据集、模型和指标须随具体实验确定。
+QM9 已实现完整闭环（`data/`、`model/`、`training/`、`refine/`、`evaluate/`、`analysis/` 各一个 `qm9.py`）。实验设计与运行（含集群单元调度）见 `../docs/qm9_experiment_zh.md`，本地结果见 `../docs/qm9_results_zh.md`，集群操作速查见 `../docs/cluster_handoff_qm9_full_zh.md`。配置：`config/qm9_gap_charge_bond.json`（本地 smoke）与 `config/qm9_gap_charge_bond_full.json`（集群 100k）。rMD17 路线延后。其他候选数据集的模型和指标仍须随具体实验确定。
 
 ## 目录职责
 
@@ -38,3 +38,9 @@ cross-domain/
 新领域的方法迁移、数据处理、训练、配置和分析代码均集中于本目录。外部 `src/`、`scripts/`、`configs/` 中的 Jet tagging 实现原则上保持不变，仅供数据处理、训练与评估 protocol 参考；确需修改时，先说明原因和范围并取得用户确认。`../docs/` 继续保存调研与研究记录。
 
 实验输出和可写缓存须按数据集与实验隔离。记录训练、验证、测试及预训练暴露边界，不将探索结果或单一领域收益表述为普遍机制。
+
+## 本地数据与运行规模
+
+本地测试数据可存放在 `D:\hep_analysis\gn2_study\dataset_ex`，按数据集与实验隔离，具体路径写入配置；代码仍保留在本 worktree 的 `cross-domain/` 中。
+
+原则上本地测试尽量使用小规模数据，验证数据处理、训练与评估流程后，再在 GPU 集群上运行正式实验。未经用户批准，不在本地下载、复制或生成超过 5GB 的单个数据文件；限制按单个文件计算。若所需本地测试文件超过该大小，须在保存前说明预计大小、必要性及可行的小规模替代方案，并请示用户，获得明确批准后方可继续相关操作。

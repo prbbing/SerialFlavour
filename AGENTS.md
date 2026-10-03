@@ -16,7 +16,7 @@
 - `cross-domain/refine/`：各数据集的冻结特征组织与下游读出。
 - `cross-domain/analysis/`：各数据集的结果汇总、对照分析与绘图。
 - `cross-domain/results/<dataset>/<experiment>/`：隔离保存运行产物。
-- 外部 `src/`、`scripts/`、`configs/` 为现有 Jet tagging 实现，仅作 protocol 参考；当前 cross-domain 只有目录骨架，尚无可运行的数据集实现。
+- 外部 `src/`、`scripts/`、`configs/` 为现有 Jet tagging 实现，仅作 protocol 参考；当前 cross-domain 已实现 QM9 完整闭环（设计见 `docs/qm9_experiment_zh.md`，本地结果见 `docs/qm9_results_zh.md`），其他候选数据集尚无实现。
 
 ## 研究与实现原则
 
@@ -35,3 +35,9 @@
 新增方法迁移、数据集测试、配置与结果分析实现集中于 `cross-domain/`，调研记录继续放在 `docs/`。原则上不修改外部 Jet tagging 代码；确需修改时先说明原因与范围并取得用户确认。大型数据、缓存、权重和预测不纳入 Git，产物写入前按需配置忽略规则。
 
 只在本 worktree 推进 cross 路线，保留用户文档和无关修改；不自行更换目录、分支、候选领域或同步其他路线。共享输入可只读复用，输出及可写缓存按领域/实验隔离并核验身份。提交、推送、跨 worktree/SSH 同步须有用户授权；远程操作先确认目标与范围。每次报告说明改动、验证证据与尚未验证部分。
+
+## 本地数据与运行规模
+
+本地测试数据可存放在 `D:\hep_analysis\gn2_study\dataset_ex`，按数据集与实验隔离，具体路径写入配置；代码仍保留在本 worktree 的 `cross-domain/` 中。
+
+原则上本地测试尽量使用小规模数据，验证数据处理、训练与评估流程后，再在 GPU 集群上运行正式实验。未经用户批准，不在本地下载、复制或生成超过 5GB 的单个数据文件；限制按单个文件计算。若所需本地测试文件超过该大小，须在保存前说明预计大小、必要性及可行的小规模替代方案，并请示用户，获得明确批准后方可继续相关操作。
