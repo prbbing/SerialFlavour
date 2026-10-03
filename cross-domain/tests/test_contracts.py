@@ -12,7 +12,7 @@ import pytest
 import torch
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "src"))
 
 from analysis.qm9 import analyze
 from data.qm9 import (BOND_CLASSES, allocate_splits, array_hash, collate_molecules, dense_pairs, distance_edges,

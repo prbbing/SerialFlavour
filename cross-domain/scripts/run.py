@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 
 DOMAIN_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(DOMAIN_ROOT))
+sys.path.insert(0, str(DOMAIN_ROOT / "src"))
 
 from pipeline.context import load_context
 from pipeline.runtime import configure

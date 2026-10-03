@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 DOMAIN_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(DOMAIN_ROOT))
+sys.path.insert(0, str(DOMAIN_ROOT / "src"))
 
 from pipeline.context import load_context
 
@@ -65,7 +65,7 @@ def main():
     args = parser.parse_args()
 
     context = load_context(args.config, DOMAIN_ROOT)
-    log_root = context.resolve(context.config.get("log_root", "logs"))
+    log_root = context.resolve(context.config.get("log_root", "cross-domain/logs"))
     units_dir = log_dir(context, log_root)
     config = str(Path(args.config).resolve())
     scheduler_log = units_dir / "scheduler.log"

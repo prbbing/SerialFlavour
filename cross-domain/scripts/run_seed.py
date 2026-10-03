@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 DOMAIN_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(DOMAIN_ROOT))
+sys.path.insert(0, str(DOMAIN_ROOT / "src"))
 
 
 def main():
@@ -30,7 +30,7 @@ def main():
 
     from pipeline.context import load_context
     from pipeline.io import write_json
-    from pipeline.run_unit import execute
+    from pipeline.worker import execute
     from pipeline.runtime import configure
     from pipeline.units import unit_filters
 
@@ -57,7 +57,7 @@ def main():
     for recipe in recipes:
         for downstream_seed in context.config["refiner"]["seeds"]:
             ok &= run(f"refine:{args.variant}:{args.seed}:{recipe}:{downstream_seed}")
-    log_root = context.resolve(context.config.get("log_root", "logs")) / context.config["dataset"] / context.config["experiment"]
+    log_root = context.resolve(context.config.get("log_root", "cross-domain/logs")) / context.config["dataset"] / context.config["experiment"]
     marker = log_root / "seeds" / f"{args.variant}__seed{args.seed}.json"
     write_json(marker, {"variant": args.variant, "seed": args.seed, "status": "complete" if ok else "failed",
                         "seconds": time.perf_counter() - started,

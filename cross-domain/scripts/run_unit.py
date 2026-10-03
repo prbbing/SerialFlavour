@@ -1,7 +1,7 @@
 """Execute one work unit (dataset-agnostic) without touching global stage state.
 
 Usage:
-    python cross-domain/pipeline/run_unit.py --config <config> --unit <unit-id>
+    python cross-domain/scripts/run_unit.py --config <config> --unit <unit-id>
 
 Each unit writes a marker JSON under ``<log_root>/<dataset>/<experiment>/units/``
 with status, timings, and artifact checksums. Filters derived from the unit id
@@ -15,38 +15,13 @@ import time
 from pathlib import Path
 
 DOMAIN_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(DOMAIN_ROOT))
+sys.path.insert(0, str(DOMAIN_ROOT / "src"))
 
 from pipeline.context import load_context
 from pipeline.io import artifact_record, write_json
 from pipeline.runtime import configure
-from pipeline.units import unit_filters, unit_kind
-
-
-def marker_path(context, unit):
-    log_root = context.resolve(context.config.get("log_root", "logs"))
-    safe = unit.replace(":", "__")
-    return log_root / context.config["dataset"] / context.config["experiment"] / "units" / f"{safe}.json"
-
-
-def execute(context, unit):
-    kind = unit_kind(unit)
-    if kind == "prepare":
-        artifacts = list(context.module("data").download(context))
-        artifacts.extend(context.module("data").prepare(context))
-    elif kind == "upstream":
-        artifacts = context.module("training").train(context)
-    elif kind == "cache":
-        artifacts = context.module("refine").cache(context)
-    elif kind == "refine":
-        artifacts = context.module("refine").train(context)
-    elif kind == "evaluate":
-        artifacts = context.module("evaluate").evaluate(context)
-    elif kind == "analyze":
-        artifacts = context.module("analysis").analyze(context)
-    else:
-        raise ValueError(f"unknown unit: {unit}")
-    return artifacts
+from pipeline.units import unit_filters
+from pipeline.worker import execute, marker_path
 
 
 def main():

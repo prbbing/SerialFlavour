@@ -1,6 +1,6 @@
 # QM9 跨领域实验：设计与运行
 
-本文是 QM9 跨领域实验的权威说明，合并了原「研究计划」「任务设计」「集群运行」三份文档中不重复的部分。研究背景与文献见 `../related_work.md`（不改动），本地结果见 `qm9_results_zh.md`，集群操作速查见 `cluster_handoff_qm9_full_zh.md`。
+本文是 QM9 跨领域实验的权威说明，合并了原「研究计划」「任务设计」「集群运行」三份文档中不重复的部分。研究背景与文献见 `../related_work.md`（不改动），本地结果见 `qm9_smoke_test_results_zh.md`，集群操作速查见 `cluster_handoff_qm9_full_zh.md`。
 
 ## 0. 2026-10-03 实现修正与运行入口
 
@@ -111,8 +111,8 @@ bond 头:   [h_i+h_j, |h_i-h_j|, g]     → 5 logits （逐对，近似 pair）
 
 `cross-domain/`：
 
-- 通用 pipeline（无 QM9 判断）：`pipeline/context.py`、`io.py`、`runtime.py`、`fit.py`、`readout.py`、`metrics.py`、`stages.py`、`units.py`、`run.py`、`run_unit.py`、`run_seed.py`、`run_pool.py`。
-- QM9 领域模块：`data/qm9.py`、`model/qm9.py`、`training/qm9.py`、`refine/qm9.py`、`evaluate/qm9.py`、`analysis/qm9.py`。
+- 通用 pipeline（无 QM9 判断）：`src/pipeline/context.py`、`io.py`、`runtime.py`、`fit.py`、`readout.py`、`metrics.py`、`stages.py`、`units.py`；命令入口：`scripts/run.py`、`scripts/run_unit.py`、`scripts/run_seed.py`、`scripts/run_pool.py`。
+- QM9 领域模块：`src/data/qm9.py`、`src/model/qm9.py`、`src/training/qm9.py`、`src/refine/qm9.py`、`src/evaluate/qm9.py`、`src/analysis/qm9.py`。
 - 配置：`config/qm9_gap_charge_bond_full.json`（集群）、`config/qm9_gap_charge_bond.json`（本地 smoke）。
 - 测试：`tests/test_contracts.py`（14 项）。
 - 启动器：`scripts/run_qm9_full.sh`。
@@ -128,7 +128,7 @@ source /home/yuyang/miniconda3/etc/profile.d/conda.sh
 conda activate gn2_study_cross
 cd /mnt/d/hep_analysis/gn2_study/SerialFlavour-cross
 python -m pytest cross-domain/tests -q
-python cross-domain/pipeline/run.py --config cross-domain/config/qm9_gap_charge_bond.json --stage all
+python cross-domain/scripts/run.py --config cross-domain/config/qm9_gap_charge_bond.json --stage all
 ```
 
 `run.py` + `stages.py`：顺序执行 download/prepare/train/cache/refine/evaluate/analyze，用全局 `stage_state.json` 记录完成与产物 SHA256，适合本地单进程 smoke。
@@ -137,10 +137,10 @@ python cross-domain/pipeline/run.py --config cross-domain/config/qm9_gap_charge_
 
 不使用 SLURM。通用单元调度层：
 
-- `pipeline/units.py`：枚举单元 `prepare`、`upstream:<variant>:<seed>`、`cache:<variant>:<seed>`、`refine:<variant>:<us>:<recipe>:<ds>`、`evaluate`、`analyze`；全量配置共 223 个（single_task 只含 R0/R3）。
-- `pipeline/run_unit.py --config C --unit U`：执行单单元，写 `logs/<dataset>/<experiment>/units/<unit>.json`（状态 + 产物 SHA256），**不写 stage_state**，可并发；过滤条件不影响 `context.identity`。
-- `pipeline/run_seed.py --config C --variant V --seed S --gpu N`：一个 `(variant, seed)` 全生命周期（上游 → 缓存 → 全部 `recipe × downstream_seed`），绑卡，已完成项跳过，成功后写 seed marker。
-- `pipeline/run_pool.py --config C --gpus "0 1 2 3"`：先 `prepare`（有 marker 跳过），再把 seed 派发到空闲 GPU，最后 `evaluate`、`analyze`；失败 seed 记录后继续，结束非零退出。
+- `src/pipeline/units.py`：枚举单元 `prepare`、`upstream:<variant>:<seed>`、`cache:<variant>:<seed>`、`refine:<variant>:<us>:<recipe>:<ds>`、`evaluate`、`analyze`；全量配置共 223 个（single_task 只含 R0/R3）。
+- `scripts/run_unit.py --config C --unit U`：执行单单元，写 `cross-domain/logs/<dataset>/<experiment>/units/<unit>.json`（状态 + 产物 SHA256），**不写 stage_state**，可并发；过滤条件不影响 `context.identity`。
+- `scripts/run_seed.py --config C --variant V --seed S --gpu N`：一个 `(variant, seed)` 全生命周期（上游 → 缓存 → 全部 `recipe × downstream_seed`），绑卡，已完成项跳过，成功后写 seed marker。
+- `scripts/run_pool.py --config C --gpus "0 1 2 3"`：先 `prepare`（有 marker 跳过），再把 seed 派发到空闲 GPU，最后 `evaluate`、`analyze`；失败 seed 记录后继续，结束非零退出。
 - `scripts/run_qm9_full.sh`：入口，支持 `CONFIG/GPU_POOL/RETRIES/PYTHON/CONDA_ENV`。
 
 ```mermaid
@@ -154,7 +154,7 @@ flowchart LR
 
 `config/qm9_gap_charge_bond_full.json` 关键项：
 
-- `data_root`（集群需改）、`output_root`（默认 `cross-domain/results`）、`log_root`（默认 `logs`）。
+- `data_root`（集群需改）、`output_root`（默认 `cross-domain/results`）、`log_root`（默认 `cross-domain/logs`）。
 - `tasks`：`main gap`、`auxiliary []`、`local [charge, bond]`。
 - `data`：`shared_validation true`、`validation_size 10000`、`candidate_multiplier 2`。
 
@@ -184,4 +184,4 @@ flowchart LR
 - K. T. Schütt et al., J. Chem. Phys. 148, 241722 (2018), arXiv:1712.06113。
 - R. Ramakrishnan et al., Sci. Data 1, 140022 (2014)（QM9 格式/单位）。
 - RDKit `rdDetermineBonds`（xyz2mol）。
-- 项目内：`related_work.md`、`qm9_results_zh.md`、`cluster_handoff_qm9_full_zh.md`、`../cross-domain/PIPELINE.md`。
+- 项目内：`../related_work.md`、`qm9_smoke_test_results_zh.md`、`cluster_handoff_qm9_full_zh.md`、`../PIPELINE.md`。

@@ -3,24 +3,27 @@
 ## 目的与范围
 
 本 worktree 对应 `feat/cross-domain`，在 jet tagging 之外的领域检验 SerialFlavour 的 frozen post-refinement 思路：多任务训练后冻结上游，在独立数据上仅用主任务监督训练读出，比较 embedding-only 与辅助预测/局部结构读出的增量。
-这里的跨领域首先指在不同领域复现方法，不默认指跨领域迁移同一个 jet 模型。先读 `docs/related_work.md` 和 `README.md`；文献与候选数据集建议不等于本项目实测结果，也不等于已选定实施方案。
+这里的跨领域首先指在不同领域复现方法，不默认指跨领域迁移同一个 jet 模型。先读 `cross-domain/docs/related_work.md` 和 `README.md`；文献与候选数据集建议不等于本项目实测结果，也不等于已选定实施方案。
 
 ## 项目结构
 
-- `docs/`：相关工作、候选领域/数据集、协议设计与研究记录。
+- `cross-domain/docs/`：相关工作、候选领域/数据集、协议设计与研究记录。
 - `cross-domain/README.md`：本路线目录职责与实验流程；开始实现前阅读。
-- `cross-domain/pipeline/`：通用执行脚本，组织数据准备、上游训练、冻结缓存、下游训练与评估。
+- `cross-domain/scripts/`：命令入口与启动器。
+- `cross-domain/src/pipeline/`：通用模块，组织数据准备、上游训练、冻结缓存、下游训练与评估。
 - `cross-domain/config/`：各数据集的实验配置，只描述参数，不承担数据处理逻辑。
-- `cross-domain/data/`：数据读取、标签构造、划分与预处理代码；原始数据和缓存路径由配置指定。
-- `cross-domain/model/`：各数据集的上游模型与主/辅助任务头。
-- `cross-domain/refine/`：各数据集的冻结特征组织与下游读出。
-- `cross-domain/analysis/`：各数据集的结果汇总、对照分析与绘图。
+- `cross-domain/src/data/`：数据读取、标签构造、划分与预处理代码；原始数据和缓存路径由配置指定。
+- `cross-domain/src/model/`：各数据集的上游模型与主/辅助任务头。
+- `cross-domain/src/training/`：各数据集的上游训练。
+- `cross-domain/src/evaluate/`：独立测试评估。
+- `cross-domain/src/refine/`：各数据集的冻结特征组织与下游读出。
+- `cross-domain/src/analysis/`：各数据集的结果汇总、对照分析与绘图。
 - `cross-domain/results/<dataset>/<experiment>/`：隔离保存运行产物。
-- 外部 `src/`、`scripts/`、`configs/` 为现有 Jet tagging 实现，仅作 protocol 参考；当前 cross-domain 已实现 QM9 完整闭环（设计见 `docs/qm9_experiment_zh.md`，本地结果见 `docs/qm9_results_zh.md`），其他候选数据集尚无实现。
+- 外部 `src/`、`scripts/`、`configs/` 为现有 Jet tagging 实现，仅作 protocol 参考；当前 cross-domain 已实现 QM9 完整闭环（设计见 `cross-domain/docs/qm9/qm9_experiment_zh.md`，本地结果见 `cross-domain/docs/qm9/qm9_smoke_test_results_zh.md`），其他候选数据集尚无实现。
 
 ## 研究与实现原则
 
-- 初期 `data/`、`model/`、`refine/`、`analysis/` 各按数据集使用一个文件，不增加额外 `src/` 层；pipeline 管流程，数据集模块管差异。先完成一个数据集的最小闭环，再根据实际重复提取共用部分。
+- 初期 `data/`、`model/`、`refine/`、`analysis/` 各按数据集使用一个文件，模块统一放入 `cross-domain/src/`，命令入口放入 `cross-domain/scripts/`；src/pipeline 管流程，数据集模块管差异。先完成一个数据集的最小闭环，再根据实际重复提取共用部分。
 
 - 先明确领域、主/辅助任务、标签来源、数据许可、划分单位和小规模预算，再实现最小闭环；MASSIVE、PartImageNet、QM8/QM7-X 等只是候选，不自行扩大到全部领域。
 - 保持核心协议可比：A 训练并选择多任务上游，冻结全部上游参数，B 仅用主任务标签训练下游，独立测试集用于最终评估。检查预训练暴露及辅助标签由主标签直接派生的捷径。
@@ -32,7 +35,7 @@
 
 ## 工作边界
 
-新增方法迁移、数据集测试、配置与结果分析实现集中于 `cross-domain/`，调研记录继续放在 `docs/`。原则上不修改外部 Jet tagging 代码；确需修改时先说明原因与范围并取得用户确认。大型数据、缓存、权重和预测不纳入 Git，产物写入前按需配置忽略规则。
+新增方法迁移、数据集测试、配置与结果分析实现集中于 `cross-domain/`，调研记录继续放在 `cross-domain/docs/`。原则上不修改外部 Jet tagging 代码；确需修改时先说明原因与范围并取得用户确认。大型数据、缓存、权重和预测不纳入 Git，产物写入前按需配置忽略规则。
 
 只在本 worktree 推进 cross 路线，保留用户文档和无关修改；不自行更换目录、分支、候选领域或同步其他路线。共享输入可只读复用，输出及可写缓存按领域/实验隔离并核验身份。提交、推送、跨 worktree/SSH 同步须有用户授权；远程操作先确认目标与范围。每次报告说明改动、验证证据与尚未验证部分。
 

@@ -1,6 +1,6 @@
 {
   "dataset": "qm9",
-  "experiment": "qm9_gap_charge_bond_refine_v2",
+  "experiment": "qm9_gap_charge_bond_refine_v2_50k",
   "data_root": "/mnt/d/hep_analysis/gn2_study/dataset_ex/qm9",
   "output_root": "cross-domain/results",
   "log_root": "cross-domain/logs",
@@ -25,11 +25,11 @@
     "max_file_bytes": 5000000000,
     "shared_validation": false,
     "sizes": {
-      "a_train": 56000,
-      "a_val": 5000,
-      "b_train": 14000,
-      "b_val": 5000,
-      "y_test": 20000
+      "a_train": 28000,
+      "a_val": 2500,
+      "b_train": 7000,
+      "b_val": 2500,
+      "y_test": 10000
     },
     "sources": [
       {

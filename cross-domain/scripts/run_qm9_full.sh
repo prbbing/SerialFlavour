@@ -44,7 +44,7 @@ fi
 echo "launcher: config=$config gpus='$gpu_pool' retries=$retries python=$python_bin"
 
 # shellcheck disable=SC2086
-"$python_bin" cross-domain/pipeline/run_pool.py \
+"$python_bin" cross-domain/scripts/run_pool.py \
     --config "$config" \
     --gpus $gpu_pool \
     --retries "$retries" \

@@ -17,9 +17,9 @@
 
 ```bash
 cd <仓库根>
-python cross-domain/pipeline/run_unit.py --config cross-domain/config/qm9_gap_charge_bond_full.json --unit prepare
+python cross-domain/scripts/run_unit.py --config cross-domain/config/qm9_gap_charge_bond_full.json --unit prepare
 # 检查 results/qm9/qm9_gap_charge_bond_full/data/preparation_manifest.json 与 logs/.../units/prepare.json
-python cross-domain/pipeline/run_seed.py --config cross-domain/config/qm9_gap_charge_bond_full.json --variant multi_task --seed 1 --gpu 0
+python cross-domain/scripts/run_seed.py --config cross-domain/config/qm9_gap_charge_bond_full.json --variant multi_task --seed 1 --gpu 0
 # 检查 refiners/ 与 logs/.../seeds/multi_task__seed1.json
 ```
 
@@ -34,7 +34,7 @@ CONDA_ENV=gn2_study_cross GPU_POOL="0 1 2 3" RETRIES=1 bash cross-domain/scripts
 或：
 
 ```bash
-python cross-domain/pipeline/run_pool.py \
+python cross-domain/scripts/run_pool.py \
   --config cross-domain/config/qm9_gap_charge_bond_full.json \
   --gpus 0 1 2 3 --retries 1
 ```
@@ -51,13 +51,13 @@ python cross-domain/pipeline/run_pool.py \
 
 `results/qm9/qm9_gap_charge_bond_full/`：
 
-- `data/preparation_manifest.json`：来源、许可、SHA256、划分计数、类别计数、无效候选。
+- `src/data/preparation_manifest.json`：来源、许可、SHA256、划分计数、类别计数、无效候选。
 - `upstream/<variant>/seed<k>/`、`cache/<variant>/seed<k>/`（冻结特征，不缓存辅助真值）。
 - `refiners/<variant>/seed<u>/<recipe>/seed<d>/`。
 - `evaluation/{metrics.json,metrics.csv,auxiliary_metrics.csv,*_predictions.csv}`。
-- `analysis/{summary.json,summary.md,methods.csv,paired_deltas.csv}`。
+- `src/analysis/{summary.json,summary.md,methods.csv,paired_deltas.csv}`。
 
-判读方式（方法命名、对比含义、指标方向）见 `qm9_experiment_zh.md` 与 `qm9_results_zh.md`。
+判读方式（方法命名、对比含义、指标方向）见 `qm9_experiment_zh.md` 与 `qm9_smoke_test_results_zh.md`。
 
 ## 6. 故障处理
 

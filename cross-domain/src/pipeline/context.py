@@ -38,10 +38,15 @@ class Context:
         return json_hash(self.config)
 
     @property
+    def source_root(self):
+        return self.domain_root / "src"
+
+    @property
     def code_hash(self):
-        files = list((self.domain_root / "pipeline").glob("*.py"))
+        files = list((self.source_root / "pipeline").glob("*.py"))
+        files.extend((self.domain_root / "scripts").glob("*.py"))
         for kind in ("data", "model", "training", "refine", "evaluate", "analysis"):
-            files.extend([self.domain_root / kind / "__init__.py", self.domain_root / kind / f"{self.config['dataset']}.py"])
+            files.extend([self.source_root / kind / "__init__.py", self.source_root / kind / f"{self.config['dataset']}.py"])
         return json_hash({str(path.relative_to(self.domain_root)): sha256_file(path) for path in sorted(files)})
 
     @property

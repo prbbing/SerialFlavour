@@ -3,7 +3,7 @@
   "experiment": "qm9_gap_charge_bond_full",
   "data_root": "/mnt/d/hep_analysis/gn2_study/dataset_ex/qm9",
   "output_root": "cross-domain/results",
-  "log_root": "logs",
+  "log_root": "cross-domain/logs",
   "runtime": {"device": "cuda", "threads": 8, "num_workers": 4, "deterministic": true},
   "tasks": {"main": "gap", "auxiliary": [], "local": ["charge", "bond"]},
   "data": {

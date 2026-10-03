@@ -129,7 +129,7 @@ single_task 只运行 R0/R3；multi_task 运行全部六个 recipes。R0/R2 参�
 | MT-R4-shuffle | 0.135384 | 0.003244 | 5 |
 | MT-R1 | 0.340686 | 0.010030 | 5 |
 
-> 参见 `analysis/methods.csv`、`analysis/summary.md`。
+> 参见 `src/analysis/methods.csv`、`src/analysis/summary.md`。
 
 ---
 
@@ -245,12 +245,12 @@ recall、F1、TP/FP/FN/TN，以及真实键上的五类混淆矩阵。旧 argmax
 根目录：`/data/yuyang/SerialFlavour/results/qm9_test/qm9/qm9_gap_charge_bond_full/`
 
 - `run_manifest.json`：环境与 identity。
-- `data/preparation_manifest.json`：数据来源、许可、SHA256、划分、类别计数、无效候选。
+- `src/data/preparation_manifest.json`：数据来源、许可、SHA256、划分、类别计数、无效候选。
 - `upstream/<variant>/seed<k>/{best.pt,history.json,csv,training_manifest.json}`。
 - `cache/<variant>/seed<k>/{b_train,b_val,y_test}.{npz,json}`（冻结特征）。
 - `refiners/<variant>/seed<u>/<recipe>/seed<d>/...`。
 - `evaluation/metrics.{json,csv}`、`auxiliary_metrics.csv`、`*_predictions.csv`。
-- `analysis/summary.{json,md}`、`methods.csv`、`paired_deltas.csv`。
+- `src/analysis/summary.{json,md}`、`methods.csv`、`paired_deltas.csv`。
 
 日志：`/home/yuyang/SerialFlavour/logs/qm9/qm9_gap_charge_bond_full/`（保持默认）。
 
@@ -266,16 +266,16 @@ cd /home/yuyang/SerialFlavour
 PY=/data/yuyang/miniconda3/envs/gn2_study_cross/bin/python
 
 # 1) 数据准备（已预置 raw 文件；download 仅做 MD5 校验）
-$PY cross-domain/pipeline/run_unit.py --config cross-domain/config/qm9_test.json --unit prepare
+$PY cross-domain/scripts/run_unit.py --config cross-domain/config/qm9_test.json --unit prepare
 
 # 2) 10 个 seed（每个 seed 独占一卡）；或直接用 pool：
-$PY cross-domain/pipeline/run_pool.py \
+$PY cross-domain/scripts/run_pool.py \
   --config cross-domain/config/qm9_test.json --gpus 0 1 2 --retries 1 \
   --python $PY
 
 # 3) 评估与聚合
-$PY cross-domain/pipeline/run_unit.py --config cross-domain/config/qm9_test.json --unit evaluate
-$PY cross-domain/pipeline/run_unit.py --config cross-domain/config/qm9_test.json --unit analyze
+$PY cross-domain/scripts/run_unit.py --config cross-domain/config/qm9_test.json --unit evaluate
+$PY cross-domain/scripts/run_unit.py --config cross-domain/config/qm9_test.json --unit analyze
 ```
 
 > 官方便捷入口：`PYTHON=$PY CONFIG=cross-domain/config/qm9_test.json GPU_POOL="0 1 2" \
@@ -322,7 +322,7 @@ epoch 0 验证选择、冻结 checkpoint 不变、键级敏感性、pair 对称�
 
 ```bash
 # 在确认集群路径后，使用新的实验配置；当前未执行该正式运行。
-python cross-domain/pipeline/run_pool.py \
+python cross-domain/scripts/run_pool.py \
   --config cross-domain/config/qm9_gap_charge_bond_refine_v2.json --gpus 0 1 2
 ```
 
