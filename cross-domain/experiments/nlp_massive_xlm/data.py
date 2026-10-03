@@ -25,6 +25,27 @@ PINNED_FILES = {
     'tokenizer/config.json': 'd66ed8cd4f2a93b358c245e50736fa389ed4f35c0bae7aad0b32abb20c62b579',
 }
 SPLITS = ('a_train', 'a_val', 'b_train', 'b_val', 'y_test')
+BASE_WEIGHTS_SHA256 = '6fd4797bc397c3b8b55d6bb5740366b57e6a3ce91c04c77f22aafc0c128e6feb'
+BASE_WEIGHTS_BYTES = 1115567652
+BASE_CONFIG_SHA256 = PINNED_FILES['tokenizer/config.json']
+
+def pretrained_directory(context):
+    return context.data_dir / 'pretrained' / 'xlm_roberta_base'
+
+def pretrained_enabled(context):
+    return context.config['model'].get('initialization', 'random') == 'pretrained_base'
+
+def pretrained_assets(context, allow_download=False):
+    directory = pretrained_directory(context)
+    paths = []
+    for name, expected, maximum in [('config.json', BASE_CONFIG_SHA256, 100_000),
+                                    ('model.safetensors', BASE_WEIGHTS_SHA256, 2_000_000_000)]:
+        path = directory / name
+        if not allow_download and not path.is_file():
+            raise FileNotFoundError(f'missing offline base asset {path}; use scripts/prepare_assets.py on a network host')
+        paths.append(fetch(f'https://huggingface.co/FacebookAI/xlm-roberta-base/resolve/{TOKENIZER_REVISION}/{name}',
+                           path, expected, max_bytes=maximum))
+    return paths
 
 def processed_dir(context):
     return context.data_dir / 'processed' / context.config['experiment']
@@ -57,6 +78,8 @@ def download(context):
     for name, expected in PINNED_FILES.items():
         url = ARCHIVE_URL if name.endswith('tar.gz') else (
             f'https://huggingface.co/FacebookAI/xlm-roberta-base/resolve/{TOKENIZER_REVISION}/{name.split("/")[-1]}')
+        if not context.config['data'].get('allow_download', True) and not (raw / name).is_file():
+            raise FileNotFoundError(f'missing offline raw input {raw / name}; use scripts/prepare_assets.py first')
         path = fetch(url, raw / name, expected)
         artifacts.append(path)
         records[name] = {'url': url, 'sha256': expected, 'bytes': path.stat().st_size}
@@ -71,13 +94,21 @@ def download(context):
     path.write_bytes(content)
     artifacts.append(path)
     records['en-US.jsonl'] = {'archive_member': members[0].name, 'sha256': sha256_file(path), 'bytes': len(content)}
+    if pretrained_enabled(context):
+        artifacts.extend(pretrained_assets(context, allow_download=context.config['data'].get('allow_download', False)))
+        records['pretrained/model.safetensors'] = {
+            'model_id': 'FacebookAI/xlm-roberta-base', 'revision': TOKENIZER_REVISION,
+            'sha256': BASE_WEIGHTS_SHA256, 'bytes': BASE_WEIGHTS_BYTES,
+            'initialization': 'public base masked-language-model encoder only; not MASSIVE fine-tuned'}
     artifacts.append(write_json(context.output_dir / 'download_manifest.json', {
         'dataset': 'MASSIVE 1.0', 'locale': 'en-US', 'data_license': 'CC-BY-4.0',
         'model_code_license': 'Apache-2.0', 'official_commit': OFFICIAL_COMMIT,
         'tokenizer_revision': TOKENIZER_REVISION, 'records': records,
         'official_model_sha256': sha256_file(context.experiment_root / 'official_xlmr.py'),
         'input_text': 'utt only; annot_utt is supervision only; no scenario or judgments as features',
-        'pretrained_encoder': False, 'pretraining_exposure': 'public pretrained tokenizer only; smoke encoder random',
+        'pretrained_encoder': pretrained_enabled(context),
+        'pretraining_exposure': ('public XLM-R base encoder and tokenizer; corpus overlap with B/Y not ruled out'
+                                if pretrained_enabled(context) else 'public pretrained tokenizer only; smoke encoder random'),
     }))
     return artifacts
 
@@ -146,6 +177,29 @@ def select_groups(groups, rows, budget, rng):
             raise ValueError(f'insufficient group-disjoint records for requested budget {budget}')
     return selected, [g for g in groups if tuple(g) not in used]
 
+def ratio_partition(groups, rows, fraction, rng):
+    if not 0 < fraction < 1:
+        raise ValueError('A fraction must lie strictly between zero and one')
+    strata = defaultdict(list)
+    for group in groups:
+        strata[min(rows[i]['intent'] for i in group)].append(group)
+    a, b = [], []
+    for label in sorted(strata):
+        values = strata[label]
+        rng.shuffle(values)
+        target = fraction * sum(len(g) for g in values)
+        selected = 0
+        for group in values:
+            # Fill toward per-intent target without splitting source/text groups.
+            if abs(selected + len(group) - target) <= abs(selected - target):
+                a.extend(group)
+                selected += len(group)
+            else:
+                b.extend(group)
+    if not a or not b:
+        raise ValueError('empty full-data A/B partition')
+    return a, b
+
 def split_records(rows, settings):
     groups = group_rows(rows)
     pools, removed = {'train': [], 'dev': [], 'test': []}, []
@@ -158,13 +212,24 @@ def split_records(rows, settings):
         removed.extend(i for i in group if i not in keep)
         pools[destination].append(keep)
     rng = random.Random(settings['split_seed'])
-    counts = settings['split_counts']
+    counts = settings.get('split_counts')
     splits = {}
-    splits['a_train'], remainder = select_groups(pools['train'], rows, counts['a_train'], rng)
-    splits['b_train'], _ = select_groups(remainder, rows, counts['b_train'], rng)
-    splits['a_val'], remainder = select_groups(pools['dev'], rows, counts['a_val'], rng)
-    splits['b_val'], _ = select_groups(remainder, rows, counts['b_val'], rng)
-    splits['y_test'], _ = select_groups(pools['test'], rows, counts['y_test'], rng)
+    if settings.get('split_mode', 'grouped_subset') == 'official_grouped_full':
+        if counts is not None:
+            raise ValueError('full split must not specify subset split_counts')
+        splits['a_train'], splits['b_train'] = ratio_partition(pools['train'], rows, settings['a_train_fraction'], rng)
+        splits['a_val'], splits['b_val'] = ratio_partition(pools['dev'], rows, settings['a_val_fraction'], rng)
+        splits['y_test'] = sorted(i for g in pools['test'] for i in g)
+        if len(splits['y_test']) != sum(r['partition'] == 'test' for r in rows):
+            raise AssertionError('full official test not preserved')
+    else:
+        if settings.get('split_mode', 'grouped_subset') != 'grouped_subset':
+            raise ValueError('unknown split_mode')
+        splits['a_train'], remainder = select_groups(pools['train'], rows, counts['a_train'], rng)
+        splits['b_train'], _ = select_groups(remainder, rows, counts['b_train'], rng)
+        splits['a_val'], remainder = select_groups(pools['dev'], rows, counts['a_val'], rng)
+        splits['b_val'], _ = select_groups(remainder, rows, counts['b_val'], rng)
+        splits['y_test'], _ = select_groups(pools['test'], rows, counts['y_test'], rng)
     group_id = {i: str(min(group)) for group in groups for i in group}
     assignments = {}
     for split, indices in splits.items():
@@ -178,7 +243,9 @@ def split_records(rows, settings):
              'conflicting_intent_groups': sum(len({rows[i]['intent'] for i in g}) > 1 for g in groups),
              'grouping': 'union of official source id and NFKC-casefold-whitespace text',
              'priority': 'test > dev > train', 'group_disjoint': True,
-             'split_seed': settings['split_seed'], 'requested_counts': counts}
+             'split_seed': settings['split_seed'], 'requested_counts': counts,
+             'split_mode': settings.get('split_mode', 'grouped_subset'),
+             'a_train_fraction': settings.get('a_train_fraction'), 'a_val_fraction': settings.get('a_val_fraction')}
     return splits, group_id, audit
 
 @lru_cache(maxsize=4)
@@ -241,7 +308,9 @@ def prepare(context):
         'identity': context.identity, 'records': records, 'audit': audit, 'max_length': length,
         'raw_sha256': sha256_file(raw / 'en-US.jsonl'), 'labels_sha256': sha256_file(schema),
         'tokenizer_revision': TOKENIZER_REVISION, 'tokenizer_sha256': PINNED_FILES['tokenizer/tokenizer.json'],
-        'scope': 'intent-stratified source/text-group-disjoint small en-US subset; selected test subset only',
+        'scope': ('all decontaminated official train/dev grouped into A/B; full official en-US test'
+                  if context.config['data'].get('split_mode') == 'official_grouped_full' else
+                  'intent-stratified source/text-group-disjoint small en-US subset; selected test subset only'),
     }))
     return artifacts
 

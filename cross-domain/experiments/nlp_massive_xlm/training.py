@@ -2,7 +2,7 @@
 import torch
 from torch.nn import functional as F
 
-from experiments.nlp_massive_xlm.data import make_loader, data_identity, OFFICIAL_COMMIT
+from experiments.nlp_massive_xlm.data import make_loader, data_identity, OFFICIAL_COMMIT, pretrained_enabled
 from experiments.nlp_massive_xlm.model import build
 from experiments.nlp_massive_xlm.evaluate import score
 from pipeline.fit import fit
@@ -46,15 +46,25 @@ def train(context):
             if context.filters.get('seed') not in (None, seed):
                 continue
             seed_all(seed)
-            model = build(context, variant)
+            model = build(context, variant, initialize=True)
             multi = variant == 'multi_task'
             metadata = {'identity': context.identity, 'data_identity': data_identity(context),
                         'variant': variant, 'seed': seed, 'official_commit': OFFICIAL_COMMIT,
-                        'architecture': 'unmodified author parallel heads + reduced XLMRobertaConfig',
-                        'model': context.config['model'], 'pretrained_encoder': False,
+                        'architecture': 'unmodified author parallel heads + XLMRobertaConfig',
+                        'model': context.config['model'], 'pretrained_encoder': pretrained_enabled(context),
+                        'pretrained_source': getattr(model, 'pretrained_metadata', None),
                         'training_split': 'a_train', 'selection_split': 'a_val', 'selection_metric': 'intent_accuracy',
                         'supervision': 'intent CE + first-subword slot CE (weight 1)' if multi else 'intent CE only; slot head frozen',
-                        'optimizer': 'shared fit AdamW, no warmup; smoke adaptation', 'auxiliary_truth_visible': multi}
+                        'optimizer': 'NLP AdamW with accumulation/linear warmup-decay' if settings.get('loop') == 'nlp_finetune' else 'shared fit AdamW, no warmup; smoke adaptation',
+                        'auxiliary_truth_visible': multi}
+            if settings.get('loop') == 'nlp_finetune':
+                from experiments.nlp_massive_xlm.finetune import fit as fit_nlp
+                artifacts.extend(fit_nlp(model,
+                    make_loader(context, 'a_train', seed, settings['batch_size'], True, auxiliary=multi),
+                    make_loader(context, 'a_val', seed, settings['batch_size']),
+                    lambda current, batch: upstream_loss(current, batch, multi),
+                    upstream_dir(context, variant, seed), settings, metadata, device))
+                continue
             artifacts.extend(fit(model,
                 make_loader(context, 'a_train', seed, settings['batch_size'], True, auxiliary=multi),
                 make_loader(context, 'a_val', seed, settings['batch_size']),

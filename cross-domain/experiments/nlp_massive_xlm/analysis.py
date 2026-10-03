@@ -27,6 +27,8 @@ def analyze(context):
         'identity': context.identity, 'summaries': summaries, 'paired_contrasts': contrasts,
         'native_contrasts': native_contrasts,
         'aggregation': 'average downstream seeds within upstream seed, sample SD ddof=1 over upstream means; null for n=1',
-        'scope': 'real-data CPU engineering smoke with random reduced XLM-R; no claim about pretrained XLM-R or statistical significance',
+        'scope': ('full en-US protocol with base pretrained XLM-R and nested seed aggregation'
+                  if context.config['model'].get('initialization') == 'pretrained_base' else
+                  'real-data CPU engineering smoke with random reduced XLM-R; no claim about pretrained XLM-R or statistical significance'),
         'auxiliary_information': 'deterministic frozen outputs, not new Shannon information relative to complete H',
     })]

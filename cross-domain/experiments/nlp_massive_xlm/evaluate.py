@@ -79,4 +79,5 @@ def evaluate(context):
                     rows.append({'variant': variant, 'upstream_seed': us, 'recipe': recipe, 'downstream_seed': ds, **value})
     return [write_json(context.output_dir / 'evaluation.json', {
         'identity': context.identity, 'split': 'y_test', 'ids': ids, 'selection': 'A_val/B_val only',
-        'scope': 'locked small subset of official test, not complete official test', 'results': rows})]
+        'scope': ('full official en-US test' if context.config['data'].get('split_mode') == 'official_grouped_full' else
+                  'locked small subset of official test, not complete official test'), 'results': rows})]

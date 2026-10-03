@@ -1,0 +1,77 @@
+{
+  "dataset": "nlp_massive_xlm",
+  "experiment": "xlmr_base_en_us_full_v1",
+  "data_root": "../dataset_ex/nlp_massive_xlm",
+  "output_root": "cross-domain/results",
+  "log_root": "cross-domain/logs",
+  "runtime": {
+    "device": "cuda",
+    "threads": 4,
+    "deterministic": true
+  },
+  "data": {
+    "split_mode": "official_grouped_full",
+    "split_seed": 20261003,
+    "a_train_fraction": 0.75,
+    "a_val_fraction": 0.5,
+    "max_length": 128,
+    "allow_download": false
+  },
+  "model": {
+    "initialization": "pretrained_base",
+    "hidden_size": 768,
+    "num_hidden_layers": 12,
+    "num_attention_heads": 12,
+    "intermediate_size": 3072,
+    "hidden_dropout_prob": 0.1,
+    "attention_probs_dropout_prob": 0.1,
+    "gradient_checkpointing": true,
+    "layer_norm_eps": 1e-05
+  },
+  "upstream": {
+    "loop": "nlp_finetune",
+    "variants": [
+      "single_task",
+      "multi_task"
+    ],
+    "seeds": [
+      17,
+      23,
+      41,
+      59,
+      73
+    ],
+    "epochs": 20,
+    "batch_size": 8,
+    "gradient_accumulation_steps": 4,
+    "learning_rate": 2e-05,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.1,
+    "selection_mode": "max",
+    "clip_grad": 1.0,
+    "early_stopping_patience": 5
+  },
+  "refiner": {
+    "recipes": [
+      "embedding",
+      "embedding_matched",
+      "aux_prediction"
+    ],
+    "seeds": [
+      29,
+      31,
+      43,
+      61,
+      79
+    ],
+    "epochs": 100,
+    "batch_size": 64,
+    "width": 32,
+    "learning_rate": 0.001,
+    "weight_decay": 0.01,
+    "selection_mode": "max",
+    "clip_grad": 1.0,
+    "early_stopping_patience": 15,
+    "include_initial_checkpoint": true
+  }
+}

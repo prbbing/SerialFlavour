@@ -1,5 +1,8 @@
 # MASSIVE＋官方 XLM-R：本地小规模方法测试
 
+
+> 后续接口更新（2026-10-03）：本文件是 `smoke_cpu_v1` 的历史证据。集群预训练/全量接口与入口已补充，见 [集群说明](cluster_agent_handoff_zh.md)，但尚未运行。更新源代码已改变指纹，当前 `config/smoke.json` 使用 `smoke_cpu_v2`，其结果尚未生成；下文计时、46 项测试与成绩仍仅指历史 v1，不代表当前集群接口已验证。
+
 日期：2026-10-03（Asia/Shanghai）。代码位于 `D:\hep_analysis\gn2_study\SerialFlavour-cross` 的 `feat/cross-domain` Worktree；专用目录为 `cross-domain/experiments/nlp_massive_xlm/`。本次真实数据 CPU 运行正常退出，`download → prepare → train → cache → refine → evaluate → analyze` 七阶段完成并通过产物 SHA256 复核。精确配置、划分、逐模型训练记录和指标见 [smoke_evidence.json](smoke_evidence.json)。
 
 **本次证明的是工程闭环，不是方法有效性。** 使用作者原版双头类，但将 XLM-R encoder 缩为 2 层、hidden size 64，从随机初始化训练；使用公共 XLM-R tokenizer。没有加载预训练 XLM-R Base 权重，也没有使用接触过完整 MASSIVE 的任务 checkpoint。一个上游 seed、一个下游 seed、560 条分区记录及低训练预算不能支持稳定增益或论文复现结论。

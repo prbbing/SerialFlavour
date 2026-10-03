@@ -1,0 +1,62 @@
+{
+  "date": "2026-10-03",
+  "identity": "e3ff0ff6304676c34dd12f4a1b8869292c8e63a936bbcbb68f247e8ce85a22fd",
+  "code_sha256": "3f62bda5c7894fce7786206d107b6cad6f53be6072ef08fa10ecb55df3f497f0",
+  "config_sha256": "3694e0ad280759c2be1f40a310e17c35ab474e1cbefbc94b3040e23273ce9a1c",
+  "python_ast_files": [
+    "experiments/nlp_massive_xlm/__init__.py",
+    "experiments/nlp_massive_xlm/analysis.py",
+    "experiments/nlp_massive_xlm/data.py",
+    "experiments/nlp_massive_xlm/evaluate.py",
+    "experiments/nlp_massive_xlm/finetune.py",
+    "experiments/nlp_massive_xlm/model.py",
+    "experiments/nlp_massive_xlm/official_xlmr.py",
+    "experiments/nlp_massive_xlm/refine.py",
+    "experiments/nlp_massive_xlm/scripts/prepare_assets.py",
+    "experiments/nlp_massive_xlm/scripts/run_cluster.py",
+    "experiments/nlp_massive_xlm/tests/test_massive_protocol.py",
+    "experiments/nlp_massive_xlm/training.py"
+  ],
+  "checks": [
+    "JSON configuration parse and budget contracts",
+    "official author source unchanged",
+    "148 distinct work units",
+    "direct CLI dry-run",
+    "Bash entry dry-run with explicit GPU IDs",
+    "Bash entry dry-run with GPU variables unset",
+    "GPU allocation overflow rejected",
+    "smoke config rejected by cluster entry",
+    "asset CLI --help only",
+    "Bash syntax"
+  ],
+  "unit_counts": {
+    "prepare": 1,
+    "upstream": 10,
+    "cache": 10,
+    "refine": 125,
+    "evaluate": 1,
+    "analyze": 1
+  },
+  "Y_evaluation_rows_expected": 135,
+  "effective_upstream_batch": 32,
+  "full_test_preservation": "source contract; full prepare not run",
+  "no_experiment_directories_created": true,
+  "directory_existence": {
+    "/mnt/d/hep_analysis/gn2_study/SerialFlavour-cross/cross-domain/results/nlp_massive_xlm/xlmr_base_en_us_full_v1": false,
+    "/mnt/d/hep_analysis/gn2_study/SerialFlavour-cross/cross-domain/logs/nlp_massive_xlm/xlmr_base_en_us_full_v1": false,
+    "/mnt/d/hep_analysis/gn2_study/dataset_ex/nlp_massive_xlm/processed/xlmr_base_en_us_full_v1": false
+  },
+  "not_run": [
+    "remote connection/synchronization",
+    "asset downloads",
+    "full-data prepare",
+    "pretrained Base load",
+    "fine-tuning",
+    "frozen cache creation",
+    "readout training",
+    "Y evaluation",
+    "CUDA/GPU scheduling",
+    "pytest"
+  ],
+  "scope": "static checks and read-only argument/queue enumeration only; not runtime validation"
+}

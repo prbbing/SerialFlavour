@@ -1,6 +1,6 @@
 {
   "dataset": "nlp_massive_xlm",
-  "experiment": "smoke_cpu_v1",
+  "experiment": "smoke_cpu_v2",
   "data_root": "/mnt/d/hep_analysis/gn2_study/dataset_ex/nlp_massive_xlm",
   "output_root": "cross-domain/results",
   "runtime": {
