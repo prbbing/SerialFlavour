@@ -38,7 +38,9 @@ class GraphSetReadout(nn.Module):
             in_dim += hidden
         self.node = _mlp(in_dim, [hidden], hidden, dropout=dropout)
         if use_edges:
-            self.messages = nn.ModuleList([_mlp(2 * hidden, [hidden], hidden, dropout=dropout) for _ in range(layers)])
+            # Keep four separate relation aggregates: single/double/triple/aromatic.
+            # All graph controls use this same architecture and parameter count.
+            self.messages = nn.ModuleList([_mlp(5 * hidden, [hidden], hidden, dropout=dropout) for _ in range(layers)])
         self.decoder = _mlp(hidden, decoder_hidden, 1, dropout=dropout)
 
     def forward(self, batch):
@@ -48,16 +50,18 @@ class GraphSetReadout(nn.Module):
         h = self.node(features)
         if self.use_edges:
             source, destination = batch["pair_index"]
-            weight = 1.0 - batch["bond_probs"][:, 0]
+            weights = batch["bond_probs"][:, 1:]
             reverse_source, reverse_destination = destination, source
             source = torch.cat([source, reverse_source])
             destination = torch.cat([destination, reverse_destination])
-            weight = torch.cat([weight, weight])
+            weights = torch.cat([weights, weights])
             for message in self.messages:
-                numerator = h.new_zeros(h.shape).index_add_(0, destination, h[source] * weight[:, None])
-                denominator = h.new_zeros((h.shape[0], 1)).index_add_(0, destination, weight[:, None])
-                aggregate = numerator / (denominator + 1e-6)
-                h = h + message(torch.cat([h, aggregate], dim=-1))
+                denominator = h.new_zeros((h.shape[0], 1)).index_add_(0, destination, weights.sum(dim=1, keepdim=True))
+                aggregates = []
+                for relation in range(4):
+                    numerator = h.new_zeros(h.shape).index_add_(0, destination, h[source] * weights[:, relation:relation + 1])
+                    aggregates.append(numerator / (denominator + 1e-6))
+                h = h + message(torch.cat([h, *aggregates], dim=-1))
         count = batch["target"].shape[0]
         pooled = h.new_zeros((count, h.shape[1])).index_add_(0, batch["batch"], h)
         return self.decoder(pooled)

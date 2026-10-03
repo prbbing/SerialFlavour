@@ -1,6 +1,21 @@
 # QM9 跨领域实验：设计与运行
 
-本文是 QM9 跨领域实验的权威说明，合并了原「研究计划」「任务设计」「集群运行」三份文档中不重复的部分。研究背景与文献见 `related_work.md`（不改动），本地结果见 `qm9_results_zh.md`，集群操作速查见 `cluster_handoff_qm9_full_zh.md`。
+本文是 QM9 跨领域实验的权威说明，合并了原「研究计划」「任务设计」「集群运行」三份文档中不重复的部分。研究背景与文献见 `../related_work.md`（不改动），本地结果见 `qm9_results_zh.md`，集群操作速查见 `cluster_handoff_qm9_full_zh.md`。
+
+## 0. 2026-10-03 实现修正与运行入口
+
+当前严谨对照配置为 `cross-domain/config/qm9_gap_charge_bond_refine_v2.json`，使用新实验名、
+独立 A-val/B-val、native 初始化 R0/R2 和同容量的图消融。各配方、精确划分、统计口径与
+历史结果边界见 [full 结果报告第 11 节](qm9_gap_charge_bond_full_results_zh.md#11-修正后的-post-refinement-协议尚无正式性能结果)。
+原 `qm9_gap_charge_bond_full.json` 保留为历史配置记录，不能用修改后的代码覆盖旧输出。
+下文 full 数量、共享验证、约 4 万参数的旧图读出及旧运行命令是历史方案；正式新运行使用 v2 配置。原 smoke 是工程入口，
+代码 identity 变化后同样必须换新实验名，不应覆盖原 smoke 证据。
+
+电荷预测现在在缓存前反标准化为 e；所有图配方消费四种有键类别的 soft 概率。
+R0-native/R2-native 在初始化时复现 native，并仅用 B-val 选择是否保留 epoch 0。
+R3-graph/R4-nocharge/R4-uniform/R4-existence/R4/R4-shuffle 使用相同容量；shuffle 在分子内部进行。
+新分析同时报告 native 与 warm-start、连接/电荷/键级/shuffle 的配对增量，并检查完整网格。
+测试数量以实际输出为准；当前 21 项 CPU 协议与微型闭环测试通过，100k v2 正式训练未执行。
 
 ## 1. 背景与研究问题
 
@@ -12,7 +27,7 @@
 
 **目标**：把「读出如何组织」与「辅助监督是否塑造了互补表示」分开，用容量匹配、输入消融、single-task 上游对照得到可证伪结论。判别式：
 
-- `R0(g)` vs `R3(H)`：全局 pooling 损失了多少可用结构。
+- `R0(g)` vs `R3(H)`：比较全局与局部读出可用性；不能直接测量 pooling 信息损失。
 - `R4(H+u)` vs `R3(H)`：预测的局部/关系量在**完整局部表示之外**是否还有增量。
 - `R2(g+u)` vs `R0(g)`：只反映压缩 `g` 的可读性/样本效率（不构成新增 Shannon 信息）。
 - `U0` vs `U1`：辅助监督是否改变表示本身。
@@ -44,7 +59,7 @@
 共享 SchNet 编码器 h_i (64) → g = Σ_i h_i
 gap 头:    g                 → 1
 charge 头: [h_i, g]          → 1        （局部头，条件于 g，近似 origin）
-bond 头:   [h_i, h_j, g]     → 5 logits （逐对，近似 pair）
+bond 头:   [h_i+h_j, |h_i-h_j|, g]     → 5 logits （逐对，近似 pair）
 ```
 
 - 模型 `hidden_channels 64, num_interactions 3, num_gaussians 32, cutoff 5.0, head_hidden [64,32]`；参数量 ST 62,977 / MT 87,943。
@@ -68,7 +83,7 @@ bond 头:   [h_i, h_j, g]     → 5 logits （逐对，近似 pair）
 
 ### 3.5 冻结缓存（下游可见）
 
-- 冻结全部上游参数并 eval；缓存 `g`、逐原子 `h`、逐原子**预测电荷**、逐对**预测键类概率**、结构 offsets/pairs；**不缓存辅助真值**（aux-sup 臂单独读取真值并标注）。
+- 冻结全部上游参数并 eval；缓存 `g`、逐原子 `h`、逐原子**预测电荷（反标准化为 e）**、逐对**预测键类概率**、结构 offsets/pairs；**不缓存辅助真值**（aux-sup 臂单独读取真值并标注）。
 - 缓存清单绑定 config/code/checkpoint/dataset/split 哈希；运行时校验冻结一致、字段有限、pair_index 为 split 全局坐标。
 
 ### 3.6 下游读出 recipes 与容量匹配
@@ -76,7 +91,7 @@ bond 头:   [h_i, h_j, g]     → 5 logits （逐对，近似 pair）
 | 读出 | 输入 | 模型 | 回答 |
 |---|---|---|---|
 | R0 | `g` | 表格 MLP（零槽匹配） | 基本再读出的收益 |
-| R1 | 预测电荷 + 预测键图（无 h/g） | GNN | 辅助预测单独能做多少 |
+| R1 | 原子类型嵌入 + 预测电荷 + 预测键图（无 h/g） | GNN | 辅助预测单独能做多少 |
 | R2 | `g` + 电荷/键级摘要 | 表格 MLP | 预测型辅助读出的增量 |
 | R3 | 逐原子 `h`（H-only） | 集合读出 | 完整局部输入的收益 |
 | R4 | `h` + 预测电荷 + 预测键概率 | GNN | 预测局部结构在 H 之外的增量 |

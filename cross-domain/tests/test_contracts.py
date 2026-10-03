@@ -17,8 +17,8 @@ sys.path.insert(0, str(ROOT))
 from analysis.qm9 import analyze
 from data.qm9 import (BOND_CLASSES, allocate_splits, array_hash, collate_molecules, dense_pairs, distance_edges,
                       load_arrays, parse_exclusions, parse_xyz, processed_dir, save_arrays, subset_size)
-from evaluate.qm9 import evaluate
-from model.qm9 import TinySchNet
+from evaluate.qm9 import auxiliary_diagnostics, binary_auc, evaluate
+from model.qm9 import TinySchNet, make_head
 from pipeline.context import Context
 from pipeline.download import download_verified
 from pipeline.fit import fit
@@ -28,8 +28,10 @@ from pipeline.readout import GraphSetReadout, TabularReadout, fit_standardizatio
 from pipeline.runtime import seed_all
 from pipeline import stages
 from pipeline.units import enumerate_units, unit_filters
-from refine.qm9 import cache, tabular_features, train as train_refiners
-from training.qm9 import train as train_upstream
+from refine.qm9 import (GNN_RECIPES, NativeHeadReadout, cache, graph_probabilities, initialize_native_head,
+                        load_cache, physical_charge, set_features, tabular_features, train as train_refiners,
+                        validate_cache_arrays)
+from training.qm9 import load_upstream, train as train_upstream
 
 
 def smoke_config():
@@ -122,6 +124,9 @@ def test_local_heads_and_readout_capacity():
         output = model(batch)
     assert output["charge_prediction"].shape == (3,)
     assert output["bond_logits"].shape == (3, len(BOND_CLASSES))
+    reversed_batch = dict(batch, pair_index=batch["pair_index"].flip(0))
+    with torch.inference_mode():
+        torch.testing.assert_close(model(reversed_batch)["bond_logits"], output["bond_logits"])
     # Tabular R0 and R2 must share the same input width and parameter count.
     zeros = np.zeros((5, 64), dtype=np.float32)
     atom_offsets = np.arange(0, 16, 3, dtype=np.int64)
@@ -186,7 +191,9 @@ def fixture_context(tmp_path):
     config["model"].update(hidden_channels=8, num_interactions=1, num_gaussians=4, head_hidden=[8], bond_classes=len(BOND_CLASSES))
     config["upstream"].update(epochs=1, batch_size=4)
     config["refiner"].update(epochs=1, batch_size=4, hidden=[8], set_hidden=8, set_layers=1, set_epochs=1,
-                             dropout=0.0, clip_grad=1.0, early_stopping_patience=0, recipes=["R0", "R1", "R2", "R3", "R4"])
+                             dropout=0.0, clip_grad=1.0, early_stopping_patience=0,
+                             recipes=["R0", "R0-native", "R1", "R2", "R2-native", "R3", "R3-graph",
+                                      "R4", "R4-nocharge", "R4-existence", "R4-uniform", "R4-shuffle"])
     context = Context(config, ROOT, tmp_path / "fixture.json")
     context.initialize()
     rng = np.random.default_rng(6)
@@ -236,9 +243,21 @@ def test_offline_training_freezing_refinement_evaluation(tmp_path):
         for split in ("b_train", "b_val", "y_test"):
             manifest = read_json(context.output_dir / "cache" / variant / "seed1" / f"{split}.json")
             assert manifest["freeze_verified"] and not manifest["auxiliary_truth_cached"]
+            cached = load_cache(context, variant, 1, split)
+            if variant == "multi_task":
+                assert manifest["charge_prediction_unit"] == "elementary_charge"
+                model, metadata = load_upstream(context, variant, 1, torch.device("cpu"), frozen=True)
+                from data.qm9 import make_loader
+                with torch.inference_mode():
+                    expected_charge = np.concatenate([physical_charge(model(batch)["charge_prediction"].numpy(), metadata)
+                                                      for batch in make_loader(context, split, 1, 4)])
+                np.testing.assert_allclose(cached["charge_prediction"], expected_charge, atol=1e-6)
     metrics = read_json(context.output_dir / "evaluation" / "metrics.json")
-    assert {row["method"] for row in metrics["main"]} == {
-        "ST-native", "ST-R0", "ST-R3", "MT-native", "MT-R0", "MT-R1", "MT-R2", "MT-R3", "MT-R4"}
+    from data.qm9 import applicable_recipes
+    expected_methods = {"ST-native", "MT-native"}
+    for variant, prefix in (("single_task", "ST"), ("multi_task", "MT")):
+        expected_methods.update(f"{prefix}-{recipe}" for recipe in applicable_recipes(context, variant))
+    assert {row["method"] for row in metrics["main"]} == expected_methods
     assert all(row["n_test"] == 4 and np.isfinite(row["mae"]) for row in metrics["main"])
     assert metrics["auxiliary"] and metrics["auxiliary"][0]["bond_order_accuracy"] is not None
     summary = read_json(context.output_dir / "analysis" / "summary.json")
@@ -248,6 +267,20 @@ def test_offline_training_freezing_refinement_evaluation(tmp_path):
     upstream = read_json(context.output_dir / "upstream" / "multi_task" / "seed1" / "training_manifest.json")
     np.testing.assert_allclose(upstream["target_mean"], expected, atol=1e-7)
     assert upstream["local_tasks"] == ["charge", "bond"]
+    for recipe in ("R0-native", "R2-native"):
+        path = context.output_dir / "refiners" / "multi_task" / "seed1" / recipe / "seed1" / "training_manifest.json"
+        manifest = read_json(path)
+        assert manifest["initialization"] == "native_head" and manifest["initial_native_max_abs_error"] < 3e-5
+        assert manifest["initial_validation_metric"] is not None
+    graph_parameters = {row["downstream_parameters"] for row in metrics["main"]
+                        if row["method"].startswith("MT-R4") or row["method"] == "MT-R3-graph"}
+    assert len(graph_parameters) == 1
+    path = context.output_dir / "upstream" / "multi_task" / "seed1" / "best.pt"
+    stale = torch.load(path, weights_only=True)
+    stale["metadata"]["identity"] = "another-experiment"
+    torch.save(stale, path)
+    with pytest.raises(ValueError, match="upstream checkpoint source"):
+        load_upstream(context, "multi_task", 1, torch.device("cpu"), frozen=True)
 
 
 def test_subset_size_and_shared_split_allocation():
@@ -301,3 +334,138 @@ def test_unit_enumeration(tmp_path):
     assert "refine:multi_task:1:R4:1" in units
     assert not any(unit.startswith("refine:single_task") and "R4" in unit for unit in units)
     assert "refine:single_task:1:R0:1" in units
+
+
+def test_charge_units_and_class_imbalance_diagnostics():
+    charge = np.array([-0.4, 0.2, 0.2], dtype=np.float32)
+    mean, std = fit_standardization(charge[:, None])
+    restored = physical_charge((charge - mean[0]) / std[0],
+                               {"charge_mean": mean.tolist(), "charge_std": std.tolist()})
+    raw = {"atom_offsets": np.array([0, 3]), "charge": charge,
+           "pair_offsets": np.array([0, 3]), "pair_class": np.array([0, 1, 2])}
+    cached = {"charge_prediction": restored, "bond_probs": np.eye(5, dtype=np.float32)[[0, 1, 2]]}
+    diagnostics = auxiliary_diagnostics(raw, np.array([0]), cached)
+    assert diagnostics["charge_mae"] < 1e-7 and diagnostics["charge_unit"] == "elementary_charge"
+    assert diagnostics["bond_existence_auc"] == 1.0 and diagnostics["bond_existence_f1"] == 1.0
+    assert binary_auc([False, True, False, True], np.array([0.5] * 4)) == 0.5
+    assert binary_auc([True, True], np.array([0.2, 0.9])) is None
+
+
+def test_native_head_initialization_preserves_physical_predictions():
+    seed_all(17)
+    source = make_head(3, [8, 4], 1).eval()
+    source_mean, source_std = np.array([2.0]), np.array([0.4])
+    target_mean, target_std = np.array([1.1]), np.array([1.7])
+    mean = np.array([1.2, -3.1, 0.7, 0.0, 0.0], dtype=np.float32)
+    std = np.array([0.3, 2.0, 1.4, 1.0, 1.0], dtype=np.float32)
+    raw = torch.randn(10, 3)
+    expected = source(raw) * source_std[0] + source_mean[0]
+    for extra in (torch.zeros(10, 2), torch.randn(10, 2)):
+        readout = NativeHeadReadout(5, [8, 4]).eval()
+        initialize_native_head(readout, source, mean, std, source_mean, source_std, target_mean, target_std)
+        features = (torch.cat([raw, extra], dim=1) - torch.from_numpy(mean)) / torch.from_numpy(std)
+        actual = readout({"features": features}) * target_std[0] + target_mean[0]
+        torch.testing.assert_close(actual, expected, atol=2e-6, rtol=2e-6)
+
+
+def test_initial_checkpoint_is_selected_only_by_validation(tmp_path):
+    model = torch.nn.Linear(1, 1)
+    with torch.no_grad():
+        model.weight.zero_()
+        model.bias.zero_()
+    loader = [{"x": torch.zeros(4, 1), "y": torch.ones(4, 1)}]
+    settings = {"epochs": 3, "learning_rate": 0.1, "weight_decay": 0.0,
+                "selection_mode": "min", "include_initial_checkpoint": True}
+    def loss(current, batch):
+        return (current(batch["x"]) - batch["y"]).square().mean(), 4
+    def score(current, batches, device):
+        return float(current(torch.zeros(1, 1)).abs().item())
+    fit(model, loader, loader, loss, score, tmp_path / "initial", settings, {}, torch.device("cpu"))
+    checkpoint = torch.load(tmp_path / "initial" / "best.pt", weights_only=True)
+    assert checkpoint["epoch"] == 0 and checkpoint["validation_metric"] == 0.0
+
+
+def test_typed_graph_uses_order_and_is_permutation_invariant():
+    seed_all(29)
+    model = GraphSetReadout(3, 8, [8], layers=1, use_edges=True).eval()
+    pair_index = torch.tensor([[0, 0, 1], [1, 2, 2]])
+    batch = {"features": torch.randn(3, 3), "batch": torch.zeros(3, dtype=torch.long),
+             "pair_index": pair_index, "bond_probs": torch.eye(5)[[1, 1, 1]], "target": torch.zeros(1, 1)}
+    changed = dict(batch, bond_probs=torch.eye(5)[[2, 2, 2]])
+    with torch.inference_mode():
+        original = model(batch)
+        assert not torch.allclose(original, model(changed), atol=1e-6)
+        permutation = torch.tensor([2, 0, 1])
+        reverse = torch.argsort(permutation)
+        reordered = dict(batch, features=batch["features"][permutation], pair_index=reverse[pair_index])
+        torch.testing.assert_close(model(reordered), original, atol=1e-6, rtol=1e-6)
+
+
+def test_graph_controls_preserve_capacity_and_molecule_distributions():
+    rng = np.random.default_rng(8)
+    probs = rng.dirichlet(np.ones(5), size=6).astype(np.float32)
+    arrays = {"ids": np.array([10, 30]), "pair_offsets": np.array([0, 3, 6]),
+              "pair_index": np.array([[0, 0, 1, 3, 3, 4], [1, 2, 2, 4, 5, 5]]),
+              "atom_z": np.ones(6, dtype=np.int64), "atom_embedding": rng.normal(size=(6, 3)).astype(np.float32),
+              "charge_prediction": rng.normal(size=6).astype(np.float32), "bond_probs": probs}
+    shuffled = graph_probabilities(arrays, "R4-shuffle")
+    for lo, hi in ((0, 3), (3, 6)):
+        assert sorted(map(tuple, shuffled[lo:hi])) == sorted(map(tuple, probs[lo:hi]))
+    np.testing.assert_array_equal(shuffled, graph_probabilities(arrays, "R4-shuffle"))
+    existence = graph_probabilities(arrays, "R4-existence")
+    np.testing.assert_allclose(existence[:, 0], probs[:, 0])
+    np.testing.assert_allclose(existence[:, 1:].sum(axis=1), 1 - probs[:, 0], atol=1e-7)
+    parameters = []
+    for recipe in ("R3-graph", "R4", "R4-nocharge", "R4-existence", "R4-uniform", "R4-shuffle"):
+        features = set_features(arrays, recipe)
+        parameters.append(sum(p.numel() for p in GraphSetReadout(features.shape[1], 8, [8], use_edges=True).parameters()))
+    assert len(set(parameters)) == 1
+    cache_arrays = {**arrays, "atom_offsets": np.array([0, 3, 6]),
+                    "embedding": np.zeros((2, 3), np.float32), "target": np.zeros((2, 1), np.float32),
+                    "main_prediction": np.zeros((2, 1), np.float32)}
+    validate_cache_arrays(cache_arrays)
+    corrupt = {**cache_arrays, "pair_index": arrays["pair_index"].copy()}
+    corrupt["pair_index"][0, 0] = 3
+    with pytest.raises(ValueError, match="boundaries"):
+        validate_cache_arrays(corrupt)
+
+
+def test_analysis_rejects_incomplete_grid_and_groups_upstream(tmp_path):
+    config = smoke_config()
+    config["upstream"]["seeds"] = [1, 2, 3, 4, 5]
+    config["refiner"].update(seeds=[1, 2, 3, 4, 5], recipes=["R0", "R2", "R3", "R4"])
+    from data.qm9 import applicable_recipes
+    rows = []
+    for variant, prefix in (("single_task", "ST"), ("multi_task", "MT")):
+        for u in config["upstream"]["seeds"]:
+            rows.append({"method": f"{prefix}-native", "upstream_seed": u, "downstream_seed": None, "mae": 0.1})
+            for recipe in applicable_recipes(SimpleNamespace(config=config), variant):
+                for d in config["refiner"]["seeds"]:
+                    rows.append({"method": f"{prefix}-{recipe}", "upstream_seed": u, "downstream_seed": d,
+                                 "mae": 0.2 + 0.01 * u + 0.001 * d + (0.02 if recipe == "R3" else 0.0)})
+    context = SimpleNamespace(config=config, output_dir=tmp_path, identity="analysis-fixture")
+    path = tmp_path / "evaluation" / "metrics.json"
+    write_json(path, {"identity": context.identity, "main": rows})
+    analyze(context)
+    summary = read_json(tmp_path / "analysis" / "summary.json")
+    method = next(row for row in summary["methods"] if row["method"] == "MT-R0")
+    assert method["n_upstream_seeds"] == 5 and method["n_runs"] == 25
+    assert method["sample_sd"] == pytest.approx(np.std([0.213, 0.223, 0.233, 0.243, 0.253], ddof=1))
+    assert summary["paired_deltas"]["pool_to_local_gain_mae"]["mean"] == pytest.approx(-0.02)
+    assert "second method" in summary["positive_delta"]
+    write_json(path, {"identity": context.identity, "main": rows[:-1]})
+    with pytest.raises(ValueError, match="grid"):
+        analyze(context)
+    write_json(path, {"identity": context.identity, "main": rows + [rows[0]]})
+    with pytest.raises(ValueError, match="duplicate evaluation"):
+        analyze(context)
+
+
+def test_v2_configuration_is_separate_and_complete(tmp_path):
+    config = json.loads((ROOT / "config" / "qm9_gap_charge_bond_refine_v2.json").read_text())
+    assert config["experiment"] != "qm9_gap_charge_bond_full" and not config["data"]["shared_validation"]
+    assert sum(config["data"]["sizes"].values()) == 100000
+    splits = allocate_splits(100000, config["data"], np.arange(100000))
+    assert not np.intersect1d(splits["a_val"], splits["b_val"]).size
+    context = Context(config, ROOT, tmp_path / "v2.json")
+    assert len(enumerate_units(context)) == 423

@@ -83,6 +83,8 @@ class TinySchNet(nn.Module):
             output["charge_prediction"] = self.charge_head(conditioned)[:, 0]
         if self.bond_head is not None:
             pair_index = batch["pair_index"]
-            pair_inputs = torch.cat([h[pair_index[0]], h[pair_index[1]], g[batch["pair_batch"]]], dim=-1)
+            left, right = h[pair_index[0]], h[pair_index[1]]
+            # Unordered chemical bonds must not depend on endpoint/atom ordering.
+            pair_inputs = torch.cat([left + right, (left - right).abs(), g[batch["pair_batch"]]], dim=-1)
             output["bond_logits"] = self.bond_head(pair_inputs)
         return output

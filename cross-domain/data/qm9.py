@@ -39,8 +39,14 @@ def local_tasks(context):
 def applicable_recipes(context, variant):
     """Recipes that make sense for an upstream variant (used by unit enumeration)."""
     recipes = list(context.config["refiner"]["recipes"])
-    if variant == "single_task":
-        return [recipe for recipe in recipes if recipe in ("R0", "R3")]
+    known = {"R0", "R0-native", "R1", "R2", "R2-native", "R3", "R3-graph",
+             "R4", "R4-nocharge", "R4-existence", "R4-uniform", "R4-shuffle"}
+    if set(recipes) - known or len(set(recipes)) != len(recipes):
+        raise ValueError("unknown or duplicate QM9 refiner recipe")
+    if variant == "single_task" or not local_tasks(context):
+        return [recipe for recipe in recipes if recipe in ("R0", "R0-native", "R3", "R3-graph")]
+    if set(local_tasks(context)) != {"charge", "bond"}:
+        raise ValueError("local readout recipes require both charge and bond heads; use loss weights for training ablations")
     return recipes
 
 
@@ -273,7 +279,7 @@ def prepare(context):
                               charge=np.concatenate(charge), pair_index=np.concatenate(pair_index, axis=1),
                               pair_class=np.concatenate(pair_class), pair_offsets=np.array(pair_offsets),
                               target=np.stack([record["target"] for record in selected]),
-                              ids=np.array([record["id"] for record in selected]),
+                              ids=np.array([record["id"] for record in selected], dtype=np.int64),
                               smiles=np.array([record["smiles"] for record in selected]))
     permutation = np.random.default_rng(settings["split_seed"]).permutation(size)
     splits = allocate_splits(size, settings, permutation)

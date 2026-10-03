@@ -42,6 +42,18 @@ def fit(model, train_loader, val_loader, loss, score, directory, settings, metad
     history = []
     stopped = False
     started = time.perf_counter()
+    initial_validation = None
+    if settings.get("include_initial_checkpoint", False):
+        model.eval()
+        with torch.inference_mode():
+            initial_validation = float(score(model, val_loader, device))
+        if not math.isfinite(initial_validation):
+            raise FloatingPointError("non-finite initial validation metric")
+        best = initial_validation
+        save_checkpoint(directory / "best.pt", {
+            "state_dict": model.state_dict(), "metadata": metadata, "epoch": 0,
+            "validation_metric": best, "selection_mode": mode,
+        })
     for epoch in range(1, settings["epochs"] + 1):
         model.train()
         total, count = 0.0, 0
@@ -89,6 +101,7 @@ def fit(model, train_loader, val_loader, loss, score, directory, settings, metad
     write_json(directory / "training_manifest.json", {
         **metadata, "training": settings, "best_validation_metric": best,
         "best_epoch": best_epoch, "epochs_run": len(history), "early_stopped": stopped,
+        "initial_validation_metric": initial_validation,
         "parameters": sum(parameter.numel() for parameter in model.parameters()),
         "trainable_parameters": sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad),
         "seconds": time.perf_counter() - started,

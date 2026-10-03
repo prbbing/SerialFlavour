@@ -29,6 +29,11 @@ def variant_tasks(context, variant):
 def load_upstream(context, variant, seed, device, frozen=False):
     checkpoint = torch.load(upstream_dir(context, variant, seed) / "best.pt", map_location=device, weights_only=True)
     metadata = checkpoint["metadata"]
+    expected = {"identity": context.identity, "config_sha256": context.config_hash,
+                "data_sha256": sha256_file(processed_dir(context) / "dataset.npz"),
+                "splits_sha256": sha256_file(processed_dir(context) / "splits.npz")}
+    if any(metadata.get(key) != value for key, value in expected.items()):
+        raise ValueError("upstream checkpoint source identity mismatch")
     property_tasks = metadata.get("property_tasks", metadata.get("task_names"))
     model = TinySchNet(context.config["model"], property_tasks, metadata.get("local_tasks", [])).to(device)
     model.load_state_dict(checkpoint["state_dict"])
@@ -89,7 +94,7 @@ def train(context):
                     count += len(prediction)
                 return absolute / count
 
-            metadata = {"variant": variant, "seed": seed,
+            metadata = {"variant": variant, "seed": seed, "identity": context.identity,
                         "task_names": property_tasks, "property_tasks": property_tasks, "local_tasks": local,
                         "target_mean": mean.tolist(), "target_std": std.tolist(),
                         "charge_mean": None if charge_mean is None else charge_mean.tolist(),
