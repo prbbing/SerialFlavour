@@ -7,6 +7,8 @@
 
 **本次证明的是工程闭环，不是方法有效性。** 使用作者原版双头类，但将 XLM-R encoder 缩为 2 层、hidden size 64，从随机初始化训练；使用公共 XLM-R tokenizer。没有加载预训练 XLM-R Base 权重，也没有使用接触过完整 MASSIVE 的任务 checkpoint。一个上游 seed、一个下游 seed、560 条分区记录及低训练预算不能支持稳定增益或论文复现结论。
 
+> 实验定位补充（2026-10-03）：本地 v1 属于极小规模工程测试。集群 Base 属于预训练迁移学习下的单语言完整 5×5 方法验证，每个 seed 限定单张 A10 24 GB；不是论文复现或与 Jet 122k 等价的小参数实验。预训练并非方法的必要条件，当前集群配置仍为 8×4，未改动或执行。详见 [实验特殊条件与结论边界](experiment_scope_zh.md)。下文历史配置、成绩及证据保持原样。
+
 ## 1. 来源与架构边界
 
 MASSIVE 数据与 XLM-R 并行联合架构来自 [ACL 2023 论文](https://aclanthology.org/2023.acl-long.235/) 和 [作者仓库](https://github.com/alexa/massive)。本案例遵循 [案例建议第 9 节](../cross_domain_case_studies_zh.md)。

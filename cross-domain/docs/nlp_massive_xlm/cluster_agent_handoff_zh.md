@@ -4,6 +4,12 @@
 
 下文命令供远程操作者执行。默认直接运行完整矩阵，没有 pilot、子矩阵或预先试跑流程。此前 [CPU smoke 结果](massive_xlm_smoke_test_zh.md) 使用随机初始化的小 encoder，不能作为预训练 Base 的运行验收或收益证据。
 
+## 实验定位与已确认硬件边界
+
+本实验是预训练迁移学习条件下的单语言 post-refinement 验证，不以复现 MASSIVE 原论文的多语言成绩、128 次搜索或 8×V100 预算为目标。每个上游 seed 生命周期限定 **单张 NVIDIA A10、24 GB 显存**；GPU_POOL 中多张卡仅并行不同 seed，不使用 DDP。
+
+用户已确认 **5×5 矩阵保持**，本轮仅补充说明：当前配置仍为 microbatch 8、累积 4、有效 batch 32、FP32、gradient checkpointing；4×8 只是尚未采纳的建议。当前 8×4 是否满足 A10 峰值显存、Base 加载与长度 128 是否覆盖全量数据，均尚未实测。详细参数量、与 Jet 122k 的差异、样本限制和核心增量判据见 [实验特殊条件与结论边界](experiment_scope_zh.md)。本轮文档更新不改变源码/配置指纹，不需要另换实验身份。
+
 ## 1. 配置与规模
 
 | 项目 | 默认配置 |
@@ -192,7 +198,7 @@ cat cross-domain/logs/nlp_massive_xlm/xlmr_base_en_us_full_v1/units/analyze.json
 
 ## 7. 资源预算与未验证范围
 
-Base＋作者双头约 2.79 亿参数（配置量级估算），远大于本地 1612 万的小模型。建议每个并发 seed 预留一张 **24 GB GPU**，4 卡时主机 RAM 建议 **64 GB**；这是保守起点，**没有 GPU 峰值实测或墙钟 ETA**。FP32 AdamW 的参数、梯度和两个 moment 即约数 GB，另有激活、缓存及 allocator；实际由硬件和 PyTorch 决定。
+Base＋作者双头约 2.79 亿参数（架构计数），远大于本地 1612 万的小模型。已确认每个并发 seed 只能使用一张 **A10 24 GB 显存 GPU**，不跨卡切分。若同时分配 4 张卡，主机 RAM 建议 **64 GB**，这属于估算而非已确认资源；**没有 A10 峰值显存实测或墙钟 ETA，不能保证当前配置已经适配通过**。FP32 MT 参数、梯度与两个 AdamW moment 约 4.15 GiB，另有激活、缓存及 allocator；实际峰值取决于硬件和 PyTorch。现有代码未自动采集 CUDA 峰值显存，正式执行时另行记录。
 
 缓存使用 FP32、固定 padding 到 128：H 每条约 `128×768×4 = 393,216 bytes`，Y 的 H 约 1.17 GB；MT slot logits 每条另约 28.7 KB。按推荐 A/B 比例，10 个上游的 B/Y cache 总计量级约 28 GB，10 份上游 best checkpoint 约 11 GB，另有预训练资产、临时 checkpoint 和其他产物。建议为本实验预留 **100 GB 可用磁盘**；逐项估算不是已生成文件的统计。单个 Y cache 预计约 1.25 GB，未默认生成大于 5 GB 的单文件。
 
