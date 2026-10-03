@@ -1,7 +1,7 @@
 # QM9 HOMO−LUMO gap + 电荷/键级：full 规模运行结果（中文）
 
 本文件记录 `qm9_gap_charge_bond_full` 配置在集群上的完整运行与最终评估结果。运行配置见
-`cross-domain/config/qm9_test.json`（由 `qm9_gap_charge_bond_full_100k.json` 复制，仅改
+`cross-domain/experiments/qm9/config/qm9_test.json`（由 `qm9_gap_charge_bond_full_100k.json` 复制，仅改
 `data_root` 与 `output_root`）。历史运行的 config/code identity 为
 `7eab8a5f0ee06082999409491609dcc26026d6127401bd7aa7613e9289ddefd5`。
 
@@ -14,7 +14,7 @@
 历史分析 JSON/CSV 保持原样，本文纠正其中的文字与解释。
 
 当前代码已修正电荷单位、无序 pair 对称性及键级读出，并新增 native 初始化与同容量图消融。
-新配置为 `cross-domain/config/qm9_gap_charge_bond_refine_v2_100k.json`，实验名为
+新配置为 `cross-domain/experiments/qm9/config/qm9_gap_charge_bond_refine_v2_100k.json`，实验名为
 `qm9_gap_charge_bond_refine_v2`；尚未运行 100k 正式实验，不能把以下旧数值当作其性能。
 
 ---
@@ -266,27 +266,27 @@ cd /home/yuyang/SerialFlavour
 PY=/data/yuyang/miniconda3/envs/gn2_study_cross/bin/python
 
 # 1) 数据准备（已预置 raw 文件；download 仅做 MD5 校验）
-$PY cross-domain/scripts/run_unit.py --config cross-domain/config/qm9_test.json --unit prepare
+$PY cross-domain/scripts/run_unit.py --config cross-domain/experiments/qm9/config/qm9_test.json --unit prepare
 
 # 2) 10 个 seed（每个 seed 独占一卡）；或直接用 pool：
 $PY cross-domain/scripts/run_pool.py \
-  --config cross-domain/config/qm9_test.json --gpus 0 1 2 --retries 1 \
+  --config cross-domain/experiments/qm9/config/qm9_test.json --gpus 0 1 2 --retries 1 \
   --python $PY
 
 # 3) 评估与聚合
-$PY cross-domain/scripts/run_unit.py --config cross-domain/config/qm9_test.json --unit evaluate
-$PY cross-domain/scripts/run_unit.py --config cross-domain/config/qm9_test.json --unit analyze
+$PY cross-domain/scripts/run_unit.py --config cross-domain/experiments/qm9/config/qm9_test.json --unit evaluate
+$PY cross-domain/scripts/run_unit.py --config cross-domain/experiments/qm9/config/qm9_test.json --unit analyze
 ```
 
-> 官方便捷入口：`PYTHON=$PY CONFIG=cross-domain/config/qm9_test.json GPU_POOL="0 1 2" \
-> bash cross-domain/scripts/run_qm9_full.sh`（本机 GPU3 被他用占用，故仅用 0/1/2）。
+> 官方便捷入口：`PYTHON=$PY CONFIG=cross-domain/experiments/qm9/config/qm9_test.json GPU_POOL="0 1 2" \
+> bash cross-domain/experiments/qm9/scripts/run_full.sh`（本机 GPU3 被他用占用，故仅用 0/1/2）。
 
 
 ---
 
 ## 11. 修正后的 post-refinement 协议（尚无正式性能结果）
 
-配置：`cross-domain/config/qm9_gap_charge_bond_refine_v2_100k.json`。A-train 56k、A-val 5k、
+配置：`cross-domain/experiments/qm9/config/qm9_gap_charge_bond_refine_v2_100k.json`。A-train 56k、A-val 5k、
 B-train 14k、B-val 5k、Y-test 20k，总数仍为 100k，A-val/B-val 不共享。
 固定总量下 A/B 边界变化，须核对新 split 哈希；这不是对原历史模型的无改动复评。
 
@@ -323,7 +323,7 @@ epoch 0 验证选择、冻结 checkpoint 不变、键级敏感性、pair 对称�
 ```bash
 # 在确认集群路径后，使用新的实验配置；当前未执行该正式运行。
 python cross-domain/scripts/run_pool.py \
-  --config cross-domain/config/qm9_gap_charge_bond_refine_v2_100k.json --gpus 0 1 2
+  --config cross-domain/experiments/qm9/config/qm9_gap_charge_bond_refine_v2_100k.json --gpus 0 1 2
 ```
 
 后续优先核查 native 初始化读出与 matched graph 消融，再通过仅电荷、仅键级及损失权重

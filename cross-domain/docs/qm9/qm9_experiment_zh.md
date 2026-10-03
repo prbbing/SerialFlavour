@@ -4,7 +4,7 @@
 
 ## 0. 2026-10-03 实现修正与运行入口
 
-当前严谨对照配置为 `cross-domain/config/qm9_gap_charge_bond_refine_v2_100k.json`，使用新实验名、
+当前严谨对照配置为 `cross-domain/experiments/qm9/config/qm9_gap_charge_bond_refine_v2_100k.json`，使用新实验名、
 独立 A-val/B-val、native 初始化 R0/R2 和同容量的图消融。各配方、精确划分、统计口径与
 历史结果边界见 [full 结果报告第 11 节](qm9_gap_charge_bond_full_results_zh.md#11-修正后的-post-refinement-协议尚无正式性能结果)。
 `qm9_gap_charge_bond_full_100k.json` 保留原共享验证结构，训练预算和 LR 调度已更新；历史运行的原始配置以其 manifest 为准，不能用当前配置覆盖旧输出。
@@ -136,11 +136,11 @@ bond 头:   [h_i+h_j, |h_i-h_j|, g]     → 5 logits （逐对，近似 pair）
 
 `cross-domain/`：
 
-- 通用 pipeline（无 QM9 判断）：`src/pipeline/context.py`、`io.py`、`runtime.py`、`fit.py`、`readout.py`、`metrics.py`、`stages.py`、`units.py`；命令入口：`scripts/run.py`、`scripts/run_unit.py`、`scripts/run_seed.py`、`scripts/run_pool.py`。
-- QM9 领域模块：`src/data/qm9.py`、`src/model/qm9.py`、`src/training/qm9.py`、`src/refine/qm9.py`、`src/evaluate/qm9.py`、`src/analysis/qm9.py`。
-- 配置：`config/qm9_gap_charge_bond_full_100k.json`（集群）、`config/qm9_gap_charge_bond.json`（本地 smoke）。
-- 测试：`tests/test_contracts.py`（14 项）。
-- 启动器：`scripts/run_qm9_full.sh`。
+- 通用 pipeline（无 QM9 判断）：`pipeline/context.py`、`io.py`、`runtime.py`、`fit.py`、`readout.py`、`metrics.py`、`stages.py`、`units.py`；命令入口：`scripts/run.py`、`scripts/run_unit.py`、`scripts/run_seed.py`、`scripts/run_pool.py`。
+- QM9 领域模块：`experiments/qm9/data.py`、`experiments/qm9/model.py`、`experiments/qm9/training.py`、`experiments/qm9/refine.py`、`experiments/qm9/evaluate.py`、`experiments/qm9/analysis.py`。
+- 配置：`experiments/qm9/config/qm9_gap_charge_bond_full_100k.json`（集群）、`experiments/qm9/config/qm9_gap_charge_bond.json`（本地 smoke）。
+- 测试：`experiments/qm9/tests/test_contracts.py`（14 项）。
+- 启动器：`experiments/qm9/scripts/run_full.sh`。
 
 外部 `src/`、`scripts/`、`configs/` 是 Jet tagging 实现，**不要修改**，仅作参考。
 
@@ -152,8 +152,8 @@ bond 头:   [h_i+h_j, |h_i-h_j|, g]     → 5 logits （逐对，近似 pair）
 source /home/yuyang/miniconda3/etc/profile.d/conda.sh
 conda activate gn2_study_cross
 cd /mnt/d/hep_analysis/gn2_study/SerialFlavour-cross
-python -m pytest cross-domain/tests -q
-python cross-domain/scripts/run.py --config cross-domain/config/qm9_gap_charge_bond.json --stage all
+python -m pytest cross-domain/tests cross-domain/experiments/qm9/tests -q
+python cross-domain/scripts/run.py --config cross-domain/experiments/qm9/config/qm9_gap_charge_bond.json --stage all
 ```
 
 `run.py` + `stages.py`：顺序执行 download/prepare/train/cache/refine/evaluate/analyze，用全局 `stage_state.json` 记录完成与产物 SHA256，适合本地单进程 smoke。
@@ -162,11 +162,11 @@ python cross-domain/scripts/run.py --config cross-domain/config/qm9_gap_charge_b
 
 不使用 SLURM。通用单元调度层：
 
-- `src/pipeline/units.py`：枚举单元 `prepare`、`upstream:<variant>:<seed>`、`cache:<variant>:<seed>`、`refine:<variant>:<us>:<recipe>:<ds>`、`evaluate`、`analyze`；全量配置共 223 个（single_task 只含 R0/R3）。
+- `pipeline/units.py`：枚举单元 `prepare`、`upstream:<variant>:<seed>`、`cache:<variant>:<seed>`、`refine:<variant>:<us>:<recipe>:<ds>`、`evaluate`、`analyze`；全量配置共 223 个（single_task 只含 R0/R3）。
 - `scripts/run_unit.py --config C --unit U`：执行单单元，写 `cross-domain/logs/<dataset>/<experiment>/units/<unit>.json`（状态 + 产物 SHA256），**不写 stage_state**，可并发；过滤条件不影响 `context.identity`。
 - `scripts/run_seed.py --config C --variant V --seed S --gpu N`：一个 `(variant, seed)` 全生命周期（上游 → 缓存 → 全部 `recipe × downstream_seed`），绑卡，已完成项跳过，成功后写 seed marker。
 - `scripts/run_pool.py --config C --gpus "0 1 2 3"`：先 `prepare`（有 marker 跳过），再把 seed 派发到空闲 GPU，最后 `evaluate`、`analyze`；失败 seed 记录后继续，结束非零退出。
-- `scripts/run_qm9_full.sh`：入口，支持 `CONFIG/GPU_POOL/RETRIES/PYTHON/CONDA_ENV`。
+- `experiments/qm9/scripts/run_full.sh`：入口，支持 `CONFIG/GPU_POOL/RETRIES/PYTHON/CONDA_ENV`。
 
 ```mermaid
 flowchart LR
@@ -177,7 +177,7 @@ flowchart LR
 
 ### 5.3 配置字段
 
-`config/qm9_gap_charge_bond_full_100k.json` 关键项：
+`experiments/qm9/config/qm9_gap_charge_bond_full_100k.json` 关键项：
 
 - `data_root`（集群需改）、`output_root`（默认 `cross-domain/results`）、`log_root`（默认 `cross-domain/logs`）。
 - `tasks`：`main gap`、`auxiliary []`、`local [charge, bond]`。
@@ -191,7 +191,7 @@ flowchart LR
 
 ### 5.4 环境
 
-统一 conda 环境 `gn2_study_cross`，增量依赖 `cross-domain/requirements-qm9.txt`（rdkit）。改为其他主机时修改 `data_root` 并更换 experiment 名。产物在 `results/<dataset>/<experiment>/`，日志在 `logs/`，均由 `.gitignore` 排除。
+统一 conda 环境 `gn2_study_cross`，增量依赖 `cross-domain/requirements.txt`（rdkit）。改为其他主机时修改 `data_root` 并更换 experiment 名。产物在 `results/<dataset>/<experiment>/`，日志在 `logs/`，均由 `.gitignore` 排除。
 
 ## 6. 风险与解释边界
 

@@ -2,7 +2,7 @@
 
 本文只讲集群上的操作步骤，设计与字段解释见 `qm9_experiment_zh.md`。目标实验：QM9 主任务 gap，辅助逐原子 Mulliken 电荷与全对键级，冻结后读出对照 R0–R4。
 
-配置：`cross-domain/config/qm9_gap_charge_bond_full_100k.json`（100k 分子，5×5 seed，共享验证）。日志：`logs/qm9/qm9_gap_charge_bond_full/`；产物：`results/qm9/qm9_gap_charge_bond_full/`。
+配置：`cross-domain/experiments/qm9/config/qm9_gap_charge_bond_full_100k.json`（100k 分子，5×5 seed，共享验证）。日志：`logs/qm9/qm9_gap_charge_bond_full/`；产物：`results/qm9/qm9_gap_charge_bond_full/`。
 
 ## 1. 集群准备
 
@@ -17,9 +17,9 @@
 
 ```bash
 cd <仓库根>
-python cross-domain/scripts/run_unit.py --config cross-domain/config/qm9_gap_charge_bond_full_100k.json --unit prepare
+python cross-domain/scripts/run_unit.py --config cross-domain/experiments/qm9/config/qm9_gap_charge_bond_full_100k.json --unit prepare
 # 检查 results/qm9/qm9_gap_charge_bond_full/data/preparation_manifest.json 与 logs/.../units/prepare.json
-python cross-domain/scripts/run_seed.py --config cross-domain/config/qm9_gap_charge_bond_full_100k.json --variant multi_task --seed 1 --gpu 0
+python cross-domain/scripts/run_seed.py --config cross-domain/experiments/qm9/config/qm9_gap_charge_bond_full_100k.json --variant multi_task --seed 1 --gpu 0
 # 检查 refiners/ 与 logs/.../seeds/multi_task__seed1.json
 ```
 
@@ -28,14 +28,14 @@ python cross-domain/scripts/run_seed.py --config cross-domain/config/qm9_gap_cha
 ## 3. 正式运行
 
 ```bash
-CONDA_ENV=gn2_study_cross GPU_POOL="0 1 2 3" RETRIES=1 bash cross-domain/scripts/run_qm9_full.sh
+CONDA_ENV=gn2_study_cross GPU_POOL="0 1 2 3" RETRIES=1 bash cross-domain/experiments/qm9/scripts/run_full.sh
 ```
 
 或：
 
 ```bash
 python cross-domain/scripts/run_pool.py \
-  --config cross-domain/config/qm9_gap_charge_bond_full_100k.json \
+  --config cross-domain/experiments/qm9/config/qm9_gap_charge_bond_full_100k.json \
   --gpus 0 1 2 3 --retries 1
 ```
 

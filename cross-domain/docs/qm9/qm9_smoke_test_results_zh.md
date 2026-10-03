@@ -9,7 +9,7 @@
 目的：验证通用 pipeline（download/prepare/train/cache/refine/evaluate/analyze）与 A/B/Y 冻结协议。
 
 - 任务：主 μ（Debye），辅助 α/R²/Cv（分子级标量，旧设计）。
-- 配置：`config/qm9_smoke.json`；划分 A 2048 / A-val 256 / B-train 1024 / B-val 256 / Y 512。
+- 配置：`experiments/qm9/config/qm9_smoke.json`；划分 A 2048 / A-val 256 / B-train 1024 / B-val 256 / Y 512。
 - 代码：当时的 `MT-embed-aux` 把辅助标量预测与 `g` 拼接。
 
 | 方法 | μ MAE (Debye) | RMSE | R² | 上游/下游参数 |
@@ -26,7 +26,7 @@
 
 ## 2. gap + 逐原子电荷/键级 smoke
 
-- 配置：`config/qm9_gap_charge_bond.json`；主 gap（eV）、辅助逐原子 Mulliken 电荷(T3) + 全对键级(T5)。
+- 配置：`experiments/qm9/config/qm9_gap_charge_bond.json`；主 gap（eV）、辅助逐原子 Mulliken 电荷(T3) + 全对键级(T5)。
 - 划分 A 2048 / A-val 256 / B-train 1024 / B-val 256 / Y 512（非共享验证）。
 - 候选 8192，其中 516 个在 SMILES/键感知阶段失败被排除，无重复；类别计数 `[无键 574681, 单 68137, 双 2943, 三 1168, 芳香 3963]`。
 - 上游 ST 62,977 / MT 87,943 参数。

@@ -1,0 +1,5 @@
+# Shared incremental dependencies for all cross-domain experiments.
+# Install into gn2_study_cross; torch/numpy are inherited from gn2_study.
+rdkit==2025.9.3
+pyarrow>=15,<24
+requests>=2.31

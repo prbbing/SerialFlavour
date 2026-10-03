@@ -1,6 +1,6 @@
 # NYUv2＋MTAN 集群 agent 操作说明
 
-更新日期：2026-10-03。本文件供接手 `feat/cross-domain` 工作树的集群 agent 使用，说明可运行入口、验证顺序、产物和失败处理。先读根目录 [AGENTS.md](../../../AGENTS.md)；数据身份与论文边界见 [本地测试说明](nyuv2_mtan_smoke_test_zh.md)。
+更新日期：2026-10-03。本文件供接手 `feat/cross-domain` 工作树的集群 agent 使用，说明可运行入口、验证顺序、产物和失败处理。先读 cross-domain 目录的 [AGENTS.md](../../AGENTS.md)；数据身份与论文边界见 [本地测试说明](nyuv2_mtan_smoke_test_zh.md)。
 
 **集群直接运行完整矩阵，不添加 pilot、缩小预算试跑或先试跑再放大的前置流程。** 这是用户明确要求，以后同样遵循。
 
@@ -12,19 +12,21 @@
 
 | 文件 | 用途 |
 |---|---|
-| `config/cv_nyu_mtan/cluster_full.json` | 完整 795 train＋654 test、5 上游 seeds × 5 下游 seeds |
-| `scripts/cv_nyu_mtan/run_cluster.sh` | Bash 入口；支持 CONFIG、GPU_POOL、PYTHON、CONDA_ENV、RETRIES |
-| `scripts/cv_nyu_mtan/run_cluster.py` | 单节点多 GPU 队列、SHA256 续跑核验、单实例锁、最终评价 |
+| `experiments/cv_nyu_mtan/config/cluster_full.json` | 完整 795 train＋654 test、5 上游 seeds × 5 下游 seeds |
+| `experiments/cv_nyu_mtan/scripts/run_cluster.sh` | Bash 入口；支持 CONFIG、GPU_POOL、PYTHON、CONDA_ENV、RETRIES |
+| `experiments/cv_nyu_mtan/scripts/run_cluster.py` | 单节点多 GPU 队列、SHA256 续跑核验、单实例锁、最终评价 |
 | `scripts/run_unit.py` | 复用的通用单工作单元执行器；写带身份／SHA256 的 unit marker |
-| `requirements-cv_nyu_mtan.txt` | NYUv2 数据读取依赖；只安装到 cross 专用环境 |
+| `requirements.txt` | 所有 cross-domain 实验的统一增量依赖；只安装到 cross 专用环境 |
 
-新增调度器没有修改现有 QM9 pool/seed 行为。它复用 Context、工作单元枚举、worker 和 `run_unit.py`，但自行组织 NYUv2 seed 生命周期，以避免现有通用 pool 只凭 status 跳过或重复重训的问题。通用 `Context.code_hash` 增加递归识别 scripts 子目录，用于把本启动器纳入代码身份。
+新增调度器没有修改现有 QM9 pool/seed 行为。它复用 Context、工作单元枚举、worker 和 `run_unit.py`，但自行组织 NYUv2 seed 生命周期，以避免现有通用 pool 只凭 status 跳过或重复重训的问题。目录迁移后，通用 `Context.code_hash` 仅纳入公共代码与当前实验的处理代码和专用脚本，不再纳入另一实验的启动器。
+
+目录整理的离线回归测试为 **37 passed in 16.57s**，包括两套实验的模块加载、代码指纹依赖隔离及既有协议测试；两套 Bash 入口通过语法检查，迁移后的 NYUv2 wrapper 只读 dry-run 仍为 173 单元。这些检查没有执行完整数据磁盘流水线或 GPU 训练。远程定向同步与历史运行迁移边界见 [实验目录组织说明](../PIPELINE.md#指纹与同步边界)：远程不需要访问 GitHub；本实验正在运行时仍不可覆盖它的代码或配置。
 
 完整配置是缩小版 MTAN 的方法学实验，**不是原论文全宽度复现**：通道 `[16,32,64,128,128]`，分辨率 128×160，无预训练，无增强。上游最多 200 epochs，B 读出最多 100 epochs；AdamW、零 weight decay；上游/读出 LR 为 `1e-4`／`1e-3`。固定 A_val/B_val mIoU 选择、早停与 ReduceLROnPlateau，不使用 Y 调参。由于 MaxUnpool 的实现限制，固定随机种子但关闭强制 deterministic。
 
 ## 2. 目标位置与资源预检
 
-使用用户指定的集群主机、cross-domain checkout 和专用 conda 环境。根 AGENTS.md 要求远程操作先确认目标和范围；用户未指定目标或授权启动时，不自行 SSH、同步、提交或推送。本文不是自动启动远程实验的授权。
+使用用户指定的集群主机、cross-domain checkout 和专用 conda 环境。cross-domain/AGENTS.md 要求远程操作先确认目标和范围；用户未指定目标或授权启动时，不自行 SSH、同步、提交或推送。本文不是自动启动远程实验的授权。
 
 先确认当前 checkout 包含新配置、数据／缓存接口和本启动器，分支正确、用户已有改动保持原样。旧提交 `15e1bf8` 仅包含 CPU smoke，不含本轮集群扩展。集群上必须有后续完整代码，不能只复制 JSON 或 Bash 文件。
 
@@ -69,10 +71,10 @@ df -h .
 ```bash
 source /home/yuyang/miniconda3/etc/profile.d/conda.sh  # 如路径不同，改为实际 conda 路径
 conda activate gn2_study_cross
-python -m pip install -r cross-domain/requirements-cv_nyu_mtan.txt
+python -m pip install -r cross-domain/requirements.txt
 
-CONFIG=cross-domain/config/cv_nyu_mtan/cluster_full.json \
-GPU_POOL="0 1" bash cross-domain/scripts/cv_nyu_mtan/run_cluster.sh --dry-run
+CONFIG=cross-domain/experiments/cv_nyu_mtan/config/cluster_full.json \
+GPU_POOL="0 1" bash cross-domain/experiments/cv_nyu_mtan/scripts/run_cluster.sh --dry-run
 ```
 
 dry-run 只读取配置/源码，不调用 Context.initialize、不下载、不训练、不测试 CUDA。完整配置应枚举 **173 单元**：prepare 1＋上游 10＋cache 10＋refine 150＋evaluate 1＋analyze 1。150 个下游模型来自 ST 2 recipes × 5×5＝50，MT 4 recipes × 5×5＝100；最终 Y 评价为 10 native＋150 读出＝160 行。
@@ -84,9 +86,9 @@ dry-run 只读取配置/源码，不调用 Context.initialize、不下载、不�
 在用户指定的集群目录和 GPU 上直接启动完整矩阵：
 
 ```bash
-CONFIG=cross-domain/config/cv_nyu_mtan/cluster_full.json \
+CONFIG=cross-domain/experiments/cv_nyu_mtan/config/cluster_full.json \
 GPU_POOL="0 1 2 3" RETRIES=1 \
-bash cross-domain/scripts/cv_nyu_mtan/run_cluster.sh
+bash cross-domain/experiments/cv_nyu_mtan/scripts/run_cluster.sh
 ```
 
 可设 `PYTHON=/absolute/path/to/env/bin/python`，避免环境不一致；`CONDA_ENV` 可让 Bash 入口激活现有 conda 环境。运行不自动安装依赖。生产建议按集群 supervisor 或其 allocation 内前台运行；后台方式由该集群约定决定。

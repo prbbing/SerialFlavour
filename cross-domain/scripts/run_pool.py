@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 DOMAIN_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(DOMAIN_ROOT / "src"))
+sys.path.insert(0, str(DOMAIN_ROOT))
 
 from pipeline.context import load_context
 

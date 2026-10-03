@@ -3,3 +3,5 @@ logs/
 local_data/
 !tests/
 tests/.pytest_cache/
+!experiments/*/tests/
+experiments/*/tests/.pytest_cache/

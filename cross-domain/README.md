@@ -1,59 +1,74 @@
 # Cross-domain
 
-本目录用于在 jet tagging 之外的领域复现 SerialFlavour 的 frozen post-refinement 方法，检验多任务上游冻结后，辅助预测或局部结构是否能改善主任务读出。研究背景和候选数据集见 `docs/related_work.md`，工作约定见 `../AGENTS.md`。
+在 jet tagging 之外的领域复现 SerialFlavour 的 frozen post-refinement 方法：在 A 上训练并选择上游，冻结上游，在独立 B 上仅用主任务监督训练读出，最后在 Y 上比较 native head、强 embedding-only 与辅助增强读出。多任务上游的 embedding-only 不能替代真正的 single-task 上游基线。
 
-QM9 已实现完整闭环（`src/data/`、`src/model/`、`src/training/`、`src/refine/`、`src/evaluate/`、`src/analysis/` 各一个 `qm9.py`）。实验设计与运行（含集群单元调度）见 `docs/qm9/qm9_experiment_zh.md`，本地结果见 `docs/qm9/qm9_smoke_test_results_zh.md`，集群操作速查见 `docs/qm9/cluster_handoff_qm9_full_zh.md`。配置：`config/qm9_gap_charge_bond.json`（本地 smoke）与 `config/qm9_gap_charge_bond_full_100k.json`（集群 100k）。严谨对照使用 `config/qm9_gap_charge_bond_refine_v2_100k.json`（native 初始化与同容量键级/电荷图消融、独立验证）；历史 full 结果及修正边界见 `docs/qm9/qm9_gap_charge_bond_full_results_zh.md`。修改代码后必须使用新实验名。rMD17 路线延后。其他候选数据集的模型和指标仍须随具体实验确定。
+工作约定见 [AGENTS.md](AGENTS.md)，研究背景见 [相关工作](docs/related_work.md)，通用接口、代码指纹及远程更新规则见 [PIPELINE.md](docs/PIPELINE.md)。
 
-## 目录职责
-
-NYUv2＋MTAN 已接入同一七阶段 pipeline，并完成真实数据 CPU 小规模闭环。配置为 `config/cv_nyu_mtan/smoke.json`，实现与结果见 [本地测试说明](docs/cv_nyu_mtan/nyuv2_mtan_smoke_test_zh.md)。本轮使用图像不重叠的小子集，尚不支持 scene 分组正式实验；结果不作为方法有效性证据。
-
-NYUv2 集群配置与单节点多 GPU 入口见 [集群 agent 操作说明](docs/cv_nyu_mtan/cluster_agent_handoff_zh.md)：直接使用 `cluster_full.json` 运行完整数据和 5×5 seeds。新增磁盘加载／缓存及集群入口仅完成静态检查，尚未运行验证；scene 分组需外部可靠身份映射。
+## 目录结构
 
 ```text
 cross-domain/
-├── src/           # 可复用 Python 模块
-│   ├── pipeline/  # 阶段调度、训练循环、缓存与读出工具
-│   ├── data/      # 数据读取、标签、划分与预处理
-│   ├── model/     # 上游模型与任务头
-│   ├── training/  # 上游训练
-│   ├── refine/    # 冻结缓存与下游训练
-│   ├── evaluate/  # 独立测试评估
-│   └── analysis/  # 配对分析与汇总
-├── scripts/       # Python CLI 与 Bash 启动器
-├── docs/          # 相关工作、实验设计与结果报告
-├── config/        # 实验配置（含 20k、50k、100k）
-├── tests/         # 协议测试与离线小规模闭环
-├── results/       # 按数据集、实验隔离的产物
-└── logs/          # 调度日志与单元完成标记（运行时创建）
+├── AGENTS.md          # 本路线的工作约定
+├── requirements.txt   # 所有实验的统一增量依赖
+├── pipeline/          # 公共调度、训练循环、缓存与读出工具
+├── scripts/           # 通用入口：run / run_unit / run_seed / run_pool
+├── experiments/
+│   ├── qm9/           # QM9 实现、配置、专用入口与测试
+│   └── cv_nyu_mtan/   # NYUv2 MTAN 实现、配置、专用入口与测试
+├── tests/             # 公共模块与实验隔离测试
+├── docs/              # 实验设计、运行说明与历史结果
+├── results/           # 实验产物
+└── logs/              # 运行时生成的调度日志与完成标记
 ```
 
-`src/data/`、`src/model/`、`src/refine/`、`src/analysis/` 初期各按数据集使用一个 `<dataset>.py` 文件；配置按数据集命名，复杂实验再按需拆分。可复用模块统一放在 `src/`，命令入口放在 `scripts/`。原始数据与缓存的存储路径由配置指定，`src/data/` 主要存放处理代码。
+每个实验目录包含 `data.py`、`model.py`、`training.py`、`refine.py`、`evaluate.py`、`analysis.py`，以及 `config/`、`scripts/` 和 `tests/`。配置的 `dataset` 决定加载 `experiments.<dataset>.<kind>`；公共 pipeline 组织流程，实验包处理领域差异。
 
-`src/pipeline/` 管理阶段顺序并调用数据集模块；数据集差异放在对应模块中，避免在通用脚本中堆积数据集判断。`config/` 描述路径、任务、模型与训练参数，不承担数据处理逻辑。先完成一个数据集的最小闭环，出现实际重复后再提取共用部分。
+## 已实现实验
 
-通用接口及运行方式见 `docs/PIPELINE.md`。
+| 实验 | 配置与入口 | 说明与验证范围 |
+|---|---|---|
+| QM9 | 配置在 `experiments/qm9/config/`；集群入口为 `experiments/qm9/scripts/run_full.sh` | 已实现完整闭环；见 [实验设计](docs/qm9/qm9_experiment_zh.md)、[本地结果](docs/qm9/qm9_smoke_test_results_zh.md)、[集群说明](docs/qm9/cluster_handoff_qm9_full_zh.md) 与 [历史完整实验结果](docs/qm9/qm9_gap_charge_bond_full_results_zh.md) |
+| NYUv2＋MTAN | `experiments/cv_nyu_mtan/config/smoke.json`、`cluster_full.json`；集群入口为 `experiments/cv_nyu_mtan/scripts/run_cluster.sh` | 真实数据 CPU 小规模闭环已完成；见 [本地说明](docs/cv_nyu_mtan/nyuv2_mtan_smoke_test_zh.md) 与 [集群 agent 说明](docs/cv_nyu_mtan/cluster_agent_handoff_zh.md) |
 
-## 实验流程
+QM9 的 `qm9_gap_charge_bond.json` 用于本地小规模测试，`qm9_gap_charge_bond_full_100k.json` 对应历史完整方案；包含 native 初始化、同容量图消融及独立验证的对照配置为 `qm9_gap_charge_bond_refine_v2_{20k,50k,100k}.json`。历史方案的修正边界见结果文档。
 
-1. 确定主/辅助任务、标签来源、划分单位和预算，准备 A/B/测试划分；预处理仅在训练数据拟合。
-2. 在 A 上训练多任务上游，以相应验证集选择 checkpoint。
-3. 冻结全部上游参数，生成下游所需的表征和预测特征。
-4. 在 B 上仅用主任务监督训练 embedding-only 和辅助增强读出，使用 B 的验证部分选择模型。
-5. 在独立测试集比较 native head、强 embedding-only 和辅助增强读出；用 `src/analysis/` 汇总配对结果与不确定性。
+NYUv2 历史 CPU 结果使用图像不重叠的小子集，不作为方法有效性证据。当前 smoke 配置名为 `smoke_cpu_v3`，尚未执行；完整数据的磁盘加载、缓存与 GPU 训练尚未验证。完整集群配置使用图像不重叠划分；scene 分组接口需要外部可靠身份映射。其他候选领域见 [案例建议](docs/cross_domain_case_studies_zh.md)，rMD17 路线延后。
 
-分类、回归和序列任务使用各自适合的损失与指标；统一训练协议，不强行统一标签形状或照搬 jet rejection。检验辅助监督贡献时，应另设真正的 single-task 上游。
+## 环境与入口
 
-## 产物与边界
+依赖统一维护在 [requirements.txt](requirements.txt)，后续新增依赖也汇总到此文件。该文件是 `gn2_study_cross` 的增量依赖，PyTorch、NumPy 等基础依赖沿用克隆环境。安装与运行命令从工作树根目录执行：
 
-运行产物放在 `results/<dataset>/<experiment>/`，保留解析后的配置、数据版本与划分身份、checkpoint 来源、seed、指标及分析结果。大型原始数据、缓存、权重和预测不纳入 Git；分析代码与必要的小型汇总可以版本管理。实现产物写入前，再配置对应的 Git 忽略规则。
+```bash
+conda activate gn2_study_cross
+python -m pip install -r cross-domain/requirements.txt
+```
 
-新领域的方法迁移、数据处理、训练、配置和分析代码均集中于本目录。外部 `src/`、`scripts/`、`configs/` 中的 Jet tagging 实现原则上保持不变，仅供数据处理、训练与评估 protocol 参考；确需修改时，先说明原因和范围并取得用户确认。`docs/` 继续保存调研与研究记录。
+通用阶段入口为 `python cross-domain/scripts/run.py --config <配置路径> --stage <阶段>`，阶段依次为 `download → prepare → train → cache → refine → evaluate → analyze`；`--stage all` 按顺序执行。详见 [阶段契约](docs/PIPELINE.md#阶段与模块契约)。
 
-实验输出和可写缓存须按数据集与实验隔离。记录训练、验证、测试及预训练暴露边界，不将探索结果或单一领域收益表述为普遍机制。
+集群直接运行用户指定的完整矩阵，不添加 pilot 或子矩阵前置流程。单节点多 GPU 入口：
 
-## 本地数据与运行规模
+```bash
+# QM9：默认历史 full 配置；其他方案通过 CONFIG 指定
+GPU_POOL="0 1 2 3" bash cross-domain/experiments/qm9/scripts/run_full.sh
 
-本地测试数据可存放在 `D:\hep_analysis\gn2_study\dataset_ex`，按数据集与实验隔离，具体路径写入配置；代码仍保留在本 worktree 的 `cross-domain/` 中。
+# NYUv2 MTAN：默认完整数据、5 上游 seeds × 5 下游 seeds
+GPU_POOL="0 1 2 3" bash cross-domain/experiments/cv_nyu_mtan/scripts/run_cluster.sh
+```
 
-原则上本地测试尽量使用小规模数据，验证数据处理、训练与评估流程后，再在 GPU 集群上运行正式实验。未经用户批准，不在本地下载、复制或生成超过 5GB 的单个数据文件；限制按单个文件计算。若所需本地测试文件超过该大小，须在保存前说明预计大小、必要性及可行的小规模替代方案，并请示用户，获得明确批准后方可继续相关操作。
+两套入口均支持 `CONFIG`、`GPU_POOL`、`PYTHON`、`CONDA_ENV` 和 `RETRIES`。根据主机环境修改配置中的数据路径；不要将集群配置在本地启动。本地小规模测试仅在明确要求时运行，不作为集群完整矩阵的前置条件。
+
+离线回归测试命令：
+
+```bash
+python -m pytest cross-domain/tests cross-domain/experiments/qm9/tests cross-domain/experiments/cv_nyu_mtan/tests -q
+```
+
+本轮目录迁移后 37 项测试通过，Bash 入口和完整矩阵只读 dry-run 通过；这些检查不代表完整数据流水线或 GPU 训练已经验证。
+
+## 产物与更新边界
+
+结果按 `results/<dataset>/<experiment>/` 隔离，日志按 `logs/<dataset>/<experiment>/` 隔离；原始数据与处理缓存由配置的 `data_root` 指定，相对路径以工作树根目录为基准。大型数据、缓存、权重和预测不纳入 Git。历史结果及失败记录保留，代码或配置身份改变时使用新的 experiment 名称。
+
+可通过文件同步单独更新 `experiments/<dataset>/`，远程不需要访问 GitHub。其他实验的专用代码不会改变当前实验代码指纹；公共 pipeline 和通用入口仍是共享依赖。同一实验运行期间不要覆盖其代码或配置，更新公共代码也需协调正在运行的实验。详见 [指纹与同步边界](docs/PIPELINE.md#指纹与同步边界)。
+
+本路线代码集中在 `cross-domain/`，外部 Jet tagging 的 `src/`、`scripts/`、`configs/` 仅作协议参考。本地测试数据可放在 `D:\hep_analysis\gn2_study\dataset_ex`，按实验隔离；单个超过 5GB 的本地数据文件须提前获得授权。

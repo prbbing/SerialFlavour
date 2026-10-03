@@ -1,1 +1,0 @@
-"""Domain evaluation adapters."""

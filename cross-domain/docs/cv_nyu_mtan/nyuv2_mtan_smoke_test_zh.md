@@ -8,17 +8,17 @@
 
 ## 1. 实现位置与复用范围
 
-配置入口：[smoke.json](../../config/cv_nyu_mtan/smoke.json)。环境增量依赖：[requirements-cv_nyu_mtan.txt](../../requirements-cv_nyu_mtan.txt)。
+配置入口：[smoke.json](../../experiments/cv_nyu_mtan/config/smoke.json)。环境增量依赖：[requirements.txt](../../requirements.txt)。
 
 | 职责 | 模块 |
 |---|---|
-| 下载、标签读取、缩放、A/B/Y 划分 | `src/data/cv_nyu_mtan.py` |
-| 五级 SegNet＋任务注意力、STAN/MTAN | `src/model/cv_nyu_mtan.py` |
-| A 上游训练、A_val 选择 | `src/training/cv_nyu_mtan.py` |
-| 冻结空间缓存、B 主任务读出训练 | `src/refine/cv_nyu_mtan.py` |
-| 全数据集混淆矩阵、Y 最终评价 | `src/evaluate/cv_nyu_mtan.py` |
-| 配对差值和 seed 层级汇总 | `src/analysis/cv_nyu_mtan.py` |
-| 作者代码数值等价与协议测试 | `tests/cv_nyu_mtan/test_protocol.py` |
+| 下载、标签读取、缩放、A/B/Y 划分 | `experiments/cv_nyu_mtan/data.py` |
+| 五级 SegNet＋任务注意力、STAN/MTAN | `experiments/cv_nyu_mtan/model.py` |
+| A 上游训练、A_val 选择 | `experiments/cv_nyu_mtan/training.py` |
+| 冻结空间缓存、B 主任务读出训练 | `experiments/cv_nyu_mtan/refine.py` |
+| 全数据集混淆矩阵、Y 最终评价 | `experiments/cv_nyu_mtan/evaluate.py` |
+| 配对差值和 seed 层级汇总 | `experiments/cv_nyu_mtan/analysis.py` |
+| 作者代码数值等价与协议测试 | `experiments/cv_nyu_mtan/tests/test_protocol.py` |
 
 直接复用 `scripts/run.py`、通用阶段依赖/产物校验、`pipeline.fit.fit`、配置/代码身份、随机种子和运行环境工具。没有改动通用 pipeline、原 Jet tagging 代码或 QM9 模块。数据集专用模块也实现调度层的 variant/seed/recipe 过滤和 `applicable_recipes`；本轮实际验证的是单进程 `run.py`，尚未验证多 GPU pool。
 
@@ -173,10 +173,10 @@ cross-domain/results/cv_nyu_mtan/smoke_cpu_v2/
 source /home/yuyang/miniconda3/etc/profile.d/conda.sh
 conda activate gn2_study_cross
 cd /mnt/d/hep_analysis/gn2_study/SerialFlavour-cross
-python -m pip install -r cross-domain/requirements-cv_nyu_mtan.txt
+python -m pip install -r cross-domain/requirements.txt
 python cross-domain/scripts/run.py \
-  --config cross-domain/config/cv_nyu_mtan/smoke.json --stage all
-python -m pytest cross-domain/tests -q
+  --config cross-domain/experiments/cv_nyu_mtan/config/smoke.json --stage all
+python -m pytest cross-domain/tests cross-domain/experiments/cv_nyu_mtan/tests -q
 ```
 
 只运行某阶段可改 `--stage`，其前置阶段必须已完成且产物身份有效。更改源码／配置／运行预算时须用新 experiment 名称；通用 runner 拒绝覆盖不同身份的已有实验。本次 downloader 固定下载两个分片，prepare 样本请求不能超过已下载分片数量；它不是完整 795/654 数据的正式规模下载器。
