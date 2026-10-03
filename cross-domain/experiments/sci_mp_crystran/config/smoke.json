@@ -1,0 +1,24 @@
+{
+  "dataset": "sci_mp_crystran",
+  "experiment": "mp_crystran_smoke_cpu_v3",
+  "data_root": "/mnt/d/hep_analysis/gn2_study/dataset_ex/sci_mp_crystran",
+  "output_root": "cross-domain/results",
+  "runtime": {"device": "cpu", "threads": 4, "num_workers": 0, "deterministic": true},
+  "tasks": {"main": "gap pbe", "auxiliary": ["e_form"]},
+  "data": {
+    "sampling_seed": 2026, "split_seed": 2026, "candidate_multiplier": 2,
+    "max_atoms": 32, "max_file_bytes": 500000000,
+    "sizes": {"a_train": 512, "a_val": 64, "b_train": 256, "b_val": 64, "y_test": 128},
+    "source": {"name": "mp_all_20181018.json.gz", "url": "https://ndownloader.figshare.com/files/13309250",
+      "sha256": "1f3de2dc7c68959647240921b841293fce918ea1708e6f3760ba35a9cdfe0500",
+      "metadata_commit": "f89a530b76070fb613737b181381833330fb50c2"}
+  },
+  "model": {"feature_size": 32, "num_layers": 2, "num_heads": 4, "dim_feedforward": 64, "dropout": 0.1, "st_head_hidden": 128},
+  "upstream": {"variants": ["single_task", "mt_main_only", "multi_task"], "seeds": [1], "epochs": 20, "batch_size": 32,
+    "learning_rate": 0.001, "weight_decay": 0.00001, "auxiliary_weight": 1.0,
+    "clip_grad": 1.0, "selection_mode": "min", "early_stopping_patience": 6},
+  "refiner": {"seeds": [1], "epochs": 40, "batch_size": 64, "learning_rate": 0.001, "weight_decay": 0.00001,
+    "hidden": [64, 32], "clip_grad": 1.0, "selection_mode": "min", "early_stopping_patience": 10,
+    "include_initial_checkpoint": true,
+    "recipes": ["embedding", "embedding_capacity", "embedding_aux", "embedding_aux_shuffle", "embedding_hidden"]}
+}
