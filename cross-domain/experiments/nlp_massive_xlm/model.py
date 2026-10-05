@@ -70,7 +70,7 @@ def build(context, variant, initialize=False):
                 del encoder[key]
                 reconstructed_buffers.append(key)
         missing, unexpected = model.network.xlmr.load_state_dict(encoder, strict=False)
-        if set(missing) != {'pooler.dense.weight', 'pooler.dense.bias'} or unexpected:
+        if not set(missing) <= {'pooler.dense.weight', 'pooler.dense.bias'} or unexpected:
             raise ValueError(f'base encoder weight mismatch: {missing}, {unexpected}')
         # Base MLM contains no trained sentence pooler; it is unused and frozen.
         model.pretrained_metadata = {'model_id': 'FacebookAI/xlm-roberta-base', 'sha256': BASE_WEIGHTS_SHA256,

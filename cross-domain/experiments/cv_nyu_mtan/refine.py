@@ -131,13 +131,18 @@ def readout_dir(context, variant, us, recipe, ds):
 def initialize_native(readout, upstream):
     native = upstream.pred_task1
     width = native[0].in_channels
+    device = readout[0].weight.device
+    first_weight = native[0].weight.detach().to(device)
+    first_bias = native[0].bias.detach().to(device)
+    second_weight = native[1].weight.detach().to(device)
+    second_bias = native[1].bias.detach().to(device)
     with torch.no_grad():
         readout[0].weight[:width].zero_()
-        readout[0].weight[:width, :width].copy_(native[0].weight)
-        readout[0].bias[:width].copy_(native[0].bias)
+        readout[0].weight[:width, :width].copy_(first_weight)
+        readout[0].bias[:width].copy_(first_bias)
         readout[1].weight.zero_()
-        readout[1].weight[:, :width].copy_(native[1].weight)
-        readout[1].bias.copy_(native[1].bias)
+        readout[1].weight[:, :width].copy_(second_weight)
+        readout[1].bias.copy_(second_bias)
 
 
 def train(context):
@@ -160,7 +165,7 @@ def train(context):
                     if filters.get('downstream_seed') not in (None, ds):
                         continue
                     seed_all(ds)
-                    model = head(feature_channels(context, recipe), 13).to(device)
+                    model = head(feature_channels(context, recipe), 13)
                     initialize_native(model, upstream)
                     validation = load_cache(context, variant, us, 'b_val')
                     if 'directory' in validation:
@@ -170,10 +175,11 @@ def train(context):
                             raise ValueError('native-init validation sample corrupted')
                         validation = torch.load(path, map_location='cpu', weights_only=True)
                     with torch.inference_mode():
-                        initial_logits = model(features(validation, recipe).to(device))
+                        initial_logits = model(features(validation, recipe))
                         error = (initial_logits.cpu()-validation['logits']).abs().max().item()
                     if error > 1e-5:
                         raise AssertionError(f'native initialization mismatch {error}')
+                    model = model.to(device)
 
                     def loss(current, batch):
                         return segmentation_loss(current(batch['features']), batch['segmentation']), len(batch['segmentation'])

@@ -86,3 +86,19 @@ GPU_POOL="0 1 2 3" RETRIES=1 \
 ```
 
 同一命令重启会逐文件校验并跳过已完成单元（工作单元级续跑，非 optimizer/epoch 状态恢复）。首次需先按第 3 节用镜像预置 `raw/` 数据（含 `shard_index_<revision>.json`），再运行。静态计划与参数矩阵见 [cluster_agent_handoff_zh.md](cluster_agent_handoff_zh.md)。
+
+## 9. 本地代码审查补充（2026-10-05）
+
+本次检查对应 `refine.py` 将 native 初始化校验移到 CPU、显式按读出设备复制 native 参数的修改。审查发现一项尚未修复的 P2 风险：`initial_logits` 在 CPU 上计算，但比较目标 `validation['logits']` 仍是缓存阶段在运行设备上生成的预测；当缓存由 CUDA 生成时，该检查仍混用 CPU 与 GPU 的卷积结果。跨设备数值差异可能超过固定的 `1e-5` 阈值，从而误拒绝数学上等价的初始化。第 4 节记录的集群运行成功不能证明该判据在其他设备、后端或 checkpoint 上均可靠。
+
+建议后续使用同一份缓存 `embedding` 中前 `width` 个通道（`semantic_hidden`），在 CPU 上用复制到 CPU 的 native head 重新计算参考 logits，与 CPU 读出结果比较；GPU 缓存 logits 的差异另行记录，区分初始化等价性与缓存跨设备数值一致性。本次仅记录建议，没有实施该修复，也没有更改历史实验身份或结果。
+
+本地验证在 WSL `gn2_study_cross` 中执行两套相关离线协议测试：
+
+```bash
+python -B -m pytest -p no:cacheprovider --basetemp /tmp/cross_review_20261005 \
+  cross-domain/experiments/cv_nyu_mtan/tests \
+  cross-domain/experiments/nlp_massive_xlm/tests -q
+```
+
+结果为 **13 passed，2 个 SWIG 弃用警告，5.86 s**，`git diff --check` 通过。该环境为 PyTorch `2.5.1+cu124`，`torch.cuda.is_available() == False`；现有 NYUv2 初始化测试在 CPU 上生成参考预测，未覆盖 CUDA 缓存与 CPU 读出比较的路径。本次未下载数据、执行训练、连接集群或复核远程运行产物，因此此处属于本地代码审查与离线测试证据，不是新的 GPU 实验结果。
