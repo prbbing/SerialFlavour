@@ -739,6 +739,20 @@ def load_study_config(path: str | Path) -> StudyConfig:
         if set(graph_tensorboard) - {"enabled", "subdir"}:
             raise ValueError(
                 "refiners.graph.tensorboard may only define enabled and subdir")
+    # Derive the readout objective from the upstream jet objective. Including
+    # it in the resolved config distinguishes historical unweighted readouts
+    # even when the source JSON is unchanged.
+    for kind in ("dnn", "graph"):
+        if kind in values["refiners"]:
+            loss = {
+                "name": "weighted_cross_entropy",
+                "class_weights_source": "parallel.class_weights.jet_class_weights",
+                "class_weights": list(class_weights["jet_class_weights"]),
+            }
+            configured_loss = values["refiners"][kind].get("loss")
+            if configured_loss is not None and configured_loss != loss:
+                raise ValueError(f"refiners.{kind}.loss must match the upstream jet objective")
+            values["refiners"][kind]["loss"] = loss
     return StudyConfig(source, values, tuple(runs))
 
 

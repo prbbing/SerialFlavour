@@ -81,9 +81,17 @@ The Parallel-only Y evaluation is stored at `evaluation/parallel_seed<p>/paralle
 
 Each Parallel and refiner run saves checkpoints, JSON/CSV training histories, TensorBoard logs, and a run manifest. The final Y-test evaluation saves predictions and metrics for both models, jet probability and discriminant plots, auxiliary origin/pair diagnostics for the Parallel model, and DNN-versus-Parallel rejection comparison plots. Rejection ratios are evaluated at common target signal efficiencies, with each model setting its own score threshold.
 
+### Loss objectives
+
+Parallel uses `jet CE + 0.5 * origin CE + 1.5 * pair BCE` in the current components. Jet CE has fixed class weights `[2, 2, 1]` for b/c/light, matching the inverse of the configured sampling ratio `1:1:2`; weights are not recomputed from split counts. Origin CE uses its configured eight-class weights and ignores label `-1`; pair BCE excludes invalid, self and ignored track pairs.
+
+Both tabular DNN and graph-DNN now use only weighted jet CE, inheriting `parallel.class_weights.jet_class_weights` from the resolved experiment. The same criterion drives training, B-val checkpoint selection, early stopping and learning-rate decay. Frozen origin/pair predictions remain inputs without auxiliary-label supervision. Resolved configurations, histories and run manifests record the loss and class weights. The existing `train_cross_entropy`/`val_cross_entropy` history fields now refer to weighted CE; probability metrics retain their ordinary unweighted CE alongside the separately recorded validation weighted CE.
+
+Use a new experiment identity for weighted downstream runs. The derived loss is included in the resolved configuration hash, so historical unweighted results cannot be silently reused under the same experiment manifest.
+
 ### Learning-rate decay
 
-The reusable Parallel and refiner components enable `ReduceLROnPlateau`, with initial LR `1e-3`, factor `0.5`, minimum LR `1e-5`, relative improvement threshold `1e-4`, and no cooldown. Parallel uses patience **8** and monitors A-val jet cross-entropy; both tabular DNN and graph-DNN use patience **4** and monitor B-val cross-entropy. In PyTorch, reduction occurs after more than `patience` consecutive epochs without a qualifying improvement. The schedule steps once after validation and affects all parameters in the stage's optimiser, including the upstream shared backbone and auxiliary heads.
+The reusable Parallel and refiner components enable `ReduceLROnPlateau`, with initial LR `1e-3`, factor `0.5`, minimum LR `1e-5`, relative improvement threshold `1e-4`, and no cooldown. Parallel uses patience **8** and monitors A-val weighted jet cross-entropy; both tabular DNN and graph-DNN use patience **4** and monitor B-val weighted jet cross-entropy. In PyTorch, reduction occurs after more than `patience` consecutive epochs without a qualifying improvement. The schedule steps once after validation and affects all parameters in the stage's optimiser, including the upstream shared backbone and auxiliary heads.
 
 Configure `lr_scheduler` in `parallel.training`, `refiners.dnn`, or `refiners.graph`. Set `enabled: false` to reproduce fixed-LR training; old standalone components with no scheduler field also retain fixed LR. Early stopping and best-checkpoint selection remain unchanged and are not reset when LR decreases. Histories record `lr` (used during the completed epoch), `lr_next` (after validation), and `lr_reduced`; TensorBoard records these under `optimizer/learning_rate`, `optimizer/learning_rate_next`, and `optimizer/lr_reduced`. Histories and run manifests also identify the scheduler configuration and validation metric.
 

@@ -106,7 +106,9 @@ def test_downstream_trainer_steps_before_unchanged_early_stop(tmp_path, monkeypa
     config = {
         "learning_rate": 1e-3, "weight_decay": 1e-4, "hidden_dims": [4],
         "dropout": 0.0, "epochs": 20, "batch_size": 6, "early_stopping_patience": 10,
-        "lr_scheduler": {"patience": 4}, "tensorboard": {"enabled": False}}
+        "lr_scheduler": {"patience": 4}, "tensorboard": {"enabled": False},
+        "loss": {"name": "weighted_cross_entropy", "class_weights": [2, 2, 1],
+                 "class_weights_source": "parallel.class_weights.jet_class_weights"}}
     run = SimpleNamespace(seed=1, output_name="parallel_seed1")
     output = tmp_path / kind
     study = SimpleNamespace(
@@ -124,7 +126,7 @@ def test_downstream_trainer_steps_before_unchanged_early_stop(tmp_path, monkeypa
     monkeypatch.setattr(module, "probability_metrics", lambda *args: {})
     monkeypatch.setattr(module, "_device", lambda *args: torch.device("cpu"))
     features, labels = torch.randn(6, 2), torch.tensor(cache.labels, dtype=torch.long)
-    def evaluate(model, loader, device, *, collect=True):
+    def evaluate(model, loader, device, *, criterion, collect=True):
         result = {"loss": 1.0, "accuracy": 1 / 3}
         if collect:
             result.update(labels=cache.labels, probabilities=np.full((6, 3), 1 / 3))
@@ -154,7 +156,7 @@ def test_downstream_trainer_steps_before_unchanged_early_stop(tmp_path, monkeypa
     assert rows[6]["lr"] == 5e-4
     manifest = json.loads((output / "run_manifest.json").read_text())
     assert manifest["training_summary"]["best_epoch"] == 1
-    assert manifest["lr_scheduler"]["metric"] == "b_val.cross_entropy"
+    assert manifest["lr_scheduler"]["metric"] == "b_val.weighted_cross_entropy"
     assert payload["lr_scheduler"]["config"]["patience"] == 4
 
 

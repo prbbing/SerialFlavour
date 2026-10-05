@@ -17,6 +17,7 @@ import torch
 
 from src.config import seed_everything
 from src.lr_scheduler import create_lr_scheduler, step_lr_scheduler
+from src.losses import classification_class_weights
 from src.parallel_refine.cache import load_frozen_cache
 from src.parallel_refine.config import (
     GRAPH_RECIPES, graph_context_recipe, load_study_config,
@@ -36,7 +37,7 @@ def _device():
 
 
 @torch.inference_mode()
-def _evaluate(model, loader, device, *, collect=True):
+def _evaluate(model, loader, device, *, criterion, collect=True):
     model.eval()
     total = correct = count = 0
     probabilities, labels = [], []
@@ -46,7 +47,7 @@ def _evaluate(model, loader, device, *, collect=True):
             for name, value in batch.items()}
         logits = model(values["context"], values["node_values"],
                        values["pair_probs"], values["track_mask"])
-        loss = torch.nn.functional.cross_entropy(logits, values["y"])
+        loss = criterion(logits, values["y"])
         total += float(loss) * len(values["y"])
         correct += int((logits.argmax(-1) == values["y"]).sum())
         count += len(values["y"])
@@ -95,6 +96,8 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
         graph_config=config)
 
     device = _device()
+    criterion = torch.nn.CrossEntropyLoss(weight=classification_class_weights(
+        config["loss"]["class_weights"], 3, device))
     seed_everything(
         downstream_seed, [device.index] if device.type == "cuda" else ())
     train_loader = create_graph_loader(
@@ -118,7 +121,7 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
     scheduler, scheduler_config = create_lr_scheduler(
         optimiser, config.get("lr_scheduler"), default_patience=4)
     scheduler_metadata = {
-        "config": scheduler_config, "metric": "b_val.cross_entropy"}
+        "config": scheduler_config, "metric": "b_val.weighted_cross_entropy"}
     tensorboard = config.get("tensorboard", {})
     tensorboard_enabled = tensorboard.get("enabled", True)
     tensorboard_directory = output / tensorboard.get("subdir", "tensorboard")
@@ -135,13 +138,13 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
             optimiser.zero_grad(set_to_none=True)
             logits = model(values["context"], values["node_values"],
                            values["pair_probs"], values["track_mask"])
-            loss = torch.nn.functional.cross_entropy(logits, values["y"])
+            loss = criterion(logits, values["y"])
             loss.backward()
             optimiser.step()
             total += float(loss.detach()) * len(values["y"])
             correct += int((logits.argmax(-1) == values["y"]).sum())
             count += len(values["y"])
-        val = _evaluate(model, val_loader, device, collect=False)
+        val = _evaluate(model, val_loader, device, criterion=criterion, collect=False)
         lr_update = step_lr_scheduler(optimiser, scheduler, val["loss"])
         improved = val["loss"] < best
         if improved:
@@ -174,12 +177,14 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
         write_json_atomic(output / "training_history.json", {
             "history_version": "parallel_refine_graph_dnn_v1",
             "parallel_seed": run.seed, "downstream_seed": downstream_seed,
+            "loss": config["loss"],
             "recipe": recipe, "lr_scheduler": scheduler_metadata,
             "epochs": history})
         print(
               f"graph parallel_seed={run.seed} downstream_seed={downstream_seed} "
               f"recipe={recipe} epoch={epoch} "
-              f"train_ce={row['train_cross_entropy']:.6f} val_ce={val['loss']:.6f} "
+              f"train_weighted_ce={row['train_cross_entropy']:.6f} "
+              f"val_weighted_ce={val['loss']:.6f} "
               f"lr={lr_update['lr']:.6g} lr_next={lr_update['lr_next']:.6g}")
         if stale >= config["early_stopping_patience"]:
             break
@@ -187,13 +192,14 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
         writer.close()
     torch.save(model.state_dict(), marker)
     model.load_state_dict(torch.load(checkpoint, map_location=device, weights_only=True))
-    selected = _evaluate(model, val_loader, device)
+    selected = _evaluate(model, val_loader, device, criterion=criterion)
     np.savez(output / "validation_predictions.npz", y=selected["labels"],
              probabilities=selected["probabilities"],
              source_index=np.asarray(val_table.source_index),
              event_number=np.asarray(val_table.event_number))
     write_json_atomic(output / "validation_metrics.json", {
         "split": "b_val", "n_jets": int(len(selected["labels"])),
+        "loss": config["loss"], "weighted_cross_entropy": selected["loss"],
         "best_epoch": best_epoch,
         "metrics": probability_metrics(selected["labels"], selected["probabilities"])})
     write_json_atomic(output / "run_manifest.json", {
@@ -204,6 +210,7 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
         "parallel_output_name": run.output_name,
         "parallel_checkpoint": str(study.checkpoint(run).resolve()),
         "recipe": recipe, "parameters": parameter_count,
+        "loss": config["loss"],
         "lr_scheduler": scheduler_metadata,
         "train_cache": train_table.manifest, "validation_cache": val_table.manifest,
         "graph_train_cache": train_graph.manifest,
