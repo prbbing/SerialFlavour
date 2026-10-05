@@ -1,6 +1,9 @@
 # Shared incremental dependencies for all cross-domain experiments.
 # Install into gn2_study_cross; torch/numpy are inherited from gn2_study.
 
+# pin numpy version to avoid upgrading to 2.x
+numpy==1.26.4
+
 # QM9
 rdkit==2025.9.3
 # CV NYUv2 and MTAN
