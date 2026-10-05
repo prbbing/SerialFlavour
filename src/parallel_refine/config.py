@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from src.lr_scheduler import resolve_lr_scheduler
+
 
 REQUIRED_SPLITS = ("a_train", "a_val", "b_train", "b_val", "y_test")
 COMPONENT_CONFIG_VERSION = "parallel_refine_component_refs_v3"
@@ -550,6 +552,9 @@ def load_study_config(path: str | Path) -> StudyConfig:
             not isinstance(training.get("lr"), (int, float))
             or training["lr"] <= 0):
         raise ValueError("parallel.training.lr must be positive")
+    resolve_lr_scheduler(
+        training.get("lr_scheduler"), initial_lr=training["lr"],
+        default_patience=8)
     if (
             not isinstance(training.get("weight_decay"), (int, float))
             or training["weight_decay"] < 0):
@@ -657,6 +662,9 @@ def load_study_config(path: str | Path) -> StudyConfig:
     for key in ("learning_rate", "dropout"):
         if not isinstance(dnn.get(key), (int, float)) or dnn[key] < 0:
             raise ValueError(f"refiners.dnn.{key} must be non-negative")
+    resolve_lr_scheduler(
+        dnn.get("lr_scheduler"), initial_lr=dnn["learning_rate"],
+        default_patience=4)
     dnn_tensorboard = dnn.get("tensorboard", {})
     if not isinstance(dnn_tensorboard, dict):
         raise ValueError("refiners.dnn.tensorboard must be an object")
@@ -708,6 +716,9 @@ def load_study_config(path: str | Path) -> StudyConfig:
         for key in ("learning_rate", "dropout", "weight_decay"):
             if not isinstance(graph.get(key), (int, float)) or graph[key] < 0:
                 raise ValueError(f"refiners.graph.{key} must be non-negative")
+        resolve_lr_scheduler(
+            graph.get("lr_scheduler"), initial_lr=graph["learning_rate"],
+            default_patience=4)
         recipe_overrides = graph.get("recipe_overrides", {})
         if not isinstance(recipe_overrides, dict):
             raise ValueError("refiners.graph.recipe_overrides must be an object")

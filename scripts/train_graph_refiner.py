@@ -16,6 +16,7 @@ import numpy as np
 import torch
 
 from src.config import seed_everything
+from src.lr_scheduler import create_lr_scheduler, step_lr_scheduler
 from src.parallel_refine.cache import load_frozen_cache
 from src.parallel_refine.config import (
     GRAPH_RECIPES, graph_context_recipe, load_study_config,
@@ -114,6 +115,10 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
     optimiser = torch.optim.AdamW(
         model.parameters(), lr=config["learning_rate"],
         weight_decay=config["weight_decay"])
+    scheduler, scheduler_config = create_lr_scheduler(
+        optimiser, config.get("lr_scheduler"), default_patience=4)
+    scheduler_metadata = {
+        "config": scheduler_config, "metric": "b_val.cross_entropy"}
     tensorboard = config.get("tensorboard", {})
     tensorboard_enabled = tensorboard.get("enabled", True)
     tensorboard_directory = output / tensorboard.get("subdir", "tensorboard")
@@ -137,6 +142,7 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
             correct += int((logits.argmax(-1) == values["y"]).sum())
             count += len(values["y"])
         val = _evaluate(model, val_loader, device, collect=False)
+        lr_update = step_lr_scheduler(optimiser, scheduler, val["loss"])
         improved = val["loss"] < best
         if improved:
             best, stale, best_epoch = val["loss"], 0, epoch
@@ -145,6 +151,7 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
             stale += 1
         row = {
             "epoch": epoch, "epoch_seconds": time.perf_counter() - started,
+            **lr_update,
             "train_samples": count,
             "train_cross_entropy": total / max(count, 1),
             "train_accuracy": correct / max(count, 1),
@@ -158,17 +165,22 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
                 "loss/validation/cross_entropy": row["val_cross_entropy"],
                 "metrics/train/accuracy": row["train_accuracy"],
                 "metrics/validation/accuracy": row["val_accuracy"],
+                "optimizer/learning_rate": lr_update["lr"],
+                "optimizer/learning_rate_next": lr_update["lr_next"],
+                "optimizer/lr_reduced": int(lr_update["lr_reduced"]),
                 "timing/epoch_seconds": row["epoch_seconds"],
             })
         save_history_csv(history, output / "training_history.csv")
         write_json_atomic(output / "training_history.json", {
             "history_version": "parallel_refine_graph_dnn_v1",
             "parallel_seed": run.seed, "downstream_seed": downstream_seed,
-            "recipe": recipe, "epochs": history})
+            "recipe": recipe, "lr_scheduler": scheduler_metadata,
+            "epochs": history})
         print(
               f"graph parallel_seed={run.seed} downstream_seed={downstream_seed} "
               f"recipe={recipe} epoch={epoch} "
-              f"train_ce={row['train_cross_entropy']:.6f} val_ce={val['loss']:.6f}")
+              f"train_ce={row['train_cross_entropy']:.6f} val_ce={val['loss']:.6f} "
+              f"lr={lr_update['lr']:.6g} lr_next={lr_update['lr_next']:.6g}")
         if stale >= config["early_stopping_patience"]:
             break
     if writer is not None:
@@ -192,6 +204,7 @@ def _train_one(study, run, recipe, downstream_seed, *, skip_complete):
         "parallel_output_name": run.output_name,
         "parallel_checkpoint": str(study.checkpoint(run).resolve()),
         "recipe": recipe, "parameters": parameter_count,
+        "lr_scheduler": scheduler_metadata,
         "train_cache": train_table.manifest, "validation_cache": val_table.manifest,
         "graph_train_cache": train_graph.manifest,
         "graph_validation_cache": val_graph.manifest,

@@ -1,0 +1,20 @@
+{
+  "components": {
+    "data": "../data/data_1m_b200k_y500k.json",
+    "parallel": "../parallel/gn2_4layers.json",
+    "refiner": "../refiner/dnn_default.json"
+  },
+  "config_kind": "experiment",
+  "experiment": {
+    "name": "parallel_refine_default_lr_decay",
+    "output_root": "/data/yuyang/SerialFlavour/results/parallel_refine",
+    "markers": {
+      "label": "Parallel and refiner validation-driven LR decay",
+      "tags": ["lr_decay"],
+      "variables": {
+        "upstream_lr_patience": 8,
+        "downstream_lr_patience": 4
+      }
+    }
+  }
+}

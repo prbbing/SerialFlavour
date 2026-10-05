@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 
 from src.config import seed_everything
+from src.lr_scheduler import create_lr_scheduler, step_lr_scheduler
 from src.parallel_refine.config import (
     active_parallel_config, load_study_config, materialize_parallel_config,
     write_experiment_manifest, write_json_atomic)
@@ -129,6 +130,10 @@ def main(argv=None):
         optimiser = torch.optim.AdamW(
             raw_model.parameters(), lr=config.lr,
             weight_decay=config.weight_decay)
+        scheduler, scheduler_config = create_lr_scheduler(
+            optimiser, getattr(config, "lr_scheduler", None), default_patience=8)
+        scheduler_metadata = {
+            "config": scheduler_config, "metric": "a_val.jet_cross_entropy"}
         origin_criterion = nn.CrossEntropyLoss(
             ignore_index=-1,
             weight=origin_class_weights(config, device))
@@ -165,6 +170,7 @@ def main(argv=None):
                 "metric": "minimum validation jet cross-entropy",
                 "patience": args.patience,
             },
+            "lr_scheduler": scheduler_metadata,
         }
         for epoch in range(1, config.epochs + 1):
             epoch_start = time.perf_counter()
@@ -190,6 +196,7 @@ def main(argv=None):
             train["jet_accuracy"] = jet_correct / max(count, 1)
             validation = evaluate_loss(
                 raw_model, val_loader, device, loss_fn)
+            lr_update = step_lr_scheduler(optimiser, scheduler, validation["jet"])
             saved_best_jet = validation["jet"] < best_jet
             saved_best_total = validation["total"] < best_total
             if saved_best_jet:
@@ -206,7 +213,7 @@ def main(argv=None):
             if epoch % config.checkpoint_interval == 0:
                 torch.save(raw_model.state_dict(), output / f"epoch_{epoch}.pt")
             history.append({
-                "lr": optimiser.param_groups[0]["lr"],
+                **lr_update,
                 "epoch_seconds": time.perf_counter() - epoch_start,
                 "train_samples": count,
                 **{f"train_{key}": value for key, value in train.items()},
@@ -225,14 +232,20 @@ def main(argv=None):
                     epoch=epoch,
                     train=train,
                     validation=validation,
-                    learning_rate=optimiser.param_groups[0]["lr"],
+                    learning_rate=history[-1]["lr"],
                     epoch_seconds=history[-1]["epoch_seconds"],
                 )
+                writer.add_scalar(
+                    "optimizer/learning_rate_next", lr_update["lr_next"], epoch)
+                writer.add_scalar(
+                    "optimizer/lr_reduced", int(lr_update["lr_reduced"]), epoch)
+                writer.flush()
             save_history(history, output, metadata=history_metadata)
             print(
                 f"seed={run.seed} epoch={epoch} "
                 f"train={train['total']:.6f} "
-                f"val_jet={validation['jet']:.6f}")
+                f"val_jet={validation['jet']:.6f} "
+                f"lr={lr_update['lr']:.6g} lr_next={lr_update['lr_next']:.6g}")
             if (
                     stale_jet_epochs >= args.patience
                     and epoch < config.epochs):
@@ -255,6 +268,7 @@ def main(argv=None):
             "parallel_seed": run.seed,
             "parallel_output_name": run.output_name,
             "checkpoint_policy": history_metadata["checkpoint_policy"],
+            "lr_scheduler": scheduler_metadata,
             "parameters": parameter_count,
             "training_summary": {
                 "epochs_completed": len(history),
