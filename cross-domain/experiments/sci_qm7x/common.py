@@ -13,12 +13,37 @@ PAPER_URL = 'https://www.nature.com/articles/s41597-021-00812-2'
 DUPLICATES_MD5 = '5d886ccac38877c8cb26c07704dd1034'
 
 
+def physical_splits(settings):
+    return tuple(s for s in SPLITS if not (settings.get('shared_validation', False) and s == 'b_val'))
+
+
+def unique_structure_count(settings):
+    return sum(settings['sizes'][s] for s in physical_splits(settings))
+
+
+def allocation_sizes(settings):
+    sizes = dict(settings['sizes'])
+    if settings.get('shared_validation', False):
+        if sizes['a_val'] != sizes['b_val']:
+            raise ValueError('shared validation requires equal a_val/b_val sizes')
+        pool = settings.get('validation_pool_sizes')
+        if not isinstance(pool, dict) or set(pool) != {'a_val', 'b_val'} or any(type(n) is not int or n <= 0 for n in pool.values()):
+            raise ValueError('shared validation requires positive original validation_pool_sizes')
+        if sum(pool.values()) < sizes['a_val']:
+            raise ValueError('original validation pool is smaller than shared validation')
+        sizes.update(pool)
+    return sizes
+
+
 def validate_config(config):
     if config['dataset'] != 'sci_qm7x':
         raise ValueError('wrong dataset')
     data, model = config['data'], config['model']
     if set(data['sizes']) != set(SPLITS) or any(type(data['sizes'][s]) is not int or data['sizes'][s] <= 0 for s in SPLITS):
         raise ValueError('all five positive structure budgets required')
+    if type(data.get('shared_validation', False)) is not bool:
+        raise ValueError('shared_validation must be boolean')
+    allocation_sizes(data)
     if not data['sources'] or len({s['path'] for s in data['sources']}) != len(data['sources']):
         raise ValueError('distinct local HDF5 sources required')
     if type(data['sampling_seed']) is not int or type(data['split_seed']) is not int:
@@ -78,6 +103,20 @@ def assert_prepared(context):
         raise ValueError('normalization SHA256 mismatch')
     if source['split_manifest_sha256'] != sha256_file(context.output_dir / 'split_manifest.json'):
         raise ValueError('split manifest SHA256 mismatch')
+    settings = context.config['data']
+    shared = settings.get('shared_validation', False)
+    if manifest.get('shared_validation', False) != shared:
+        raise ValueError('shared validation policy mismatch')
+    if shared and manifest.get('validation_pool_sizes') != settings['validation_pool_sizes']:
+        raise ValueError('validation pool policy mismatch')
+    if shared and any(manifest[key]['a_val'] != manifest[key]['b_val'] for key in ('indices', 'ids', 'groups')):
+        raise ValueError('shared validation requires identical ordered indices, IDs and groups')
+    if manifest.get('unique_structure_count', unique_structure_count(settings)) != unique_structure_count(settings):
+        raise ValueError('unique structure count mismatch')
+    unused = manifest.get('unused_validation_ids', [])
+    expected_unused = sum(allocation_sizes(settings)[s] for s in ('a_val', 'b_val')) - settings['sizes']['a_val'] if shared else 0
+    if len(unused) != expected_unused or len(set(unused)) != len(unused):
+        raise ValueError('unused validation count mismatch')
     all_indices, all_ids = [], []
     for split in SPLITS:
         indices, ids, groups = manifest['indices'][split], manifest['ids'][split], manifest['groups'][split]
@@ -93,14 +132,23 @@ def assert_prepared(context):
             raise ValueError('actual split sample parents disagree with declared groups')
         if manifest['group_counts'][split] != len(groups) or manifest['represented_group_counts'][split] != len(set(parents)):
             raise ValueError('group count report mismatch')
-        all_indices.extend(indices)
-        all_ids.extend(ids)
+        if split in physical_splits(settings):
+            all_indices.extend(indices)
+            all_ids.extend(ids)
     if any(type(index) is not int for index in all_indices) or sorted(all_indices) != list(range(len(all_indices))):
         raise ValueError('split indices must partition every prepared row exactly once')
     if len(set(all_ids)) != len(all_ids):
         raise ValueError('duplicate geometry across split samples')
-    for left in SPLITS:
-        for right in SPLITS:
+    if unused:
+        import re
+        for identity in unused:
+            match = re.fullmatch(r'Geom-m([1-9]\d*)-i[1-9]\d*-c[1-9]\d*-(?:opt|d?[1-9]\d*)', identity)
+            if match is None or 'm' + match.group(1) not in manifest['groups']['a_val']:
+                raise ValueError('unused validation parent outside validation pool')
+    if set(unused) & set(all_ids):
+        raise ValueError('unused validation overlaps active samples')
+    for left in physical_splits(settings):
+        for right in physical_splits(settings):
             if left != right and set(manifest['groups'][left]) & set(manifest['groups'][right]):
                 raise ValueError('parent group leakage')
     return manifest

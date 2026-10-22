@@ -24,16 +24,16 @@
 
 ## 数据规模、母分子分组与去重
 
-约 4.2M 是平衡和非平衡**构型**数量，不能解释为 4.2M 个独立分子。正式配置中的 50k、100k 也都是总构型预算。每个 `r` 下所有立体异构体 `s`、平衡构象 `t` 及其 opt/扰动结构保持同组；A_train、A_val、B_train、B_val、Y 之间禁止任何母分子组重叠。
+约 4.2M 是平衡和非平衡**构型**数量，不能解释为 4.2M 个独立分子。50k/100k 是原配置规模名称；当前共享验证集后分别实际使用50,000/95,000个独立构型。每个 `r` 下所有立体异构体 `s`、平衡构象 `t` 及其 opt/扰动结构保持同组；A_train、B_train、共享val、Y之间禁止任何母分子组重叠；A_val与B_val是同一份有序样本。
 
 [官方 DupMols.dat](https://zenodo.org/records/4288677/files/DupMols.dat?download=1) 的原始 MD5 为 `5d886ccac38877c8cb26c07704dd1034`。它是 1900 行重复 opt ID 的**排除表**，没有提供“重复 ID → 代表 ID”的成对映射。本包将同 r 的剩余各家族归为一个母分子组，并排除列表中每个完整 `Geom-mr-is-ct` 家族的 opt 与全部扰动结构；不从该表臆造跨 r 代表映射。同一家族若出现在不同文件/根组则报错，阻止重复分片混用。这个规则控制已公布重复与同 r 相关性，不能声称发现所有未公布的化学等价结构或完成 scaffold-disjoint 划分。
 
-抽样不读取标签值。先扫描 HDF5 组名并作去重、筛选，按固定 `split_seed` 对母分子排序划入五区；组数量按预定构型预算比例分配。每个母分子最多保留固定 `sampling_seed` 哈希顺序的 32 个构型，再在各自已隔离的分区内逐组轮流抽取构型，达到预定预算。容量不足会报错，绝不偷偷放宽 cap、跨组补样或缩小预算。扫描时只保存每组 cap 个候选身份，之后才读取选中构型的标签。
+抽样不读取标签值。先扫描 HDF5 组名并作去重、筛选，先按原固定 `split_seed` 和原五区预算分配母分子、抽取样本，再合并原A_val/B_val池，按固定哈希选取5,000个共享val；训练及Y的逐ID和顺序保持。每个母分子最多保留固定 `sampling_seed` 哈希顺序的 32 个构型，再在各自已隔离的分区内逐组轮流抽取构型，达到预定预算。容量不足会报错，绝不偷偷放宽 cap、跨组补样或缩小预算。扫描时只保存每组 cap 个候选身份，之后才读取选中构型的标签。
 
 | 总构型预算 | A_train | A_val | B_train | B_val | Y |
 |---|---:|---:|---:|---:|---:|
-| 50,000 | 28,000 | 4,000 | 7,000 | 1,000 | 10,000 |
-| 100,000 | 56,000 | 8,000 | 14,000 | 2,000 | 20,000 |
+| 50,000 | 28,000 | 5,000 | 7,000 | 同A_val | 10,000 |
+| 95,000（原100k） | 56,000 | 5,000 | 14,000 | 同A_val | 20,000 |
 
 `equilibrium_only` 可显式设为 true，`max_conformations_per_parent`、`sizes`、`sampling_seed`、`split_seed` 均可配置。仅平衡结构时不能沿用超过可用容量的预算，需更改配置与 experiment 名称。正式配置不暗加平衡结构 pilot。
 
@@ -69,7 +69,7 @@ A_train 拟合 HOMO 均值/总体标准差以及有效原子的两项局部标�
 
 所有配方最终残差层以零权重、零偏置初始化，使 epoch 0 输出逐项等于缓存 native HOMO；将 epoch 0 保留为 B_val 可选 checkpoint。下游只用 B_train HOMO 监督和 B_val HOMO MAE 早停，绝不重新优化上游。下游模型只包含普通 MLP/池化，无挂接的上游模块、BatchNorm 或 dropout 状态，因此公共 fit 的 `model.train()` 不改变冻结上游行为。
 
-默认完整矩阵为 MT 上游 seeds `[11,22,33,44,55]` × 下游 seeds `[101,102,103,104,105]`：**5 个 A 训练、125 个 B 训练、138 个公共阶段单元、130 行 Y 指标**。5 个配方均保留，不改变 50k/100k 数据预算、任务、几何/容量对照、FP32、200/120 epoch 上限与早停设置。`cluster_50k_st_mt_ablation.json` / `cluster_100k_st_mt_ablation.json` 可显式加入结构匹配 ST 消融，对应 10 个 A 训练、175 个 B 训练、198 单元与185行。默认 MT-only 只能研究已训练 MT 表征的冻结读出差异，不能据此估计 MT 相对 ST 的辅助监督作用。完整清单由纯 dry-run 输出。
+默认完整矩阵为 MT 上游 seeds `[11,22,33,44,55]` × 下游 seeds `[101,102,103,104,105]`：**5 个 A 训练、125 个 B 训练、138 个公共阶段单元、130 行 Y 指标**。5 个配方均保留，val按下文v3调整，其余数据/任务、几何/容量对照、FP32、200/120 epoch 上限与早停设置。`cluster_50k_st_mt_ablation.json` / `cluster_100k_st_mt_ablation.json` 可显式加入结构匹配 ST 消融，对应 10 个 A 训练、175 个 B 训练、198 单元与185行。默认 MT-only 只能研究已训练 MT 表征的冻结读出差异，不能据此估计 MT 相对 ST 的辅助监督作用。完整清单由纯 dry-run 输出。
 
 每个 seed 的 Y 评估前，先核验该 seed 全部必需 checkpoint、B cache、recipe×downstream seed 完成标记及其 artifact 哈希；缺失、重复、不一致立即报错。只读取 A_val/B_val 已选 checkpoint 与各自 B_train normalization，不用 Y 选择模型或决定是否继续后续 seed。默认每个 batch 仅一次冻结上游前向，25 个小读出共享同一批 H/g/native；分子内 shuffle 由 sample ID 与原 seed 即时重现。native 每 seed 只计一次，误差用 Float64 累加，不永久存 Y H/aux hidden，`evaluation.save_predictions=false` 默认只存小指标。Y 完成证据由每 seed `evaluation_manifest.json` 和 durable receipt 锁定；全部计划 receipt 完整有效后才汇总，输入或产物变化后拒绝覆盖。`evaluation.auxiliary_diagnostics=true` 可单独从 prepared Y 读取局部真值，输出独立 `auxiliary_diagnostics.json`；默认关闭，它不是 cache 输入，不参与读出训练/选择，也不训练 oracle。
 
@@ -126,7 +126,7 @@ CONFIG=cross-domain/experiments/sci_qm7x/config/cluster_100k.json \
 
 若继承 `CUDA_VISIBLE_DEVICES`，GPU_POOL 是其中的逻辑下标，wrapper 映射到实际分配的 GPU/UUID。默认 `max_active_seeds=1`，多个 GPU 仅按 seed 轮换，仍只允许一个活动 seed；独占锁防止同一实验重复启动。receipt 永久封存所有 upstream/readout checkpoint、训练记录、input normalization、小 cache manifest、seed metrics 和来源证据的哈希。续跑先核验 durable receipt，主动退役 B cache 不触发重新训练；未封存 seed 仅跳过 artifact 哈希有效的已完成单元。失败保留缓存，不含 optimizer/scheduler/epoch 级训练恢复。删除仅限 receipt 列明且落在该 seed 允许根目录的 B tensor，保留 raw、prepared、source、checkpoint、小 manifest 和未知文件。
 
-默认可再生成 B cache 的静态 FP32 峰值约 **124.76 MB（50k）/249.52 MB（100k）**，只占一个 seed；完成封存后释放。原 ST+MT 全量 B/Y cache 估算分别 2.807/5.614 GB，MT-only 全量 B/Y 则为1.404/2.807 GB；这是调度/缓存体积变化，不能解释为精度收益。checkpoint、prepared、IDs、序列化与 JSON 另占空间，`release_cache=false` 会累计各 seed B cache。详见 [资源预算与生命周期](resources_zh.md)。loader 固定 `num_workers=0`；未实测吞吐、峰值内存/显存、完整时间和真实磁盘需求。
+默认可再生成 B cache 的静态 FP32 峰值约 **187.14 MB（50k）/296.305 MB（原100k）**，只占一个 seed；完成封存后释放。原 ST+MT 全量 B/Y cache 估算分别 2.807/5.614 GB，MT-only 全量 B/Y 则为1.404/2.807 GB；这是调度/缓存体积变化，不能解释为精度收益。checkpoint、prepared、IDs、序列化与 JSON 另占空间，`release_cache=false` 会累计各 seed B cache。详见 [资源预算与生命周期](resources_zh.md)。loader 固定 `num_workers=0`；未实测吞吐、峰值内存/显存、完整时间和真实磁盘需求。
 
 输出在 `cross-domain/results/sci_qm7x/<experiment>/`，包括来源与划分 manifest、`upstream/`、保留小 manifest 的 `cache/`、`refine/`、`evaluation/seeds/`、`lifecycle/` receipts、`analysis/summary.json` 与中文 `analysis/report_zh.md`；调度日志在 `cross-domain/logs/sci_qm7x/<experiment>/`。大型产物不应纳入 Git。
 
@@ -166,3 +166,14 @@ PYTHONDONTWRITEBYTECODE=1 python -B -m pytest -p no:cacheprovider \
 以上是工程协议证据，不表示真实QM7-X读取、GPU运行、吞吐/峰值显存/磁盘测量或科学结果已经完成。
 
 四份v2资源配置显式保留1 GiB输出磁盘余量（`workflow.free_space_reserve_bytes=1073741824`），共享driver在prepare前检查计划tensor峰值加余量；v1归档配置不变。余量用于估算外开销，实际资源峰值仍未测量。
+
+
+## v3：共享5,000个构型的验证集
+
+四份当前lifecycle配置启用 `data.shared_validation=true`，A_val/B_val均为5,000且共享相同有序ID和prepared行索引，不重复存储。新experiment身份为 `v3_sharedval5000`；v1归档配置保持不变。模型、任务、训练预算、seed、recipe、A_train/B_train/Y的数量、逐ID及顺序均保持。
+
+`validation_pool_sizes`记录原A_val/B_val预算：50k为4,000+1,000，100k为8,000+2,000。先复现原五区分组及原构型选择，再从合并验证池按split_seed+1哈希排序取5,000；100k余下5,000作为`unused_validation_ids`记录，不读取其标签、不写prepared、不参与任何训练、选模或Y。实际unique构型数分别50,000/95,000；val只计一次。共享val仍与训练和Y保持母分子分组隔离。
+
+恢复时检查共享策略、原池预算、val有序ID/indices/groups一致、唯一行完整覆盖、unused数量/归属/无活动重叠。上游目标归一化仍仅拟合A_train，下游输入归一化仅拟合B_train；共享val两阶段仅按HOMO主任务MAE选模。未修改公共pipeline或PASCAL。
+
+2026-10-22本地WSL专用环境对当前QM7-X与共享生命周期执行离线合成检查：**48 passed in 53.45s**（QM7-X 37、共享11）。新增覆盖共享val去重存储、两阶段同序ID/indices/groups、原A/B/Y逐ID与顺序保持、原验证池与unused互补、val loader仅主标签、损坏共享记录/unused拒绝，以及四份当前配置数量和缓存预算。未下载真实数据、未真实训练/前向、未远程修改或同步。

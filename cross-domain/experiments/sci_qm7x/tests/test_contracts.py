@@ -39,6 +39,8 @@ def context(tmp_path, monkeypatch):
     config['log_root'] = str(tmp_path / 'logs')
     config['data']['sources'] = [{'path': 'tiny.hdf5'}]
     config['data']['sizes'] = {split: 3 for split in SPLITS}
+    config['data']['shared_validation'] = False
+    config['data'].pop('validation_pool_sizes', None)
     config['data']['max_conformations_per_parent'] = 3
     config['model'] = dict(MODEL)
     config['runtime']['device'] = 'cpu'
@@ -294,7 +296,7 @@ def test_resource_plan_keeps_budgets_and_only_one_seed_cache():
     assert description['upstream_jobs'] == 5 and description['refine_jobs'] == 125
     assert description['max_active_seeds'] == 1 and description['stream_Y']
     assert description['cache_splits'] == ['b_train','b_val']
-    assert description['peak_regenerable_cache_bytes_estimate'] == 124760000
+    assert description['peak_regenerable_cache_bytes_estimate'] == 187140000
     assert not description['save_predictions']
     cfg = configuration()
     cfg['upstream']['variants'] = ['single_task']
@@ -472,3 +474,82 @@ def test_resource_generic_stage_loops_refuse_unfiltered_matrix(context):
     for operation in (training.train,refine.cache,refine.train):
         with pytest.raises(ValueError,match='exact unit filters'):
             operation(context)
+
+
+@pytest.mark.parametrize('count', [3, 6])
+def test_shared_validation_preserves_training_Y_and_stores_unique_rows(context, count):
+    data.prepare(context)
+    previous = read_json(context.output_dir / 'split_manifest.json')
+    settings = context.config['data']
+    settings.update(shared_validation=True, validation_pool_sizes={'a_val': 3, 'b_val': 3})
+    settings['sizes'].update(a_val=count, b_val=count)
+    data.prepare(context)
+    manifest = assert_prepared(context)
+    saved = data.load_prepared(context)
+    for split in ('a_train', 'b_train', 'y_test'):
+        assert manifest['ids'][split] == previous['ids'][split]
+    for key in ('indices', 'ids', 'groups'):
+        assert manifest[key]['a_val'] == manifest[key]['b_val']
+    pool = set(previous['ids']['a_val'] + previous['ids']['b_val'])
+    assert set(manifest['ids']['a_val']) | set(manifest['unused_validation_ids']) == pool
+    assert len(manifest['unused_validation_ids']) == 6 - count
+    assert len(saved['ids']) == 9 + count == manifest['unique_structure_count']
+    a = next(iter(data.make_loader(context, 'a_val', batch_size=count)))
+    b = next(iter(data.make_loader(context, 'b_val', batch_size=count)))
+    assert a['id'] == b['id']
+    assert torch.equal(a['main'], b['main'])
+    assert 'auxiliary' not in a and 'auxiliary' not in b
+    for split in ('a_train', 'b_train', 'y_test'):
+        assert not set(manifest['groups'][split]) & set(manifest['groups']['a_val'])
+
+
+@pytest.mark.parametrize('field', ['ids', 'indices', 'groups', 'unused_validation_ids'])
+def test_shared_validation_corruption_is_rejected_after_hash_verification(context, field):
+    settings = context.config['data']
+    settings.update(shared_validation=True, validation_pool_sizes={'a_val': 3, 'b_val': 3})
+    data.prepare(context)
+    path = context.output_dir / 'split_manifest.json'
+    manifest = read_json(path)
+    if field == 'unused_validation_ids':
+        manifest[field][0] = manifest['ids']['a_val'][0]
+    else:
+        manifest[field]['b_val'] = list(reversed(manifest[field]['b_val']))
+    write_json(path, manifest)
+    source_path = context.output_dir / 'source_manifest.json'
+    source = read_json(source_path)
+    source['split_manifest_sha256'] = sha256_file(path)
+    write_json(source_path, source)
+    with pytest.raises(ValueError, match='shared validation|unused validation'):
+        assert_prepared(context)
+
+
+@pytest.mark.parametrize('name,active,unused,b_cache', [
+    ('cluster_50k', 50000, 0, 187140000),
+    ('cluster_100k', 95000, 5000, 296305000),
+    ('cluster_50k_st_mt_ablation', 50000, 0, 187140000),
+    ('cluster_100k_st_mt_ablation', 95000, 5000, 296305000),
+])
+def test_current_configs_share_5000_and_do_not_change_other_budgets(name, active, unused, b_cache):
+    from experiments.sci_qm7x.workflow import plan
+    config = read_json(DOMAIN / f'experiments/sci_qm7x/config/{name}.json')
+    settings = config['data']
+    assert settings['shared_validation'] is True
+    assert settings['sizes']['a_val'] == settings['sizes']['b_val'] == 5000
+    factor = 2 if '100k' in name else 1
+    assert [settings['sizes'][s] for s in ('a_train', 'b_train', 'y_test')] == [28000*factor, 7000*factor, 10000*factor]
+    description = plan(Context(config, DOMAIN, Path(name + '.json')))
+    assert description['structure_budget'] == active
+    assert description['unused_validation_count'] == unused
+    assert description['peak_regenerable_cache_bytes_estimate'] == b_cache
+
+
+def test_shared_validation_rejects_unequal_counts_or_insufficient_pool():
+    from experiments.sci_qm7x.common import validate_config
+    config = configuration()
+    config['data']['sizes']['b_val'] = 4999
+    with pytest.raises(ValueError, match='equal'):
+        validate_config(config)
+    config['data']['sizes']['b_val'] = 5000
+    config['data']['validation_pool_sizes'] = {'a_val': 1000, 'b_val': 1000}
+    with pytest.raises(ValueError, match='smaller'):
+        validate_config(config)

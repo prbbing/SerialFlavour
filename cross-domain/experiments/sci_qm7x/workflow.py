@@ -3,7 +3,7 @@ from pathlib import Path
 from pipeline.io import read_json, sha256_file, artifact_record, artifacts_match
 from pipeline.units import enumerate_units
 from experiments.sci_qm7x.common import (
-    validate_config, expected_metadata, check_metadata, assert_prepared,
+    validate_config, expected_metadata, check_metadata, assert_prepared, unique_structure_count, allocation_sizes,
     upstream_dir, cache_dir, refiner_dir, applicable_recipes,
 )
 
@@ -56,11 +56,13 @@ def plan(context):
     per_seed = b_count*per_row
     peak_cache = per_seed*(1 if config.get('workflow',{}).get('release_cache',True) else count)
     legacy_total = (b_count+y_count)*per_row*count
-    prepared = sum(config['data']['sizes'].values())*(atoms*(8+3*4+1+2*4)+4)
+    prepared = unique_structure_count(config['data'])*(atoms*(8+3*4+1+2*4)+4)
     permanent_models = count*upstream*4 + sum(len(applicable_recipes(context,v)) for v in config['upstream']['variants'])*len(config['upstream']['seeds'])*len(config['refiner']['seeds'])*readout*4
     return {'identity': context.identity, 'config': str(context.config_path), 'data': str(context.data_dir),
-            'output': str(context.output_dir), 'structure_budget': sum(config['data']['sizes'].values()),
-            'structure_splits': config['data']['sizes'], 'group_counts': 'reported after local HDF5 prepare',
+            'output': str(context.output_dir), 'structure_budget': unique_structure_count(config['data']),
+            'structure_splits': config['data']['sizes'],
+            'shared_validation': config['data'].get('shared_validation',False),
+            'unused_validation_count': sum(allocation_sizes(config['data']).values())-unique_structure_count(config['data']), 'group_counts': 'reported after local HDF5 prepare',
             'variants': config['upstream']['variants'], 'upstream_seeds': config['upstream']['seeds'],
             'downstream_seeds': config['refiner']['seeds'], 'upstream_jobs': count,
             'refine_jobs': sum(u.startswith('refine:') for u in units), 'total_units': len(units),

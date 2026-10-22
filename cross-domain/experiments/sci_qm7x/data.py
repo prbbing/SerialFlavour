@@ -15,6 +15,7 @@ from pipeline.io import read_json, write_json, sha256_file, json_hash
 from experiments.sci_qm7x.common import (
     SPLITS, FIELDS, UNITS, SOURCE_URL, PAPER_URL, DUPLICATES_MD5,
     validate_config, applicable_recipes, data_identity, assert_prepared,
+    allocation_sizes, physical_splits, unique_structure_count,
 )
 
 GEOMETRY = re.compile(r'^Geom-m(?P<r>[1-9]\d*)-i(?P<s>[1-9]\d*)-c(?P<t>[1-9]\d*)-(?P<u>opt|d?[1-9]\d*)$')
@@ -219,6 +220,24 @@ def select_candidates(candidates, groups, sizes):
     return selected
 
 
+def select_partitions(candidates, settings):
+    # First reproduce the previous five-way allocation exactly, without labels.
+    sizes = allocation_sizes(settings)
+    groups = partition_parents(candidates, sizes, settings['split_seed'])
+    selection = select_candidates(candidates, groups, sizes)
+    unused = []
+    if settings.get('shared_validation', False):
+        pool = selection['a_val'] + selection['b_val']
+        pool.sort(key=lambda row: (rank(settings['split_seed'] + 1, row[1]), row[1]))
+        count = settings['sizes']['a_val']
+        unused = [row[1] for row in pool[count:]]
+        selection['a_val'] = pool[:count]
+        selection['b_val'] = list(selection['a_val'])
+        groups['a_val'] = groups['a_val'] + groups['b_val']
+        groups['b_val'] = list(groups['a_val'])
+    return groups, selection, unused
+
+
 def read_structure(group, name, maximum_atoms):
     import numpy as np
     for field in FIELDS.values():
@@ -254,15 +273,14 @@ def prepare(context):
     if download_record['pending_local_hdf5'] or download_record['duplicates'] is None:
         raise FileNotFoundError('prepare requires all extracted local HDF5 sources and official DupMols.dat; download never decompresses archives')
     candidates, scan = scan_candidates(context)
-    groups = partition_parents(candidates, settings['sizes'], settings['split_seed'])
-    selection = select_candidates(candidates, groups, settings['sizes'])
-    n, maximum = sum(settings['sizes'].values()), settings['max_atoms']
+    groups, selection, unused = select_partitions(candidates, settings)
+    n, maximum = unique_structure_count(settings), settings['max_atoms']
     tensors = {'z': torch.zeros(n, maximum, dtype=torch.long), 'coords': torch.zeros(n, maximum, 3),
                'main': torch.zeros(n), 'auxiliary': torch.zeros(n, maximum, 2), 'mask': torch.zeros(n, maximum, dtype=torch.bool)}
     ids, parents, indices, cursor = [], [], {}, 0
     with ExitStack() as stack:
         sources = [stack.enter_context(h5py.File(path, 'r')) for _, path in source_paths(context)]
-        for split in SPLITS:
+        for split in physical_splits(settings):
             indices[split] = []
             for _, name, file_index, molecule in selection[split]:
                 z, coords, main, auxiliary = read_structure(sources[file_index][molecule][name], name, maximum)
@@ -276,6 +294,8 @@ def prepare(context):
                 parents.append(f"m{parse_geometry(name)['r']}")
                 indices[split].append(cursor)
                 cursor += 1
+    if settings.get('shared_validation', False):
+        indices['b_val'] = list(indices['a_val'])
     a = torch.tensor(indices['a_train'])
     local = tensors['auxiliary'][a][tensors['mask'][a]].double()
     main = tensors['main'][a].double()
@@ -295,6 +315,9 @@ def prepare(context):
     write_json(paths[1], {'identity': context.identity, 'indices': indices, 'ids': {s: [ids[i] for i in indices[s]] for s in SPLITS},
                         'groups': groups, 'represented_groups': represented, 'group_counts': {s: len(groups[s]) for s in SPLITS},
                         'represented_group_counts': {s: len(represented[s]) for s in SPLITS}, 'structure_counts': settings['sizes'],
+                        'shared_validation': settings.get('shared_validation', False),
+                        'unique_structure_count': n, 'unused_validation_ids': unused,
+                        'validation_pool_sizes': settings.get('validation_pool_sizes'),
                         'group_rule': 'all Geom-mr-is-ct-u sharing r; no stereoisomer/conformer separation',
                         'duplicate_policy': 'exclude each official listed opt family and every displacement; remaining r families merged',
                         'sampling': 'parent split first; bottom hash capped conformations per parent, round-robin parent draw',
@@ -316,7 +339,7 @@ def load_prepared(context):
     if saved['identity'] != context.identity:
         raise ValueError('prepared tensor identity mismatch')
     manifest = read_json(context.output_dir / 'split_manifest.json')
-    count = sum(context.config['data']['sizes'].values())
+    count = unique_structure_count(context.config['data'])
     if len(saved['ids']) != count or len(saved['parents']) != count or any(len(saved[k]) != count for k in ('z', 'coords', 'main', 'mask', 'auxiliary')):
         raise ValueError('prepared tensor row count mismatch')
     for split in SPLITS:
