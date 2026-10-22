@@ -15,3 +15,13 @@ ijson==3.5.0
 # NLP MASSIVE: author XLM-R class and official tokenizer.
 transformers==4.44.2
 sentencepiece==0.2.1
+
+# PASCAL-Context author MTI-Net adapter: labels, image processing and model YAML.
+Pillow>=10,<12
+scipy>=1.11,<2
+PyYAML>=6,<7
+opencv-python-headless>=4.8,<4.12
+scikit-image>=0.22,<0.25
+six>=1.16,<2
+# QM7-X: released nested HDF5 source shards.
+h5py>=3.10,<4

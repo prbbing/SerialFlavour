@@ -1,0 +1,3 @@
+# Source locks cover original bytes; preserve them across Windows/Linux checkouts.
+/source_lock.json -text
+/vendor/** -text

@@ -80,6 +80,25 @@ NYUv2 使用 `experiments/cv_nyu_mtan/scripts/run_cluster.sh` 复用通用 `run_
 GPU_POOL="0 1 2 3" bash cross-domain/experiments/cv_nyu_mtan/scripts/run_cluster.sh
 ```
 
+## 可选的逐 seed 资源工作流
+
+PASCAL-Context 与 QM7-X 的新配置使用 `workflow.mode=seed_lifecycle`，入口为：
+
+```bash
+python cross-domain/scripts/run_lifecycle.py --config <config.json> --gpus 0 --dry-run
+python cross-domain/scripts/run_lifecycle.py --config <config.json> --gpus 0
+```
+
+`pipeline/lifecycle.py` 负责共享调度、产物校验和恢复，实验包的 `workflow.py` 提供空间计划与永久/临时产物清单，流式 Y 评估由实验包实现。旧 `run.py`、`run_pool.py` 与训练循环保持原有行为；新配置的专用启动器转到 lifecycle，并阻止无精确过滤条件的旧式全矩阵运行。
+
+完整流程是 prepare 一次，然后逐个 `(variant, upstream_seed)` 执行上游训练、仅 B-train/B-val 缓存、全部预定 recipe × downstream seed、流式 Y 评估。Y 指标仅记录，后续 seed 和配置不得据此调整；所有预定 seed 均完成后才最终聚合和分析。默认只训练 multi-task 上游，ST 和结构匹配对照可通过扩展配置加入，均使用新实验身份。5×5 seeds、数据规模、精度和训练预算保持不变。
+
+每个 seed 评估完成后，receipt 封存 checkpoint、读出归一化、指标和谱系文件的实际 SHA256，并记录可重建缓存的精确文件清单。校验成功后才可逐文件删除 B 缓存及 Y 临时 spool；不递归删除目录，不删除未知文件、输入数据或模型。失败时保留当前缓存。恢复时以 receipt 和永久产物校验为准，允许此前有意删除的缓存缺失；损坏 checkpoint 或旧身份会阻止恢复。此恢复跳过完整单元，不恢复 optimizer 的 epoch 中间状态。
+
+始终只激活一个上游 seed。多个 `--gpus` 参数只轮换后续 seed 的设备，不增加并发；继承的 `CUDA_VISIBLE_DEVICES` 按逻辑编号映射。实验锁阻止两个 lifecycle 同时调度同一实验。正式执行前检查预计输出峰值与空间余量；原始数据和预训练权重的空间需求另计。`--dry-run` 只读计划，不初始化模型、导入 tensor 框架、创建产物或启动任务。配置中的 `release_cache=false` 会保留临时文件，空间计划改为累计需求。
+
+共享代码的新增会改变代码身份；既有运行应继续使用原版本，新的工作流使用新 experiment 名称，不改写历史 manifest。新入口不强制迁移 QM9、NYUv2 或其他现有实验。
+
 ## 指纹与同步边界
 
 实验代码指纹包含公共 pipeline、通用 Python CLI、`experiments/__init__.py`、当前实验包的 Python 处理模块和专用 Python/Bash 脚本。其他实验的处理代码与启动器、测试和文档不会改变本实验代码身份。配置内容单独计算指纹，因此改变配置仍需新实验身份。
@@ -99,3 +118,13 @@ GPU_POOL="0 1 2 3" bash cross-domain/experiments/cv_nyu_mtan/scripts/run_cluster
 2026-10-03 在 WSL conda `gn2_study_cross` 环境运行公共与两套实验的离线回归测试：**37 passed in 16.57s**；随后移除 `src/` 层级后的复验为 **37 passed in 15.07s**。新增测试确认公共代码和本实验代码／脚本会改变指纹，而另一实验代码／脚本及测试文件不会改变指纹，并确认十二个处理模块从各自实验包加载。
 
 Python AST 解析、两套 Bash 启动器语法检查、通用 CLI 参数加载及 NYUv2 wrapper 只读 dry-run 均通过。七份 JSON 配置与迁移前 Git HEAD 逐字节一致；用户的 `cross_domain_case_studies_zh.md` 保持原样。没有下载完整数据、启动集群配置、执行远程同步或验证 GPU；既有离线测试也不覆盖完整数据的磁盘加载／缓存执行。
+
+### 2026-10-22 逐 seed 工作流离线验证
+
+在 WSL `gn2_study_cross` 合并执行共享生命周期、PASCAL-Context 与 QM7-X 的离线测试，最终 **68 passed in 54.03s**（共享11、PASCAL31、QM7-X26）。命令如下；两个实验使用相同测试文件名，因此合并收集必须使用 `--import-mode=importlib`，默认模式会产生同名模块收集冲突。
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python -B -m pytest cross-domain/tests/test_lifecycle.py cross-domain/experiments/cv_pascal_context/tests cross-domain/experiments/sci_qm7x/tests -q -p no:cacheprovider --import-mode=importlib --basetemp /tmp/cross_lifecycle_importlib_20261022
+```
+
+共享测试覆盖顺序调度、清理后幂等恢复、评估中断保留当前缓存、永久checkpoint损坏阻止清理、缓存被修改时拒绝删除、未知文件保留、清理路径越界/重复/永久产物重叠拒绝、缺失读出阻止Y、空间不足提前失败、已有缓存空间估计与继承GPU逻辑映射。领域测试包含小型随机/合成模型与产物，不代表真实数据或GPU的训练效果、显存可承载或磁盘峰值实测。本轮未下载或安装依赖，未运行真实训练、远程任务或QM9测试；未提交或推送。

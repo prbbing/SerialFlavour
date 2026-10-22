@@ -1,0 +1,144 @@
+{
+  "dataset": "sci_qm7x",
+  "experiment": "qm7x_homo_local_v2_st_mt_resource_100k",
+  "data_root": "/mnt/d/hep_analysis/gn2_study/dataset_ex/qm7x",
+  "output_root": "cross-domain/results",
+  "log_root": "cross-domain/logs",
+  "data": {
+    "sources": [
+      {
+        "path": "1000.hdf5"
+      },
+      {
+        "path": "2000.hdf5"
+      },
+      {
+        "path": "3000.hdf5"
+      },
+      {
+        "path": "4000.hdf5"
+      },
+      {
+        "path": "5000.hdf5"
+      },
+      {
+        "path": "6000.hdf5"
+      },
+      {
+        "path": "7000.hdf5"
+      },
+      {
+        "path": "8000.hdf5"
+      }
+    ],
+    "duplicates_file": "DupMols.dat",
+    "duplicates_md5": "5d886ccac38877c8cb26c07704dd1034",
+    "allow_download": false,
+    "download_files": [],
+    "max_file_bytes": 5000000000,
+    "sizes": {
+      "a_train": 56000,
+      "a_val": 8000,
+      "b_train": 14000,
+      "b_val": 2000,
+      "y_test": 20000
+    },
+    "sampling_seed": 20261022,
+    "split_seed": 731,
+    "equilibrium_only": false,
+    "max_conformations_per_parent": 32,
+    "max_atoms": 23
+  },
+  "model": {
+    "width": 96,
+    "head_hidden": 64,
+    "num_interactions": 4,
+    "num_gaussians": 32,
+    "cutoff": 5.0
+  },
+  "upstream": {
+    "variants": [
+      "single_task",
+      "multi_task"
+    ],
+    "seeds": [
+      11,
+      22,
+      33,
+      44,
+      55
+    ],
+    "epochs": 200,
+    "batch_size": 128,
+    "learning_rate": 0.0003,
+    "weight_decay": 1e-05,
+    "early_stopping_patience": 20,
+    "min_delta": 1e-06,
+    "clip_grad": 5.0,
+    "selection_mode": "min",
+    "auxiliary_weights": [
+      0.5,
+      0.5
+    ],
+    "scheduler": {
+      "factor": 0.5,
+      "patience": 8,
+      "threshold": 1e-06,
+      "min_lr_ratio": 0.01,
+      "type": "reduce_on_plateau"
+    }
+  },
+  "refiner": {
+    "recipes": [
+      "embedding",
+      "embedding_capacity",
+      "embedding_aux",
+      "embedding_hidden",
+      "embedding_aux_shuffle"
+    ],
+    "seeds": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "hidden": [
+      128,
+      64,
+      32
+    ],
+    "geometry_bins": 8,
+    "epochs": 120,
+    "batch_size": 128,
+    "learning_rate": 0.0003,
+    "weight_decay": 1e-05,
+    "early_stopping_patience": 12,
+    "min_delta": 1e-06,
+    "clip_grad": 5.0,
+    "selection_mode": "min",
+    "include_initial_checkpoint": true,
+    "scheduler": {
+      "factor": 0.5,
+      "patience": 4,
+      "threshold": 1e-06,
+      "min_lr_ratio": 0.01,
+      "type": "reduce_on_plateau"
+    }
+  },
+  "runtime": {
+    "device": "cuda",
+    "num_workers": 0,
+    "deterministic": true,
+    "threads": 4
+  },
+  "evaluation": {
+    "auxiliary_diagnostics": false,
+    "save_predictions": false
+  },
+  "workflow": {
+    "mode": "seed_lifecycle",
+    "max_active_seeds": 1,
+    "free_space_reserve_bytes": 1073741824
+  }
+}

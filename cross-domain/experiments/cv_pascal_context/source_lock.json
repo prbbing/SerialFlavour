@@ -1,0 +1,92 @@
+{
+  "repository": "https://github.com/SimonVandenhende/Multi-Task-Learning-PyTorch",
+  "commit": "ed3d9ac1c35493d8d22c4e33574919c326d77b6d",
+  "license": "CC-BY-NC-4.0; HRNet source MIT; ResNet source Torchvision provenance",
+  "files": {
+    "LICENSE": {
+      "sha256": "3adfcf579cb1229efe23658e24075fe76a1fc909b09c2977a4a4c3f4d349e72a",
+      "bytes": 19341,
+      "url": "https://raw.githubusercontent.com/SimonVandenhende/Multi-Task-Learning-PyTorch/ed3d9ac1c35493d8d22c4e33574919c326d77b6d/LICENSE"
+    },
+    "README.md": {
+      "sha256": "faaa23f92c5494170b2ce498e48f14b87ecb46446804c267953fcc2184645d35",
+      "bytes": 6396,
+      "url": "https://raw.githubusercontent.com/SimonVandenhende/Multi-Task-Learning-PyTorch/ed3d9ac1c35493d8d22c4e33574919c326d77b6d/README.md"
+    },
+    "models/seg_hrnet.py": {
+      "sha256": "810e784f0a114472015d3b41e703510339f7c2cff0a6d7f483025efe4161cc44",
+      "bytes": 20391,
+      "url": "https://raw.githubusercontent.com/SimonVandenhende/Multi-Task-Learning-PyTorch/ed3d9ac1c35493d8d22c4e33574919c326d77b6d/models/seg_hrnet.py"
+    },
+    "models/resnet.py": {
+      "sha256": "e7342dc716f7d4148503684becc41b5a149438decc6ee524b797cc470e080fb8",
+      "bytes": 13676,
+      "url": "https://raw.githubusercontent.com/SimonVandenhende/Multi-Task-Learning-PyTorch/ed3d9ac1c35493d8d22c4e33574919c326d77b6d/models/resnet.py"
+    },
+    "models/layers.py": {
+      "sha256": "f461c272d460f04ae36305eea98c0475c995a87ab5e7968dfbeb3671a706ada2",
+      "bytes": 1297,
+      "url": "https://raw.githubusercontent.com/SimonVandenhende/Multi-Task-Learning-PyTorch/ed3d9ac1c35493d8d22c4e33574919c326d77b6d/models/layers.py"
+    },
+    "models/padnet.py": {
+      "sha256": "c83c35aea31262c174138d6259b53374def0e7cbd5f1d28b255759a6d1e35b9b",
+      "bytes": 4551,
+      "url": "https://raw.githubusercontent.com/SimonVandenhende/Multi-Task-Learning-PyTorch/ed3d9ac1c35493d8d22c4e33574919c326d77b6d/models/padnet.py"
+    },
+    "models/mti_net.py": {
+      "sha256": "3b508eb46265b8e02a8676a8fbc3ee8e1f11628eb1aa12904b477f9b5771bd86",
+      "bytes": 7605,
+      "url": "https://raw.githubusercontent.com/SimonVandenhende/Multi-Task-Learning-PyTorch/ed3d9ac1c35493d8d22c4e33574919c326d77b6d/models/mti_net.py"
+    },
+    "models/models.py": {
+      "sha256": "2eae9d28830bb809bb7ff5a6843c26d0fb148c11302901fd5ef3fa2673c6f8f1",
+      "bytes": 1312,
+      "url": "https://raw.githubusercontent.com/SimonVandenhende/Multi-Task-Learning-PyTorch/ed3d9ac1c35493d8d22c4e33574919c326d77b6d/models/models.py"
+    },
+    "models/model_info/hrnet_w18.yml": {
+      "sha256": "b7e36f88d43cec65b0466798444a3418c568b4f58e3e9138cca40f22dadc51ed",
+      "bytes": 814,
+      "url": "https://raw.githubusercontent.com/SimonVandenhende/Multi-Task-Learning-PyTorch/ed3d9ac1c35493d8d22c4e33574919c326d77b6d/models/model_info/hrnet_w18.yml"
+    },
+    "data/pascal_context.py": {
+      "sha256": "a24889f306f4c8416dd8cbd3c4999bb64ce8c9b563d0ee9cecdecf98d1ad47a7",
+      "bytes": 20820,
+      "url": "https://raw.githubusercontent.com/SimonVandenhende/Multi-Task-Learning-PyTorch/ed3d9ac1c35493d8d22c4e33574919c326d77b6d/data/pascal_context.py"
+    },
+    "data/db_info/pascal_part.json": {
+      "sha256": "8ae6f565f3a7288ddf544d5e6126c179fe0f3430cbb35c96a5468d1d9ebf512a",
+      "bytes": 6062,
+      "url": "https://raw.githubusercontent.com/SimonVandenhende/Multi-Task-Learning-PyTorch/ed3d9ac1c35493d8d22c4e33574919c326d77b6d/data/db_info/pascal_part.json"
+    },
+    "data/db_info/nyu_classes.json": {
+      "sha256": "671d56eb0010888885f8de93ac75619d96d94511aacae2e88de4d8a0bc902d0f",
+      "bytes": 16912,
+      "url": "https://raw.githubusercontent.com/SimonVandenhende/Multi-Task-Learning-PyTorch/ed3d9ac1c35493d8d22c4e33574919c326d77b6d/data/db_info/nyu_classes.json"
+    },
+    "data/db_info/context_classes.json": {
+      "sha256": "23ee75fcc499dbc6af60032e9ed036505d20a5bed95dd20167c5f456bec47dbc",
+      "bytes": 7337,
+      "url": "https://raw.githubusercontent.com/SimonVandenhende/Multi-Task-Learning-PyTorch/ed3d9ac1c35493d8d22c4e33574919c326d77b6d/data/db_info/context_classes.json"
+    },
+    "utils/mypath.py": {
+      "sha256": "45d1079ce295925f9124b69b42dd92b9b46bb64cb1d2a2afdeac7f54c581e347",
+      "bytes": 797,
+      "url": "https://raw.githubusercontent.com/SimonVandenhende/Multi-Task-Learning-PyTorch/ed3d9ac1c35493d8d22c4e33574919c326d77b6d/utils/mypath.py"
+    },
+    "configs/pascal/hrnet18/mti_net.yml": {
+      "sha256": "46442d29cc0ba839dceebbbd2913955afbe22213acc83962d760beac01638605",
+      "bytes": 962,
+      "url": "https://raw.githubusercontent.com/SimonVandenhende/Multi-Task-Learning-PyTorch/ed3d9ac1c35493d8d22c4e33574919c326d77b6d/configs/pascal/hrnet18/mti_net.yml"
+    },
+    "losses/loss_functions.py": {
+      "sha256": "a65a9435bf86a62ddffeed2be4cac2b7f551ee4610cf09d6c529f488510b2228",
+      "bytes": 6352,
+      "url": "https://raw.githubusercontent.com/SimonVandenhende/Multi-Task-Learning-PyTorch/ed3d9ac1c35493d8d22c4e33574919c326d77b6d/losses/loss_functions.py"
+    },
+    "losses/loss_schemes.py": {
+      "sha256": "db40a51cb4d96e9d7ca4ed72dcf723004bacf4ef6fb0e9190f55c0cd3fb31246",
+      "bytes": 3550,
+      "url": "https://raw.githubusercontent.com/SimonVandenhende/Multi-Task-Learning-PyTorch/ed3d9ac1c35493d8d22c4e33574919c326d77b6d/losses/loss_schemes.py"
+    }
+  }
+}

@@ -1,0 +1,141 @@
+{
+  "dataset": "cv_pascal_context",
+  "experiment": "pascal21_mti_hrnet18_postrefine_v4_sharedval500_three_variant_lifecycle",
+  "data_root": "cross-domain/local_data/cv_pascal_context",
+  "output_root": "cross-domain/results",
+  "log_root": "cross-domain/logs",
+  "runtime": {
+    "device": "cuda",
+    "threads": 4,
+    "deterministic": true
+  },
+  "loader": {
+    "workers": 4
+  },
+  "data": {
+    "raw_root": "cross-domain/local_data/cv_pascal_context/PASCAL_MT",
+    "archive_path": "cross-domain/local_data/cv_pascal_context/PASCAL_MT.tgz",
+    "extract_root": "cross-domain/local_data/cv_pascal_context",
+    "archive_sha256": null,
+    "allow_download": false,
+    "allow_extract": false,
+    "max_archive_bytes": 5000000000,
+    "max_expanded_bytes": 40000000000,
+    "max_member_bytes": 5000000000,
+    "expected_train": 4998,
+    "expected_val": 5105,
+    "counts": {
+      "a_train": 3000,
+      "a_val": 500,
+      "b_train": 1000,
+      "b_val": 500
+    },
+    "split_seed": 2718,
+    "image_size": [
+      512,
+      512
+    ],
+    "group_map": null,
+    "augmentation": "author fixed 512x512 RGB/ImageNet normalization + A_train horizontal flip; author random rotation/scale omitted; normals validity resized nearest",
+    "shared_validation": true,
+    "unused_train_count": 498
+  },
+  "model": {
+    "architecture": "author_hrnet_w18_small_v2_and_full_mti_net",
+    "pretrained": {
+      "path": "cross-domain/local_data/cv_pascal_context/hrnet_w18_small_model_v2.pth",
+      "sha256": null,
+      "source": "https://github.com/HRNet/HRNet-Image-Classification",
+      "exposure": "ImageNet pretraining; possible PASCAL content exposure not certified absent; do not use PASCAL-finetuned checkpoints"
+    }
+  },
+  "upstream": {
+    "variants": [
+      "single_task",
+      "main_only_matched",
+      "multi_task"
+    ],
+    "seeds": [
+      11,
+      22,
+      33,
+      44,
+      55
+    ],
+    "epochs": 100,
+    "batch_size": 8,
+    "learning_rate": 0.0001,
+    "weight_decay": 0.0001,
+    "early_stopping_patience": 0,
+    "clip_grad": 5.0,
+    "loss_weights": {
+      "semseg": 1.0,
+      "human_parts": 2.0,
+      "sal": 5.0,
+      "normals": 10.0,
+      "edge": 50.0
+    }
+  },
+  "cache": {
+    "batch_size": 1,
+    "check_free_space": true,
+    "free_space_reserve_bytes": 20000000000,
+    "splits": [
+      "b_train",
+      "b_val"
+    ]
+  },
+  "refiner": {
+    "recipes": [
+      "embedding_matched",
+      "aux_prediction",
+      "aux_hidden",
+      "aux_shuffle"
+    ],
+    "seeds": [
+      101,
+      202,
+      303,
+      404,
+      505
+    ],
+    "epochs": 100,
+    "batch_size": 4,
+    "width": 64,
+    "learning_rate": 0.0001,
+    "weight_decay": 0.0001,
+    "early_stopping_patience": 15,
+    "selection_mode": "max",
+    "include_initial_checkpoint": true,
+    "clip_grad": 5.0,
+    "shuffle_seed": 8675309,
+    "scheduler": {
+      "type": "reduce_on_plateau",
+      "factor": 0.5,
+      "patience": 5,
+      "min_lr_ratio": 0.01
+    }
+  },
+  "evaluation": {
+    "batch_size": 2,
+    "save_predictions": false,
+    "prediction_shard_images": 32
+  },
+  "protocol": {
+    "statistical_unit": "upstream seed; mean downstream first, sample SD ddof=1",
+    "full_matrix": true,
+    "no_pilot_prerequisite": true,
+    "main_task": "21-class VOC semantic segmentation including background",
+    "locked_y": "official PASCAL_MT val",
+    "native_count": "once per upstream model",
+    "upstream_training": "author architecture/loss+Adam/poly; A-only selection; changed data split and augmentation explicitly recorded",
+    "local_downloads": "disabled; data/weights must be reviewed and provided locally",
+    "validation": "shared a_val/b_val: identical 500 images from original 998-image validation pool; remaining 498 unused; A_train/B_train/Y preserved"
+  },
+  "workflow": {
+    "mode": "seed_lifecycle",
+    "max_active_seeds": 1,
+    "stream_y": true,
+    "release_cache": true
+  }
+}
