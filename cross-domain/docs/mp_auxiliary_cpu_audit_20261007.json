@@ -1,0 +1,170 @@
+{
+  "date": "2026-10-07",
+  "scope": "new CPU frozen inference diagnostic from existing checkpoint; not original cluster evaluation, no training or selection",
+  "identity": "5b054c56403abb7022663c06f18593b4a2b1b4d218d6c86556dcb3848585a33c",
+  "n_y": 4000,
+  "device": "cpu",
+  "threads": 4,
+  "torch": "2.2.1+cu121",
+  "Ef_units": "eV/atom",
+  "baseline_fit_split": "a_train",
+  "constant_mean": -1.4101803880348942,
+  "constant_median": -1.514565018785523,
+  "constant_mean_metrics": {
+    "mae": 1.0778085033870966,
+    "rmse": 1.2814016371940948,
+    "r_squared": -5.5833894003987083e-05
+  },
+  "constant_median_metrics": {
+    "mae": 1.0752388507889945,
+    "rmse": 1.2848686384229675,
+    "r_squared": -0.005474720807868261
+  },
+  "per_upstream": [
+    {
+      "upstream_seed": 1,
+      "Ef": {
+        "mae": 0.19002058187261928,
+        "rmse": 0.30696684154905424,
+        "r_squared": 0.9426099464545958
+      },
+      "Eg": {
+        "mae": 0.5478374618979692,
+        "rmse": 0.9639653176845948,
+        "r_squared": 0.6076674454139981
+      },
+      "Eg_mae_cpu_minus_original": -2.742275184708376e-09,
+      "seconds": 3.5112464670091867
+    },
+    {
+      "upstream_seed": 2,
+      "Ef": {
+        "mae": 0.19044843476222284,
+        "rmse": 0.30425428217459033,
+        "r_squared": 0.9436197370153298
+      },
+      "Eg": {
+        "mae": 0.5383707852410794,
+        "rmse": 0.9470114010962664,
+        "r_squared": 0.6213465278489891
+      },
+      "Eg_mae_cpu_minus_original": -2.2595354476351304e-09,
+      "seconds": 3.455044646281749
+    },
+    {
+      "upstream_seed": 3,
+      "Ef": {
+        "mae": 0.19571551939916174,
+        "rmse": 0.3128261049360318,
+        "r_squared": 0.9403981592106357
+      },
+      "Eg": {
+        "mae": 0.5443676472255945,
+        "rmse": 0.947983663054093,
+        "r_squared": 0.6205686294013024
+      },
+      "Eg_mae_cpu_minus_original": 4.991653201891211e-09,
+      "seconds": 3.483018973842263
+    },
+    {
+      "upstream_seed": 4,
+      "Ef": {
+        "mae": 0.18008275319764694,
+        "rmse": 0.29270617303654056,
+        "r_squared": 0.9478183915378469
+      },
+      "Eg": {
+        "mae": 0.5262778217978478,
+        "rmse": 0.9361342056390284,
+        "r_squared": 0.6299948600320945
+      },
+      "Eg_mae_cpu_minus_original": 3.333473497235673e-10,
+      "seconds": 3.303098632954061
+    },
+    {
+      "upstream_seed": 5,
+      "Ef": {
+        "mae": 0.17429464445859078,
+        "rmse": 0.29357159962824714,
+        "r_squared": 0.9475093709862806
+      },
+      "Eg": {
+        "mae": 0.5342541153146028,
+        "rmse": 0.9726234272839337,
+        "r_squared": 0.6005881177969618
+      },
+      "Eg_mae_cpu_minus_original": 3.5695536526603178e-09,
+      "seconds": 3.351701098959893
+    }
+  ],
+  "sources": {
+    "/home/yuyang/SerialFlavour/cross-domain/experiments/sci_mp_crystran/model.py": {
+      "sha256": "c39375a2290d02614b26db05c69f102a1c020bf4671cce830e2cc67fa259e090",
+      "bytes": 3775
+    },
+    "/home/yuyang/SerialFlavour/result_in_data/sci_mp/sci_mp_crystran/mp_crystran_cluster_20k_v2/prepared.json": {
+      "sha256": "8262c81dbec21efe349b9b3ab53ea7c6a4a9c1248754f1694ed9e7ef555b8c19",
+      "bytes": 248986691
+    },
+    "/home/yuyang/SerialFlavour/result_in_data/sci_mp/sci_mp_crystran/mp_crystran_cluster_20k_v2/split_manifest.json": {
+      "sha256": "0f4b6ce920eb3b52043ecc673fbd78a97c34e9ef11b98f2dde6442c51d6e8509",
+      "bytes": 626367
+    },
+    "/home/yuyang/SerialFlavour/result_in_data/sci_mp/sci_mp_crystran/mp_crystran_cluster_20k_v2/target_normalization.json": {
+      "sha256": "546102aff3031e5a9a2cdebf19aa2a11155b26656588f0c782e9c838a86996a5",
+      "bytes": 218
+    },
+    "/home/yuyang/SerialFlavour/result_in_data/sci_mp/sci_mp_crystran/mp_crystran_cluster_20k_v2/evaluation.json": {
+      "sha256": "605ac751f45b0f7eb85094bdef437b81797516ff943687daeefceaf6e702f970",
+      "bytes": 115113
+    },
+    "/home/yuyang/SerialFlavour/result_in_data/sci_mp/sci_mp_crystran/mp_crystran_cluster_20k_v2/upstream/multi_task/seed1/best.pt": {
+      "sha256": "674a7ba7d4b91ebcb05fe7c3d735a18e4f4c142234cef84235d33c3915e761d4",
+      "bytes": 606114
+    },
+    "/home/yuyang/SerialFlavour/result_in_data/sci_mp/sci_mp_crystran/mp_crystran_cluster_20k_v2/upstream/multi_task/seed2/best.pt": {
+      "sha256": "1afa897ef81b3a3145db07d4a03270184ac6e7216ce8dc82c2ea68ce5647bad8",
+      "bytes": 606114
+    },
+    "/home/yuyang/SerialFlavour/result_in_data/sci_mp/sci_mp_crystran/mp_crystran_cluster_20k_v2/upstream/multi_task/seed3/best.pt": {
+      "sha256": "7af8345569abbd8711904ef663cc8231250b1cc664befd3da9ecc7da268abbd8",
+      "bytes": 606114
+    },
+    "/home/yuyang/SerialFlavour/result_in_data/sci_mp/sci_mp_crystran/mp_crystran_cluster_20k_v2/upstream/multi_task/seed4/best.pt": {
+      "sha256": "72d782f6108d1d87fbb969b08465611e26b95fc1748028426364123144f71ca2",
+      "bytes": 606114
+    },
+    "/home/yuyang/SerialFlavour/result_in_data/sci_mp/sci_mp_crystran/mp_crystran_cluster_20k_v2/upstream/multi_task/seed5/best.pt": {
+      "sha256": "aa2681c7169519b52f437adebc85f44afe65a472379adc6b514252f60730b5ff",
+      "bytes": 606114
+    }
+  },
+  "Ef_summary": {
+    "mae": {
+      "mean": 0.1861123867380483,
+      "upstream_sd": 0.00869354605152562
+    },
+    "rmse": {
+      "mean": 0.3020650002648928,
+      "upstream_sd": 0.008722784510452613
+    },
+    "r_squared": {
+      "mean": 0.9443911210409378,
+      "upstream_sd": 0.0032086222191486154
+    }
+  },
+  "Eg_summary": {
+    "mae": {
+      "mean": 0.5382215662954187,
+      "upstream_sd": 0.00849493562720752
+    },
+    "rmse": {
+      "mean": 0.9535436029515832,
+      "upstream_sd": 0.014571560846888747
+    },
+    "r_squared": {
+      "mean": 0.6160331160986692,
+      "upstream_sd": 0.011750169547217715
+    }
+  }
+}
