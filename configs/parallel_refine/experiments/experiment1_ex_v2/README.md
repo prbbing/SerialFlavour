@@ -1,6 +1,6 @@
-# Experiment 1 EX V2：3M 数据的 A/B 训练分配扫描
+# Experiment 1 EX V2：1M、3M、5M 数据的 A/B 训练分配扫描
 
-固定使用 122,077 参数的 Parallel Transformer 和总计 3,000,000 jets，
+固定使用 122,077 参数的 Parallel Transformer，在每个总数据量下分别
 扫描 upstream A-train / downstream B-train 的训练池分配比例。
 Upstream loss 系数在每个配置中显式固定为：
 
@@ -10,10 +10,24 @@ L = 1.0 * L_jet + 0.5 * L_origin + 1.5 * L_pair
 
 ## 数据与配置矩阵
 
-沿用总数据 70/10/20 协议：训练池 2,100,000、验证集 300,000、
-Y-test 600,000。下表比例仅作用于训练池。
-每个配置启用 `shared_validation: true`，其 A-val 和 B-val 使用同一份
-300,000 jets 验证数据，汇总数据量时只计一次；其他子集沿用事件互斥协议。
+沿用总数据 70/10/20 协议：
+
+| 总数据量 | A+B 训练池 | 共享验证集 | Y-test |
+|---|---:|---:|---:|
+| 1M | 700,000 | 100,000 | 200,000 |
+| 3M | 2,100,000 | 300,000 | 600,000 |
+| 5M | 3,500,000 | 500,000 | 1,000,000 |
+
+每个总数据量均有 100/0 到 50/50、步长 5 的 11 个配比，共 33 个配置。
+新增 1M、5M 共 22 个配置，沿用现有模型、loss、调度器和 recipes；
+上游 seeds 1–5 与下游 seeds 1–5 作 Cartesian 配对，后续再扩展上游 seeds。
+每个数据量需 55 次上游和 1,500 次下游训练，两组新增实验共
+110 次上游、3,000 次下游训练。
+
+下表以原 3M 为例，比例仅作用于训练池；1M、5M 的 A/B 样本数分别为
+700,000、3,500,000 乘对应百分比。
+每个配置启用 `shared_validation: true`，其 A-val 和 B-val 共享对应总量的
+验证数据，汇总数据量时只计一次；其他子集沿用事件互斥协议。
 归一化统计仅由该配置的 A-train 拟合。
 
 | A/B 比例 | A-train jets | B-train jets | 文件名后缀 |
@@ -30,8 +44,8 @@ Y-test 600,000。下表比例仅作用于训练池。
 | 55/45 | 1,155,000 | 945,000 | `a055_b045` |
 | 50/50 | 1,050,000 | 1,050,000 | `a050_b050` |
 
-共 11 个实验 JSON，文件名格式为
-`experiment1_ex_v2_p122k_n3m_a<AAA>_b<BBB>.json`。
+每个数据量有 11 个实验 JSON，文件名格式为
+`experiment1_ex_v2_p122k_n<N>m_a<AAA>_b<BBB>.json`，`N` 为 1、3、5。
 请求中的 `85/150` 按 `85/15` 处理；已补充 `75/25`。
 `100/0` 的 `b_train=0` 且 `dnn_enabled=false`，作为 Transformer-only 基线；
 其余配置均为 Transformer 加下游 refiner。
@@ -44,11 +58,11 @@ Y-test 600,000。下表比例仅作用于训练池。
 
 | 项目 | 原 Experiment 1 EX | Experiment 1 EX V2 |
 |---|---|---|
-| 总数据量 | 1M–6M，每种数据量扫描 7 个比例，共 42 组 | 固定 3M，扫描 11 个比例 |
+| 总数据量 | 1M–6M，每种数据量扫描 7 个比例，共 42 组 | 原固定 3M；新增 1M、5M，各扫描 11 个比例 |
 | A/B 比例 | 100/0、95/5、90/10、85/15、80/20、75/25、70/30 | 保留原 7 个比例，新增 65/35、60/40、55/45、50/50 |
 | Upstream loss 权重 | 从共享 Parallel 组件继承 1、0.5、1.5 | 每个实验 JSON 显式固定 1、0.5、1.5，并记录到 markers |
 | 实验与输出身份 | `experiment1_ex_p122k_...` | 独立的 `experiment1_ex_v2_p122k_...` 及 comparison group |
-| Split 目录 | `experiment1_ex_n3m_a..._b...` | 独立的 `experiment1_ex_v2_n3m_a..._b...` |
+| Split 目录 | `experiment1_ex_n<N>m_a..._b...` | 独立的 `experiment1_ex_v2_n<N>m_a..._b...` |
 
 Loss 权重的数值没有改变；v2 将其显式写入配置，便于检查实验条件。
 122,077 参数的模型结构、总数据 70/10/20 协议、A/B 共享验证、
@@ -82,7 +96,7 @@ loss/class weights、scheduler 信息及代码版本。本次未审计历史运�
 
 所有配置引用现有组件：
 
-- `../../data/experiment1_ex_n3m.json`
+- `../../data/experiment1_ex_n<N>m.json`，对应 1M、3M、5M
 - `../../parallel/experiment1_p122k.json`
 - `../../refiner/dnn_default.json`
 
@@ -97,11 +111,11 @@ loss/class weights、scheduler 信息及代码版本。本次未审计历史运�
 
 ```text
 结果：/data/yuyang/SerialFlavour/results/parallel_refine/<experiment.name>/
-划分：/data/yuyang/SerialFlavour/parallel_refine/cache/splits/experiment1_ex_v2_n3m_a<AAA>_b<BBB>/
+划分：/data/yuyang/SerialFlavour/parallel_refine/cache/splits/experiment1_ex_v2_n<N>m_a<AAA>_b<BBB>/
 ```
 
-共同的 `comparison_group` 为
-`experiment1_ex_v2_p122k_n3m_training_allocation`。
+同一总数据量的 `comparison_group` 为
+`experiment1_ex_v2_p122k_n<N>m_training_allocation`。
 Markers 记录模型参数量、总数据量、训练池大小、A/B 比例和样本数、
 下游启用状态及三个 loss 系数。
 不同 A/B 比例对应不同的 split 请求；各自的数据索引和 processed cache
@@ -109,8 +123,9 @@ Markers 记录模型参数量、总数据量、训练池大小、A/B 比例和�
 
 ## GPU 生产训练脚本
 
-入口为 `scripts/production/run_experiment1_ex_v2_full.sh`，格式沿用
-Experiment 3 的 production 脚本，`all_configs` 显式列出 11 个配置，
+入口为 `scripts/production/run_experiment1_ex_v2_full.sh`，通过
+`TOTAL_M=1|3|5` 每次选择一个总数据量，默认仍为 3M。
+三个 `all_configs` 分支分别显式列出各自的 11 个配置，
 按本 README 表格中从 100/0 到 50/50 的顺序排列。
 复用 `scripts/production/run_experiment1_ex_recipe_queue.py` 和
 `run_experiment1_ex_seed.py`，部署时需要这两个 worker 及其训练/评估依赖。
@@ -118,6 +133,13 @@ Experiment 3 的 production 脚本，`all_configs` 显式列出 11 个配置，
 在 Linux GPU 节点激活训练环境后，从仓库根目录运行：
 
 ```bash
+# 新增数据量：先分别检查，再在分配好的 GPU 上启动各组。
+TOTAL_M=1 GPU_POOL="0 1 2 3" bash scripts/production/run_experiment1_ex_v2_full.sh --dry-run
+TOTAL_M=5 GPU_POOL="0 1 2 3" bash scripts/production/run_experiment1_ex_v2_full.sh --dry-run
+
+# 完整运行 1M；改为 TOTAL_M=5 则运行 5M。
+TOTAL_M=1 GPU_POOL="0 1 2 3" bash scripts/production/run_experiment1_ex_v2_full.sh
+
 # 校验全部配置并显示本节点命令，不写日志、生成数据或启动训练。
 GPU_POOL="0 1 2 3" bash scripts/production/run_experiment1_ex_v2_full.sh --dry-run
 
@@ -134,7 +156,7 @@ nohup env GPU_POOL="0 1 2 3" PYTHON=python \
   > logs/parallel_refine/experiment1_ex_v2/launcher.log 2>&1 &
 ```
 
-共 55 个 upstream 训练；10 个非零 B-train 配置各有
+每个总数据量共 55 个 upstream 训练；10 个非零 B-train 配置各有
 6 recipes × 5 upstream seeds × 5 downstream seeds，共 1,500 个 downstream
 训练。`100/0` 仅准备 A-train、A-val 和 Y-test 的 processed cache，
 跳过 B 缓存、下游训练和 DNN 对比结果生成。
@@ -160,11 +182,14 @@ NODE_COUNT=4 NODE_RANK=0 GPU_POOL="0 1 2 3" \
 
 共享 processed-cache 目录的 `.locks/experiment1_ex_v2/` 中保存
 数据准备锁和各节点分片启动锁，文件系统必须支持跨节点 `flock`。
+各总数据量共用数据准备锁；1M、5M 使用带总量前缀的节点启动锁，
+分别使用不同 GPU 资源时可独立运行，日志和队列状态按总量隔离。
 各 A/B 比例使用自己的 split 和 A-train 归一化；prepared cache 仅按
 实际数据标识命中复用，不能假定 11 组配置共用同一份预处理数据。
 
 默认日志和状态目录为
-`logs/parallel_refine/experiment1_ex_v2/full/node<RANK>/`，包括 `stage1/`、
+3M 为 `logs/parallel_refine/experiment1_ex_v2/full/node<RANK>/`，
+1M、5M 为 `logs/parallel_refine/experiment1_ex_v2/n<N>m/full/node<RANK>/`，包括 `stage1/`、
 `scheduler.log`、`failed_jobs.log`、`units/`、`state/` 和 `aggregate/`。
 重跑跳过已完成 seed，复用已完成 checkpoint；不完整训练阶段从头重训，
 不恢复 epoch 或优化器状态。默认每阶段额外重试一次，耗尽后返回非零退出码。
@@ -174,10 +199,14 @@ NODE_COUNT=4 NODE_RANK=0 GPU_POOL="0 1 2 3" \
 
 `GPU_POOL` 为不同数字设备 ID 的空格分隔列表；未设置时优先使用数字形式的
 `CUDA_VISIBLE_DEVICES`，否则默认 `0 1 2 3`。
-`PYTHON`、`PREPARE_WORKERS`、`RETRIES`、`PATIENCE`、`REFINE_GPUS`、
+`TOTAL_M`、`PYTHON`、`PREPARE_WORKERS`、`RETRIES`、`PATIENCE`、`REFINE_GPUS`、
 `LOG_BASE`、`MIN_FREE_GB`、`SPACE_PATH` 的含义见脚本 `--help`。
 默认在准备和队列启动前检查 `/data` 至少有 200 GiB 空闲；这是启动门槛，
 不是整个 11 组实验的空间估计。
 
 本地仅验证配置、Bash 语法和 dry-run 调度命令，未准备真实数据、
 训练模型或进行 Y-test 评估。
+
+跨总数据量的比较沿用各自的 70/10/20 划分；验证集和测试集大小随总量改变，
+现有 split 逻辑不保证不同总量或不同 A/B 配比的训练集嵌套。
+新增配置不代表训练已经完成，结果应以生产运行后的评估产物为准。

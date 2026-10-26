@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Experiment 1 EX V2: 11 A/B allocations at 3M, dependency-aware GPU queue.
+# Experiment 1 EX V2: 11 A/B allocations at 1M, 3M or 5M.
 # Reuses the existing production queue and seed worker without changing them.
 set -euo pipefail
 
@@ -7,6 +7,7 @@ usage() {
     cat <<'HELP'
 Usage: bash scripts/production/run_experiment1_ex_v2_full.sh [--dry-run | --prepare-only]
 
+TOTAL_M=3            Total dataset size in millions: 1, 3 or 5; one size per run.
 GPU_POOL="0 1 2 3"   GPUs reserved for this run; one queue unit per GPU.
                      Defaults to numeric CUDA_VISIBLE_DEVICES, else 0 1 2 3.
 NODE_COUNT=1          Number of independent nodes sharing data/result storage.
@@ -16,7 +17,8 @@ PREPARE_WORKERS=8     CPU processes used for shared processed-cache preparation.
 RETRIES=1             Additional retries per stage; partial outputs are rebuilt.
 PATIENCE=100          Upstream early-stopping patience, matching the current run.
 REFINE_GPUS=GPUs-1    Refinement concurrency while upstream work remains queued.
-LOG_BASE=logs/parallel_refine/experiment1_ex_v2/full
+LOG_BASE=...         Default: logs/parallel_refine/experiment1_ex_v2/full at 3M;
+                     logs/parallel_refine/experiment1_ex_v2/n${TOTAL_M}m/full otherwise.
 MIN_FREE_GB=200       Minimum free GiB before preparation and queue launch.
 SPACE_PATH=/data      Filesystem on which to check available space.
 
@@ -51,6 +53,11 @@ fi
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$root"
 python_bin=${PYTHON:-python}
+total_m=${TOTAL_M:-3}
+case "$total_m" in
+    1|3|5) ;;
+    *) echo 'ERROR: TOTAL_M must be 1, 3 or 5' >&2; exit 2 ;;
+esac
 node_count=${NODE_COUNT:-1}
 node_rank=${NODE_RANK:-0}
 workers=${PREPARE_WORKERS:-8}
@@ -58,7 +65,11 @@ retries=${RETRIES:-1}
 patience=${PATIENCE:-100}
 min_free_gb=${MIN_FREE_GB:-200}
 space_path=${SPACE_PATH:-/data}
-log_base=${LOG_BASE:-logs/parallel_refine/experiment1_ex_v2/full}
+default_log_base=logs/parallel_refine/experiment1_ex_v2/full
+if [[ "$total_m" != 3 ]]; then
+    default_log_base="logs/parallel_refine/experiment1_ex_v2/n${total_m}m/full"
+fi
+log_base=${LOG_BASE:-$default_log_base}
 node_log="$log_base/node${node_rank}"
 visible_gpus=${CUDA_VISIBLE_DEVICES:-}
 gpu_spec=${GPU_POOL:-${visible_gpus//,/ }}
@@ -89,19 +100,53 @@ for gpu in "${gpu_pool[@]}"; do
     seen_gpus[$gpu]=1
 done
 
-all_configs=(
-    configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a100_b000.json
-    configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a095_b005.json
-    configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a090_b010.json
-    configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a085_b015.json
-    configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a080_b020.json
-    configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a075_b025.json
-    configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a070_b030.json
-    configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a065_b035.json
-    configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a060_b040.json
-    configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a055_b045.json
-    configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a050_b050.json
-)
+case "$total_m" in
+    1)
+        all_configs=(
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n1m_a100_b000.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n1m_a095_b005.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n1m_a090_b010.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n1m_a085_b015.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n1m_a080_b020.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n1m_a075_b025.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n1m_a070_b030.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n1m_a065_b035.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n1m_a060_b040.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n1m_a055_b045.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n1m_a050_b050.json
+        )
+        ;;
+    3)
+        all_configs=(
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a100_b000.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a095_b005.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a090_b010.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a085_b015.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a080_b020.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a075_b025.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a070_b030.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a065_b035.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a060_b040.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a055_b045.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a050_b050.json
+        )
+        ;;
+    5)
+        all_configs=(
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n5m_a100_b000.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n5m_a095_b005.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n5m_a090_b010.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n5m_a085_b015.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n5m_a080_b020.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n5m_a075_b025.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n5m_a070_b030.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n5m_a065_b035.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n5m_a060_b040.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n5m_a055_b045.json
+            configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n5m_a050_b050.json
+        )
+        ;;
+esac
 configs=()
 for index in "${!all_configs[@]}"; do
     if ((index % node_count == node_rank)); then
@@ -111,14 +156,16 @@ done
 
 # Resolve the entire matrix before preparing data or launching any workers.
 # Command substitution preserves the validator's failure status.
-metadata=$("$python_bin" - "$node_count" "$node_rank" "${all_configs[@]}" <<'PY'
+metadata=$("$python_bin" - "$node_count" "$node_rank" "$total_m" "${all_configs[@]}" <<'PY'
 import copy
 from pathlib import Path, PurePosixPath
 import sys
 from src.parallel_refine.config import load_study_config
 
 node_count, node_rank = map(int, sys.argv[1:3])
-studies = [load_study_config(path) for path in sys.argv[3:]]
+total_m = int(sys.argv[3])
+train_pool, validation, test = total_m * 700000, total_m * 100000, total_m * 200000
+studies = [load_study_config(path) for path in sys.argv[4:]]
 expected = {(100,0),(95,5),(90,10),(85,15),(80,20),(75,25),
             (70,30),(65,35),(60,40),(55,45),(50,50)}
 if len(studies) != 11:
@@ -131,13 +178,20 @@ for study in studies:
     if (a, b) in seen or (a, b) not in expected:
         raise ValueError(f'duplicate or unexpected allocation: {a}/{b}')
     seen.add((a, b))
-    name = f'experiment1_ex_v2_p122k_n3m_a{a:03d}_b{b:03d}'
+    name = f'experiment1_ex_v2_p122k_n{total_m}m_a{a:03d}_b{b:03d}'
     if study.study_name != name or study.path.stem != name:
         raise ValueError(f'incorrect config identity: {study.path}')
-    sizes = dict(a_train=2100000*a//100, a_val=300000,
-                 b_train=2100000*b//100, b_val=300000, y_test=600000)
+    sizes = dict(a_train=train_pool*a//100, a_val=validation,
+                 b_train=train_pool*b//100, b_val=validation, y_test=test)
     if study.data['sizes'] != sizes or study.data['shared_validation'] is not True:
-        raise ValueError(f'incorrect 3M data allocation: {name}')
+        raise ValueError(f'incorrect {total_m}M data allocation: {name}')
+    if (variables['total_dataset_jets'], variables['train_pool_jets'],
+            variables['validation_jets'], variables['test_jets']) != (
+            total_m * 1000000, train_pool, validation, test):
+        raise ValueError(f'incorrect dataset-size markers: {name}')
+    if study.experiment_markers['comparison_group'] != (
+            f'experiment1_ex_v2_p122k_n{total_m}m_training_allocation'):
+        raise ValueError(f'incorrect comparison group: {name}')
     if (variables['a_train_jets'], variables['b_train_jets'], variables['dnn_enabled']) != (
             sizes['a_train'], sizes['b_train'], b > 0):
         raise ValueError(f'incorrect allocation markers: {name}')
@@ -154,7 +208,7 @@ for study in studies:
         raise ValueError('downstream settings must match across configs')
     if [run.seed for run in study.seeds] != [1,2,3,4,5] or list(study.downstream_seeds) != [1,2,3,4,5]:
         raise ValueError('expected five upstream and five downstream seeds')
-    split_suffix = f'experiment1_ex_v2_n3m_a{a:03d}_b{b:03d}'
+    split_suffix = f'experiment1_ex_v2_n{total_m}m_a{a:03d}_b{b:03d}'
     if not study.data['split_dir'].endswith('/' + split_suffix):
         raise ValueError(f'incorrect v2 split directory: {name}')
     splits.add(study.data['split_dir'])
@@ -205,8 +259,8 @@ queue_args+=(--gpus "${gpu_pool[@]}" --log-base "$node_log" --state-dir "$node_l
             --retries "$retries" --patience "$patience" --max-refine "$refine_gpus"
             --python "$python_bin")
 
-printf 'Experiment 1 EX V2: node %s/%s, %s of 11 configurations, GPUs: %s\n' \
-       "$node_rank" "$node_count" "${#configs[@]}" "${gpu_pool[*]}"
+printf 'Experiment 1 EX V2: %sM, node %s/%s, %s of 11 configurations, GPUs: %s\n' \
+       "$total_m" "$node_rank" "$node_count" "${#configs[@]}" "${gpu_pool[*]}"
 printf 'This shard: %s upstream and %s downstream trainings; logs: %s\n' \
        "$upstream_count" \
        "$downstream_count" "$node_log"
@@ -247,7 +301,11 @@ fi
 
 mkdir -p "$node_log/stage1" "$node_log/state" "$lock_dir"
 # Locks must be honoured by the shared filesystem when running on many nodes.
-exec 9>"$lock_dir/node${node_rank}.run.lock"
+run_lock="node${node_rank}.run.lock"
+if [[ "$total_m" != 3 ]]; then
+    run_lock="n${total_m}m_${run_lock}"
+fi
+exec 9>"$lock_dir/$run_lock"
 flock -n 9 || { echo 'ERROR: this node shard already has a running launcher' >&2; exit 1; }
 # Hold the preparation lock across all configs. Existing processed caches are
 # reused, while prepare_data writes each experiment's own provenance manifest.
