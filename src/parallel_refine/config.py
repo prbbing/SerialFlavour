@@ -22,11 +22,13 @@ COMPONENT_KEYS = {
 FEATURE_RECIPES = {
     "F0_aux": ("aux",),
     "F1_embed": ("embedding",),
+    # Repeated column selection gives [z_global, z_global] without new cache fields.
+    "F1_double": ("embedding", "embedding"),
     # These two selectors are resolved by feature name so that the embedding
     # width is inherited from the frozen Parallel checkpoint rather than from
     # a hard-coded model dimension.
-    "F1O": ("embedding", "origin"),
-    "F1V": ("embedding", "pair_weighted_embedding"),
+    "F2_origin": ("embedding", "origin"),
+    "F2_vertex": ("embedding", "pair_weighted_embedding"),
     "F2_jet_aux": ("jet_probability", "aux"),
     "F3_embed_aux": ("embedding", "aux"),
     "F4_all": ("jet_probability", "embedding", "aux"),
@@ -65,10 +67,10 @@ def graph_node_source(recipe: str) -> str:
 def graph_context_recipe(recipe: str) -> str:
     """Return the frozen pooled-feature selector for one graph recipe."""
     contexts = {
-        "FG0": "F1O",
-        "FG1": "F1O",
-        "FG2": "F1O",
-        "FG2s": "F1O",
+        "FG0": "F2_origin",
+        "FG1": "F2_origin",
+        "FG2": "F2_origin",
+        "FG2s": "F2_origin",
         # FG4 is FG2 with the frozen three-class jet posterior at the graph-DNN
         # classifier input; graph nodes and pair topology remain identical.
         "FG4": "F1OJ",

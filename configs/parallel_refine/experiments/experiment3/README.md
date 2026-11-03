@@ -41,7 +41,11 @@ upstream A-train / downstream B-train 比例。
 除实验标识、split 目录、A/B 样本数和上述 loss 系数外，其余设置继承
 现有 3M、75/25 配置，包括模型结构、类别权重、优化器、学习率调度、
 upstream seeds 1–5 和 downstream seeds 1–5 的 Cartesian 配对。
-下游 recipes 沿用 `F1_embed`、`F3_embed_aux`、`F4_all`、`FG2`、`FG2s`、`FG4`。
+下游 recipes 沿用 `F1_embed`、`F1_double`、`F2_origin`、`F2_vertex`、`F3_embed_aux`、`F4_all`、`FG2`、`FG2s`、`FG4`。
+其中 `F2_origin` 相对 `F1_embed` 增加冻结 track-origin 概率的 attention 汇总，
+`F2_vertex` 增加冻结 pair 概率加权的邻居 embedding 汇总，用于比较额外输入的作用。
+`F1_double` 将同一个 global jet representation 拼接两次，与 `F2_vertex` 参数量相同，
+用于比较相同参数量下额外 pair 信息的作用；它不增加输入信息或可表示的函数类别。
 
 每组权重使用独立的 `experiment.name`，因此 checkpoint、冻结特征缓存
 和结果按实验标识隔离。结果目录为
@@ -76,7 +80,7 @@ nohup env GPU_POOL="0 1 2 3" PYTHON=python \
 ```
 
 16 个配置各训练 5 个 upstream seeds，共 80 个 Transformer；每个配置的
-6 个 downstream recipes 各训练 5 × 5 个 seed 配对，共 2,400 个 refiner。
+9 个 downstream recipes 各训练 5 × 5 个 seed 配对，共 3,600 个 refiner。
 队列按 `Parallel → B cache → recipe → Y cache → evaluation → prune`
 依赖调度，GPU 空闲后立即接收下一项任务。每张 GPU 同时接收一个调度单元；
 每个 recipe 单元沿用现有 production worker 的行为，在同一张 GPU 上

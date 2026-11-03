@@ -16,6 +16,9 @@
     "downstream_seeds": [1, 2, 3, 4, 5],
     "recipes": [
       "F1_embed",
+      "F1_double",
+      "F2_origin",
+      "F2_vertex",
       "F3_embed_aux",
       "F4_all",
       "FG2",

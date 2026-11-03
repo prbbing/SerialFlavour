@@ -105,7 +105,11 @@ loss/class weights、scheduler 信息及代码版本。本次未审计历史运�
 其余设置沿用组件，包括 `data_seed=42`、模型结构、类别权重、优化器、
 学习率调度、upstream seeds 1–5 和 downstream seeds 1–5 的 Cartesian 配对。
 非零 B-train 配置继承 recipes：
-`F1_embed`、`F3_embed_aux`、`F4_all`、`FG2`、`FG2s`、`FG4`。
+`F1_embed`、`F1_double`、`F2_origin`、`F2_vertex`、`F3_embed_aux`、`F4_all`、`FG2`、`FG2s`、`FG4`。
+其中 `F2_origin` 相对 `F1_embed` 增加冻结 track-origin 概率的 attention 汇总，
+`F2_vertex` 增加冻结 pair 概率加权的邻居 embedding 汇总，用于比较额外输入的作用。
+`F1_double` 将同一个 global jet representation 拼接两次，与 `F2_vertex` 参数量相同，
+用于比较相同参数量下额外 pair 信息的作用；它不增加输入信息或可表示的函数类别。
 
 每个配置使用独立的 v2 实验名和 split 目录：
 
@@ -157,7 +161,7 @@ nohup env GPU_POOL="0 1 2 3" PYTHON=python \
 ```
 
 每个总数据量共 55 个 upstream 训练；10 个非零 B-train 配置各有
-6 recipes × 5 upstream seeds × 5 downstream seeds，共 1,500 个 downstream
+9 recipes × 5 upstream seeds × 5 downstream seeds，共 2,250 个 downstream
 训练。`100/0` 仅准备 A-train、A-val 和 Y-test 的 processed cache，
 跳过 B 缓存、下游训练和 DNN 对比结果生成。
 
