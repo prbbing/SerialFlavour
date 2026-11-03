@@ -33,7 +33,7 @@ FEATURE_RECIPES = {
     "F3_embed_aux": ("embedding", "aux"),
     "F4_all": ("jet_probability", "embedding", "aux"),
 }
-GRAPH_RECIPES = ("FG0", "FG1", "FG2", "FG2s", "FG4")
+GRAPH_RECIPES = ("FG0", "FG1", "FG2", "FG2s", "FG1_48d", "FG2_32d", "FG4")
 RECIPE_MODEL_KIND = {
     **{name: "dnn" for name in FEATURE_RECIPES},
     **{name: "graph_dnn" for name in GRAPH_RECIPES},
@@ -56,6 +56,8 @@ def graph_node_source(recipe: str) -> str:
         "FG1": "origin_probs",
         "FG2": "track_embedding",
         "FG2s": "track_embedding",
+        "FG1_48d": "track_embedding",
+        "FG2_32d": "track_embedding",
         "FG4": "track_embedding",
     }
     try:
@@ -71,6 +73,8 @@ def graph_context_recipe(recipe: str) -> str:
         "FG1": "F2_origin",
         "FG2": "F2_origin",
         "FG2s": "F2_origin",
+        "FG1_48d": "F2_origin",
+        "FG2_32d": "F2_origin",
         # FG4 is FG2 with the frozen three-class jet posterior at the graph-DNN
         # classifier input; graph nodes and pair topology remain identical.
         "FG4": "F1OJ",
@@ -730,11 +734,13 @@ def load_study_config(path: str | Path) -> StudyConfig:
                 "refiners.graph.recipe_overrides contains unknown graph recipe(s): "
                 f"{sorted(unknown_override_recipes)}")
         for recipe, override in recipe_overrides.items():
-            if not isinstance(override, dict) or set(override) != {"num_layers"}:
+            if (not isinstance(override, dict) or not override
+                    or not set(override).issubset({"num_layers", "hidden_dim"})):
                 raise ValueError(
                     "refiners.graph.recipe_overrides entries may define only "
-                    "num_layers")
-            _require_positive_int(override, "num_layers")
+                    "num_layers and hidden_dim, with at least one field")
+            for key in override:
+                _require_positive_int(override, key)
         graph_tensorboard = graph.get("tensorboard", {})
         if not isinstance(graph_tensorboard, dict):
             raise ValueError("refiners.graph.tensorboard must be an object")

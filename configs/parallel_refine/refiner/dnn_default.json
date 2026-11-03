@@ -23,6 +23,8 @@
       "F4_all",
       "FG2",
       "FG2s",
+      "FG1_48d",
+      "FG2_32d",
       "FG4"
     ],
     "dnn": {
@@ -65,6 +67,14 @@
       "recipe_overrides": {
         "FG2s": {
           "num_layers": 1
+        },
+        "FG1_48d": {
+          "num_layers": 1,
+          "hidden_dim": 48
+        },
+        "FG2_32d": {
+          "num_layers": 2,
+          "hidden_dim": 32
         }
       },
       "output_dim": "track_embedding_dim",

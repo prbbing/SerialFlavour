@@ -41,7 +41,9 @@ upstream A-train / downstream B-train 比例。
 除实验标识、split 目录、A/B 样本数和上述 loss 系数外，其余设置继承
 现有 3M、75/25 配置，包括模型结构、类别权重、优化器、学习率调度、
 upstream seeds 1–5 和 downstream seeds 1–5 的 Cartesian 配对。
-下游 recipes 沿用 `F1_embed`、`F1_double`、`F2_origin`、`F2_vertex`、`F3_embed_aux`、`F4_all`、`FG2`、`FG2s`、`FG4`。
+下游 recipes 沿用 `F1_embed`、`F1_double`、`F2_origin`、`F2_vertex`、`F3_embed_aux`、`F4_all`、`FG2`、`FG2s`、`FG1_48d`、`FG2_32d`、`FG4`。
+`FG1_48d` 使用一层消息传递、48 维 GNN 隐藏状态；图输出维度、上下文输入和分类器沿用 FG2s。在 48 维 track embedding 下共 40,483 个参数，比 FG2s 减少 19.1%。节点输入仍为 track embedding。
+`FG2_32d` 沿用 FG2 的两层消息传递，仅将 GNN 隐藏维度从 64 改为 32；其余设置不变。在 48 维 track embedding 下共 37,171 个参数。
 其中 `F2_origin` 相对 `F1_embed` 增加冻结 track-origin 概率的 attention 汇总，
 `F2_vertex` 增加冻结 pair 概率加权的邻居 embedding 汇总，用于比较额外输入的作用。
 `F1_double` 将同一个 global jet representation 拼接两次，与 `F2_vertex` 参数量相同，
@@ -80,7 +82,7 @@ nohup env GPU_POOL="0 1 2 3" PYTHON=python \
 ```
 
 16 个配置各训练 5 个 upstream seeds，共 80 个 Transformer；每个配置的
-9 个 downstream recipes 各训练 5 × 5 个 seed 配对，共 3,600 个 refiner。
+11 个 downstream recipes 各训练 5 × 5 个 seed 配对，共 4,400 个 refiner。
 队列按 `Parallel → B cache → recipe → Y cache → evaluation → prune`
 依赖调度，GPU 空闲后立即接收下一项任务。每张 GPU 同时接收一个调度单元；
 每个 recipe 单元沿用现有 production worker 的行为，在同一张 GPU 上

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train Cartesian FG0/FG1/FG2/FG2s/FG4 graph-DNN refiners on B."""
+"""Train Cartesian graph-DNN refiners on B."""
 
 from __future__ import annotations
 
