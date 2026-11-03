@@ -216,3 +216,59 @@ NODE_COUNT=4 NODE_RANK=0 GPU_POOL="0 1 2 3" \
 跨总数据量的比较沿用各自的 70/10/20 划分；验证集和测试集大小随总量改变，
 现有 split 逻辑不保证不同总量或不同 A/B 配比的训练集嵌套。
 新增配置不代表训练已经完成，结果应以生产运行后的评估产物为准。
+
+## 在已有 upstream 上补跑输入与 GNN 容量实验
+
+专用入口 `scripts/production/run_experiment1_ex_v2_refine.sh` 调用同目录下的
+`run_experiment1_ex_v2_refine.py`，默认只训练 B 上的 5 个新增配方：
+`F1_double`、`F2_origin`、`F2_vertex`、`FG1_48d`、`FG2_32d`。
+它不会调用 upstream 训练或数据重新划分，也不会修改原实验 manifest。
+
+脚本在父配置同目录创建 `<parent.name>_refine_inputs_v1.json`，完整继承父配置
+的组件引用和 data/parallel overrides，显式指定 `upstream_experiment_name` 为原
+upstream 身份。新 manifest、refiner 和评估结果写入独立的扩展实验目录。
+运行前需要原 split 文件、所选 upstream seeds 的 `best_jet.pt`（或配置指定的
+checkpoint）和 `last.pt`；脚本在启动所有任务前检查它们存在。仍应核对历史
+resolved config 与当前共享组件的 upstream/data 设置一致，文件存在不代表配置一致。
+
+```bash
+# 仓库根目录；只检查计划，不写配置、日志或缓存，也不检查远端 checkpoint。
+TOTAL_M=3 GPU_POOL="0 1 2 3" bash scripts/production/run_experiment1_ex_v2_refine.sh \
+  --allocation 75 --dry-run
+
+# 先补跑 3M、75/25；每个配方包含 5 upstream × 5 downstream seeds。
+TOTAL_M=3 GPU_POOL="0 1 2 3" bash scripts/production/run_experiment1_ex_v2_refine.sh \
+  --allocation 75
+
+# 省略 --allocation 时，补跑该总量的全部 10 个非零 B 分配。
+TOTAL_M=1 GPU_POOL="0 1 2 3" bash scripts/production/run_experiment1_ex_v2_refine.sh
+
+# 配置锁定后，显式生成 Y 缓存并评估；不会重复下游训练。
+TOTAL_M=3 GPU_POOL="0 1 2 3" bash scripts/production/run_experiment1_ex_v2_refine.sh \
+  --allocation 75 --stage evaluate
+```
+
+`--allocation` 可以重复，例如 `--allocation 75 --allocation 80`；`100/0` 自动跳过。
+Python 入口顶部的 `PARENT_CONFIGS` 按 1M、3M、5M 显式列出全部 33 个父配置，
+运行时从该清单选择，不通过字符串模板推导文件名；启动输出逐项列出所选父配置及扩展配置路径。
+`--seed` 可以重复以选择 upstream seeds；不指定时沿用父配置全部 seeds。
+每个配方始终沿用父配置的全部 downstream seeds。每个 allocation 共补跑 125 个
+refiner，全分配扫描为 1,250 个。`TOTAL_M=1|3|5` 选择总数据量；也可用重复的
+`--config <parent.json>` 显式指定父配置。完整 CLI 见 Python 入口的 `--help`。
+
+每张 GPU 同时运行一个 upstream seed 的补跑流程，配方和 downstream seeds
+顺序执行；空闲 GPU 从队列领取下一 seed。缓存优先复用，已清理的缓存通过
+原 checkpoint 重新生成。默认 `--stage train` 只生成 B-train/B-val 缓存；
+`--stage evaluate` 和 `--stage all` 显式启用 Y。所有配置的所选 seed 流程成功后，
+评估阶段为选齐 upstream seeds 的配置生成跨 seed 聚合；seed 子集不生成聚合。
+
+日志默认写入 `logs/parallel_refine/experiment1_ex_v2/refine_inputs/<extension>/seed<N>/`，
+可用 `--log-base` 更改。共享冻结特征及图缓存保留，不自动 prune；不要同时运行会
+清理同一 upstream 缓存的旧 full 队列。重复执行使用 `--skip-complete` 跳过已完成
+refiner，不依赖旧队列的 `.done` 标记。中断留下的不完整 refiner 目录会由原 trainer
+拒绝覆盖，需先检查并移走该未完成目录后重跑。失败 seed 不再进入其后续阶段，
+其余 seed 继续执行，最终返回非零退出码。
+
+已有扩展 JSON 内容或 manifest 身份与当前配置不一致时拒绝运行；有意改变方案应
+使用新的 `--suffix`（默认 `refine_inputs_v1`）。原结果目录和 Archived 配置不修改。
+本入口已在本地做模拟流程测试；尚未执行 GPU 训练或 Y-test 评估。
