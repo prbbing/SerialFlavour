@@ -95,7 +95,7 @@ The reusable Parallel and refiner components enable `ReduceLROnPlateau`, with in
 
 Configure `lr_scheduler` in `parallel.training`, `refiners.dnn`, or `refiners.graph`. Set `enabled: false` to reproduce fixed-LR training; old standalone components with no scheduler field also retain fixed LR. Early stopping and best-checkpoint selection remain unchanged and are not reset when LR decreases. Histories record `lr` (used during the completed epoch), `lr_next` (after validation), and `lr_reduced`; TensorBoard records these under `optimizer/learning_rate`, `optimizer/learning_rate_next`, and `optimizer/lr_reduced`. Histories and run manifests also identify the scheduler configuration and validation metric.
 
-Use a new experiment name for decay runs, such as `configs/parallel_refine/experiments/default_lr_decay.json`, to keep earlier fixed-LR outputs intact. The existing immutable experiment manifest rejects changed configurations in an old result directory. To isolate the two stages, create separately named experiments and disable the other stage's scheduler through experiment overrides:
+Use a new experiment name for decay runs, such as `configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a075_b025.json`, to keep earlier fixed-LR outputs intact. The existing immutable experiment manifest rejects changed configurations in an old result directory. To isolate the two stages, create separately named experiments and disable the other stage's scheduler through experiment overrides:
 
 ```json
 {
@@ -110,11 +110,11 @@ This fragment enables a downstream-only comparison when combined with the curren
 Run the stages from the repository root:
 
 ```bash
-python scripts/prepare_data.py --config configs/parallel_refine/experiments/default.json
-python scripts/train_parallel.py --config configs/parallel_refine/experiments/default.json
-python scripts/generate_cache.py --config configs/parallel_refine/experiments/default.json
-python scripts/train_dnn.py --config configs/parallel_refine/experiments/default.json
-python scripts/evaluate.py --config configs/parallel_refine/experiments/default.json
+python scripts/prepare_data.py --config configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a075_b025.json
+python scripts/train_parallel.py --config configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a075_b025.json
+python scripts/generate_cache.py --config configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a075_b025.json
+python scripts/train_dnn.py --config configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a075_b025.json
+python scripts/evaluate.py --config configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a075_b025.json
 ```
 
 ## Exploration directions

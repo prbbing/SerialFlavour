@@ -54,7 +54,7 @@ L = 1.0 * L_jet + 0.5 * L_origin + 1.5 * L_pair
 
 ### 配置矩阵与实验身份
 
-以下对比以仓库当前的 `../experiment1_ex/` 配置为准：
+以下对比以仓库当前的 `../../Archived/experiments/experiment1_ex/` 配置为准：
 
 | 项目 | 原 Experiment 1 EX | Experiment 1 EX V2 |
 |---|---|---|

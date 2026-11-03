@@ -68,7 +68,7 @@ def test_all_runtime_experiments_resolve_scheduler_defaults():
 
 @pytest.mark.parametrize("stage", ["parallel", "dnn", "graph"])
 def test_study_rejects_invalid_scheduler_before_training(tmp_path, stage):
-    original = Path("configs/parallel_refine/experiments/default.json").resolve()
+    original = Path("configs/parallel_refine/Archived/experiments/default.json").resolve()
     source = json.loads(original.read_text())
     source["components"] = {
         kind: str((original.parent / ref).resolve())
@@ -84,7 +84,7 @@ def test_study_rejects_invalid_scheduler_before_training(tmp_path, stage):
 
 
 def test_scheduler_change_cannot_reuse_an_existing_experiment_identity(tmp_path):
-    original = Path("configs/parallel_refine/experiments/default_lr_decay.json").resolve()
+    original = Path("configs/parallel_refine/Archived/experiments/default_lr_decay.json").resolve()
     source = json.loads(original.read_text())
     source["components"] = {
         kind: str((original.parent / ref).resolve())
@@ -163,7 +163,7 @@ def test_downstream_trainer_steps_before_unchanged_early_stop(tmp_path, monkeypa
 def test_parallel_trainer_monitors_jet_loss_and_preserves_best_checkpoint(tmp_path, monkeypatch):
     from scripts import train_parallel as module
     from src.parallel_refine.config import active_parallel_config
-    study = load_study_config("configs/parallel_refine/experiments/default_lr_decay.json")
+    study = load_study_config("configs/parallel_refine/Archived/experiments/default_lr_decay.json")
     run = study.seeds[0]
     config = active_parallel_config(study, run)
     config.gpu_ids, config.torch_compile, config.tensorboard_enabled = [-1], False, False

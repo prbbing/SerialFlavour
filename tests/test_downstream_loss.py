@@ -13,7 +13,7 @@ from src.parallel_refine.config import load_study_config, write_experiment_manif
 
 
 def _experiment(tmp_path, **overrides):
-    original = Path("configs/parallel_refine/experiments/default.json").resolve()
+    original = Path("configs/parallel_refine/Archived/experiments/default.json").resolve()
     source = json.loads(original.read_text())
     source["components"] = {
         kind: str((original.parent / reference).resolve())
