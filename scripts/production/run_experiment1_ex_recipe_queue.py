@@ -227,6 +227,10 @@ def main(argv=None) -> int:
 
     def start_aggregate(name: str) -> None:
         """Launch the cross-seed rejection aggregate for one finished config."""
+        # This aggregate compares downstream refiners. Transformer-only runs
+        # already saved their per-seed evaluation and have no DNN artifacts.
+        if studies[name].data["sizes"]["b_train"] == 0:
+            return
         label = studies[name].study_name.removeprefix("experiment1_ex_p122k_")
         marker = aggregate_dir / f"{label}.done"
         if marker.is_file():
