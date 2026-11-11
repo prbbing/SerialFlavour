@@ -77,7 +77,8 @@ def plot_jet_evaluation(labels, probabilities, output_directory):
     _plot_discriminant(plt, probabilities, labels, 1, (0.3, 0.7), output_directory, "c")
 
 # Locked-Y rejection comparison and seed-aggregation plots.
-from src.parallel_refine.metrics import b_discriminant, c_discriminant
+from src.parallel_refine.metrics import (
+    _normalize_probabilities, b_discriminant, c_discriminant)
 from src.parallel_refine.config import write_json_atomic
 
 _JET_CLASS_NAMES = ("b-jet", "c-jet", "light-jet")
@@ -96,7 +97,7 @@ def _rejection_curve(labels, probabilities, signal, background, efficiencies,
                      discriminant):
     """Return rejection at fixed target signal efficiencies on one Y sample."""
     labels = np.asarray(labels, dtype=np.int64)
-    score = np.asarray(discriminant(probabilities), dtype=np.float64)
+    score = discriminant(_normalize_probabilities(probabilities))
     signal_scores = np.sort(score[labels == signal])
     background_scores = np.sort(score[labels == background])
     efficiencies = np.asarray(efficiencies, dtype=np.float64)
