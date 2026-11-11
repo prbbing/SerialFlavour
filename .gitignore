@@ -106,5 +106,7 @@ config.ini
 # ===========================
 local/
 .track_cache/
-tests/
+tests/*
+!tests/test_lr_scheduler.py
+!tests/test_ex_v2_refine_production.py
 tmp/

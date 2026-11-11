@@ -2,7 +2,7 @@
 
 This module deliberately lives beside, rather than inside, ``cache.py``:
 the compact structured-pool cache remains the stable input for F0--F4 and
-F1O/F1V, while graph recipes need unpooled pair predictions and node states.
+F2_origin/F2_vertex, while graph recipes need unpooled pair predictions and node states.
 """
 
 from __future__ import annotations

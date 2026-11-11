@@ -1,0 +1,76 @@
+{
+  "components": {
+    "data": "../../data/experiment1_ex_n3m.json",
+    "parallel": "../../parallel/experiment1_p122k.json",
+    "refiner": "../../refiner/dnn_default.json"
+  },
+  "config_kind": "experiment",
+  "experiment": {
+    "name": "experiment2_v2_p142k_n3m_a100_b000",
+    "output_root": "/data/yuyang/SerialFlavour/results/parallel_refine",
+    "markers": {
+      "label": "Experiment 2 V2 | Variant B | Parallel 142,421 | d_model 52 | FFN 104 | total 3M | A/B 100/0 | Transformer-only",
+      "tags": [
+        "experiment-2-v2",
+        "fixed-total-data",
+        "upstream-width-scan",
+        "parameter-budget-comparison",
+        "transformer-only"
+      ],
+      "comparison_group": "experiment2_v2_n3m_a100_b000_upstream_width",
+      "variables": {
+        "parallel_parameters": 142421,
+        "total_dataset_jets": 3000000,
+        "train_pool_jets": 2100000,
+        "validation_jets": 300000,
+        "test_jets": 600000,
+        "a_train_jets": 2100000,
+        "b_train_jets": 0,
+        "a_fraction_percent": 100,
+        "b_fraction_percent": 0,
+        "dnn_enabled": false,
+        "lambda_jet": 1.0,
+        "lambda_origin": 0.5,
+        "lambda_pair": 1.5,
+        "baseline_parallel_parameters": 122077,
+        "variant": "B",
+        "d_model": 52,
+        "n_heads": 4,
+        "n_layers": 6,
+        "d_ffn": 104,
+        "task_head_hidden_dims": "16"
+      }
+    }
+  },
+  "overrides": {
+    "data": {
+      "split_dir": "/data/yuyang/SerialFlavour/parallel_refine/cache/splits/experiment1_ex_v2_n3m_a100_b000",
+      "sizes": {
+        "a_train": 2100000,
+        "b_train": 0
+      }
+    },
+    "parallel": {
+      "loss_weights": {
+        "jet": 1.0,
+        "origin": 0.5,
+        "pair": 1.5
+      },
+      "model": {
+        "d_model": 52,
+        "n_heads": 4,
+        "n_layers": 6,
+        "d_ffn": 104,
+        "track_projection_dim": null,
+        "task_head_hidden_dims": [
+          16
+        ]
+      }
+    },
+    "feature_cache": {
+      "splits": [
+        "y_test"
+      ]
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "components": {
+    "data": "../../data/experiment1_ex_n3m.json",
+    "parallel": "../../parallel/experiment2_ex_p122k.json",
+    "refiner": "../../refiner/dnn_default.json"
+  },
+  "config_kind": "experiment",
+  "experiment": {
+    "name": "experiment2_ex_v2_p122k_n3m_a075_b025",
+    "output_root": "/data/yuyang/SerialFlavour/results/parallel_refine",
+    "markers": {
+      "label": "Experiment 2 EX V2 | Parallel 122k backbone | Task head 128-64-32 | total 3M | A/B 75/25 | Transformer-plus-DNN",
+      "tags": [
+        "experiment-2-ex-v2",
+        "fixed-total-data",
+        "task-head-128-64-32",
+        "transformer-plus-dnn"
+      ],
+      "comparison_group": "experiment2_ex_v2_p122k_n3m_task_head",
+      "variables": {
+        "parallel_parameters": 185869,
+        "baseline_parallel_parameters": 122077,
+        "d_model": 48,
+        "n_heads": 4,
+        "n_layers": 6,
+        "d_ffn": 96,
+        "task_head_hidden_dims": "128-64-32",
+        "total_dataset_jets": 3000000,
+        "train_pool_jets": 2100000,
+        "validation_jets": 300000,
+        "test_jets": 600000,
+        "a_train_jets": 1575000,
+        "b_train_jets": 525000,
+        "a_fraction_percent": 75,
+        "b_fraction_percent": 25,
+        "dnn_enabled": true,
+        "lambda_jet": 1.0,
+        "lambda_origin": 0.5,
+        "lambda_pair": 1.5
+      }
+    }
+  },
+  "overrides": {
+    "data": {
+      "split_dir": "/data/yuyang/SerialFlavour/parallel_refine/cache/splits/experiment2_ex_v2_n3m_a075_b025",
+      "sizes": {
+        "a_train": 1575000,
+        "b_train": 525000
+      }
+    },
+    "feature_cache": {
+      "splits": [
+        "b_train",
+        "b_val",
+        "y_test"
+      ]
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "components": {
+    "data": "../../data/experiment1_ex_n3m.json",
+    "parallel": "../../parallel/experiment1_p122k.json",
+    "refiner": "../../refiner/dnn_default.json"
+  },
+  "config_kind": "experiment",
+  "experiment": {
+    "name": "upstream_aux_ablation_p122k_n3m_a100_b000_jet_origin",
+    "output_root": "/data/yuyang/SerialFlavour/results/parallel_refine",
+    "markers": {
+      "label": "Upstream auxiliary ablation | Parallel 122k | total 3M | A/B 100/0 | jet_origin | jet 1 | origin 0.5 | pair 0.0",
+      "tags": [
+        "upstream-aux-ablation",
+        "fixed-total-data",
+        "transformer-only",
+        "jet_origin"
+      ],
+      "comparison_group": "upstream_aux_ablation_p122k_n3m_a100_b000",
+      "variables": {
+        "parallel_parameters": 122077,
+        "total_dataset_jets": 3000000,
+        "train_pool_jets": 2100000,
+        "validation_jets": 300000,
+        "test_jets": 600000,
+        "a_train_jets": 2100000,
+        "b_train_jets": 0,
+        "a_fraction_percent": 100,
+        "b_fraction_percent": 0,
+        "dnn_enabled": false,
+        "lambda_jet": 1.0,
+        "lambda_origin": 0.5,
+        "lambda_pair": 0.0
+      }
+    }
+  },
+  "overrides": {
+    "data": {
+      "split_dir": "/data/yuyang/SerialFlavour/parallel_refine/cache/splits/experiment1_ex_v2_n3m_a100_b000",
+      "sizes": {
+        "a_train": 2100000,
+        "b_train": 0
+      }
+    },
+    "parallel": {
+      "loss_weights": {
+        "jet": 1.0,
+        "origin": 0.5,
+        "pair": 0.0
+      }
+    }
+  }
+}

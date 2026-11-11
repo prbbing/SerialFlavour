@@ -65,15 +65,20 @@ def _binary_metrics(y, score, signal, background, efficiency, prefix):
     }
 
 
+def _normalize_probabilities(probabilities):
+    probabilities = np.clip(np.asarray(probabilities, dtype=np.float64), 1e-12, None)
+    probabilities /= probabilities.sum(axis=1, keepdims=True)
+    return probabilities
+
+
 def probability_metrics(y, probabilities):
     y = np.asarray(y, dtype=np.int64)
-    probabilities = np.asarray(probabilities, dtype=np.float64)
+    probabilities = np.asarray(probabilities)
     if probabilities.ndim != 2 or probabilities.shape != (len(y), 3):
         raise ValueError("probabilities must have shape (n_jets, 3)")
     if np.any((y < 0) | (y > 2)):
         raise ValueError("labels must be in {0, 1, 2}")
-    probabilities = np.clip(probabilities, 1e-12, None)
-    probabilities /= probabilities.sum(axis=1, keepdims=True)
+    probabilities = _normalize_probabilities(probabilities)
     result = {
         "accuracy": float(np.mean(y == probabilities.argmax(1))),
         "cross_entropy": float(-np.mean(np.log(probabilities[np.arange(len(y)), y]))),

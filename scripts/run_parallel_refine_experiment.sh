@@ -12,7 +12,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # EDIT THIS LINE TO SELECT THE EXPERIMENT
 # ---------------------------------------------------------------------------
-CONFIG="${PARALLEL_REFINE_CONFIG:-configs/parallel_refine/experiments/experiment1/experiment1_p122k_a080_b020.json}"
+CONFIG="${PARALLEL_REFINE_CONFIG:-configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a075_b025.json}"
 
 # Physical GPU allocation slots. Seeds are assigned to these entries in order;
 # if a config contains more seeds than slots, the list is reused cyclically.

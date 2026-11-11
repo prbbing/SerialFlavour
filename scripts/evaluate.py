@@ -26,6 +26,7 @@ from src.parallel_refine.metrics import write_prediction_result
 from src.parallel_refine.plotting import (
     comparison_curves, plot_jet_evaluation, plot_rejection_comparison,
     write_dnn_seed_mean, write_parallel_seed_mean)
+from src.parallel_refine.rejection_scan import build_scan
 
 
 def _device(config):
@@ -159,6 +160,7 @@ def main(argv=None):
                 study=study, run=run, recipe=None, model="parallel",
                 downstream_seed=None,
                 cache=cache, result=result, checkpoint=study.checkpoint(run))
+            write_json_atomic(directory / "rejection_scan.json", build_scan(directory))
 
         if args.model not in {"dnn", "parallel_dnn"}:
             continue

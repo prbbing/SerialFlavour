@@ -1,0 +1,51 @@
+{
+  "components": {
+    "data": "../../data/experiment1_ex_n3m.json",
+    "parallel": "../../parallel/experiment1_p122k.json",
+    "refiner": "../../refiner/dnn_default.json"
+  },
+  "config_kind": "experiment",
+  "experiment": {
+    "name": "experiment1_ex_v2_p122k_n3m_a100_b000_refiner25",
+    "upstream_experiment_name": "experiment1_ex_v2_p122k_n3m_a100_b000",
+    "output_root": "/data/yuyang/SerialFlavour/results/parallel_refine",
+    "markers": {
+      "label": "Experiment 1 EX V2 | Parallel 122k | total 3M | A-train reused for refiners (25%)",
+      "tags": ["experiment-1-ex-v2", "upstream-train-reuse"],
+      "comparison_group": "experiment1_ex_v2_p122k_n3m_training_allocation",
+      "variables": {
+        "parallel_parameters": 122077,
+        "total_dataset_jets": 3000000,
+        "a_train_jets": 2100000,
+        "b_train_jets": 525000,
+        "refiner_train_reuse_percent": 25,
+        "dnn_enabled": true
+      }
+    }
+  },
+  "overrides": {
+    "data": {
+      "split_dir": "/data/yuyang/SerialFlavour/parallel_refine/cache/splits/experiment1_ex_v2_n3m_a100_b000_refiner25",
+      "sizes": {
+        "a_train": 2100000,
+        "b_train": 525000
+      },
+      "refiner_train_selection": {
+        "parent_split_dir": "/data/yuyang/SerialFlavour/parallel_refine/cache/splits/experiment1_ex_v2_n3m_a100_b000",
+        "file": "/data/yuyang/SerialFlavour/parallel_refine/cache/splits/experiment1_ex_v2_n3m_a100_b000_refiner25.npz",
+        "jet_index_sha256": "8d0c4d14afe8fd3b1437acc8a09c7f1852323fe4676dc14fc6857d82e8c9910e",
+        "event_sha256": "ae16d7cbb29606c74e93e9792c14a300219433c5998ff14f309f7f4f6c36b2f9"
+      }
+    },
+    "parallel": {
+      "loss_weights": {
+        "jet": 1.0,
+        "origin": 0.5,
+        "pair": 1.5
+      }
+    },
+    "refiners": {
+      "recipes": ["F1_embed", "F2_origin", "F2_vertex", "F3_embed_aux", "FG2"]
+    }
+  }
+}
