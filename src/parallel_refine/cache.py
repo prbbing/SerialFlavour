@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 import torch
 
+from src.parallel_refine.cache_workspace import feature_cache_path
 from src.parallel_refine.config import (
     FEATURE_RECIPES, GRAPH_RECIPES, SeedRun, StudyConfig,
     active_parallel_config)
@@ -111,7 +112,8 @@ def cache_directory(
     identity = (
         f"{FEATURE_SCHEMA_VERSION}_{sha256_file(checkpoint)[:12]}_"
         f"{split_index_sha256[:12]}")
-    return Path(study.cache["root"]) / run.output_name / split / identity
+    return feature_cache_path(study.cache["root"], study.study_name,
+                              Path(run.output_name) / split / identity)
 
 
 @dataclass(frozen=True)
