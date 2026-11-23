@@ -1,134 +1,63 @@
 # SerialFlavour
 
-SerialFlavour studies multi-task jet-flavour tagging with a GN2-inspired Transformer on ATLAS Open Data. The central question is whether track-origin and track-pair vertexing supervision can complement the main jet-flavour classification task, and whether their learned representations retain useful information for a lightweight downstream DNN. The repository therefore contains both the deployable Parallel model and a controlled frozen-feature comparison workflow.
+SerialFlavour studies post-hoc refinement of multi-task jet flavour tagging on ATLAS Open Data. It asks whether lightweight downstream classifiers can improve on a GN2-inspired Transformer by using its learned representations and auxiliary predictions about track origins and shared vertices. The experiments compare embedding-only, auxiliary-feature, and graph-based refiners across training-data sizes, upstream/downstream allocations, and tagging working points.
 
-## Project Architecture
+## Pipeline
 
-```text
-SerialFlavour/
-├── src/
-│   ├── config.py                Shared configuration and seed utilities
-│   ├── data.py                  HDF5 loading and atomic caches
-│   ├── losses.py                Multi-task loss definitions
-│   ├── parallel_model.py        Parallel Transformer model
-│   ├── training.py              Shared training utilities
-│   └── parallel_refine/         A/B/Y frozen-feature refinement workflow
-├── configs/parallel_refine/     Reusable components and experiment configurations
-└── scripts/
-    ├── compose_experiment.py    Compose experiment configurations
-    ├── prepare_data.py          Prepare splits and processed caches
-    ├── train_parallel.py        Train Parallel models
-    ├── generate_cache.py        Generate frozen and graph caches
-    ├── train_dnn.py             Train tabular refiners
-    ├── train_graph_refiner.py   Train graph refiners
-    ├── evaluate.py              Evaluate and aggregate results
-    ├── run_parallel_refine_experiment.sh  Generic single-experiment runner
-    └── production/              Experiment 1 EX production scheduler
+![Two-stage jet flavour tagging workflow with a frozen upstream Transformer and downstream refiners](plots/figure/pipeline.png)
+
+1. **Train the upstream Transformer.** A GN2-inspired Transformer learns a shared representation from jet and track features. It is trained jointly to classify jet flavour, predict each track's origin, and predict whether two tracks come from the same vertex.
+2. **Freeze the Transformer and train the refiners.** The selected upstream checkpoint produces fixed inputs for downstream training. The tabular refiners use the pooled jet embedding, with optional features derived from track-origin and track-pair predictions. The graph refiner uses frozen track embeddings as nodes and predicted pair probabilities as edge weights. All refiners train on jet-flavour labels.
+3. **Evaluate both stages on held-out jets.** The standard allocation scan uses disjoint upstream and downstream training partitions. The Transformer and refiners are evaluated on the same held-out Y-test sample within each configuration, comparing background rejection at fixed tagging efficiencies.
+
+## Run a training experiment
+
+Install the dependencies with Python 3.11 or later from the repository root.
+
+```sh
+python -m pip install -r requirements.txt
 ```
 
-`scripts/run_parallel_refine_experiment.sh` is the generic single-experiment runner. The coupled files under `scripts/production/` provide the multi-GPU production scheduler and should be deployed together.
+The [3M-jet, 75/25 configuration](configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a075_b025.json) is an end-to-end example. Download `mc-flavtag-ttbar-medium.h5` from the [CERN Open Data record for ATLAS JetSet](https://opendata.cern.ch/record/atlas-93940).
 
-## Model architecture
-
-The Parallel model concatenates jet-level features to each track, encodes the track sequence with a shared Transformer, and applies three heads for jet flavour, track origin, and track-pair vertex compatibility. Attention pooling produces a global jet representation for the jet classifier and supplies context to the origin and vertex heads. The three heads share the same configurable MLP pattern while operating on jet-, track-, and track-pair-level inputs respectively.
-
-The downstream comparison does not retrain the Transformer. It freezes the selected Parallel checkpoint, pools its prediction and representation features, and trains a tabular DNN on selected feature recipes, refining the performance of parallel model.
-
-```mermaid
-flowchart LR
-    inputs[Jet and track inputs] --> parallel[Parallel multi-task Transformer]
-    parallel --> jet[Jet-flavour head]
-    parallel --> origin[Track-origin head]
-    parallel --> vertex[Vertex-pair head]
-    jet --> dnn[DNN refinement]
-    origin --> dnn
-    vertex --> dnn
-```
-
-## Workflow
-
-The workflow uses event-disjoint A/B/Y splits. A-train and A-val train and select the upstream Parallel checkpoint. B-train and B-val provide the data for frozen-feature DNN readouts. Y-test remains locked for final evaluation of both the upstream model and each DNN recipe.
-
-Input normalisation is derived from A-train only. The data preparation stage also applies the configured track selection and kinematic resampling, while the pair target follows the Open Data truth-vertex convention. This keeps upstream training, downstream fitting, and final evaluation separated.
-
-```mermaid
-flowchart LR
-    split[Event-disjoint A/B/Y data] --> parallel[Train Parallel model]
-    parallel --> dnn[Train DNN refinement]
-    parallel --> evaluation[Locked Y-test evaluation]
-    dnn --> evaluation
-```
-
-## Configurations and outputs
-
-Experiment configurations in `configs/parallel_refine/` combine independent data, Parallel-model, and refiner components. The optional `experiment.markers` fields record an experiment label, tags, comparison group, and scalar variables in every generated manifest, so model/data variations can be identified without relying only on directory names.
-
-The current experiment defaults use 100k jets for each A/B validation split, 200k for B-train, and 500k for the locked Y-test split. The default readout is `input → 128 → 64 → 32 → output`. Every configured Parallel seed is paired with all five downstream initialization seeds (`1`–`5`), so a standard five-Parallel-seed configuration trains and evaluates 25 refiner replicas per recipe, including graph recipes. Older `b500k/y200k` data components remain available only for reproducing earlier runs.
-
-`refiner/dnn_default.json` selects `F1_embed`, `F1_double`, `F2_origin`, `F2_vertex`, `F3_embed_aux`, `F4_all`, `FG2`, `FG2s`, `FG1_48d`, `FG2_32d`, and `FG4`; `FG2s` is the one-layer variant of two-layer `FG2`. The generic runner reads `refiners.recipes` from the selected experiment at launch, so a new experiment JSON can add or remove any implemented recipe through `overrides.refiners.recipes` without editing the runner.
-
-For input comparisons, `F1_embed` uses only the frozen pooled track embedding. `F2_origin` adds the attention-weighted mean of the frozen track-origin probabilities; `F2_vertex` adds the attention-pooled pair-probability-weighted neighbour embedding. These inputs use upstream predictions, with only jet-label supervision downstream. `F2_vertex` does not include the scalar pair mean/max/sum summaries present in `F3_embed_aux`. At embedding width 48 with eight origin classes, the three input widths are 48, 56, and 96, and their trainable parameter counts are 16,707, 17,731, and 22,851. Their comparisons therefore measure adding these features with the configured MLP, including the accompanying increase in first-layer parameters.
-
-`FG1_48d` is a one-layer variant with GNN hidden width 48, reduced from the width-64 `FG2s`. Graph output width is inherited from the track embedding; context inputs and classifier dimensions remain the same. At embedding width 48 it has 40,483 trainable parameters (16,608 in the graph encoder and 23,875 in the classifier), 19.1% fewer than `FG2s`. It uses track-embedding nodes, unlike the origin-probability nodes of `FG1`.
-
-`FG2_32d` retains the two message-passing layers of `FG2` and reduces only the GNN hidden width from 64 to 32. Node inputs, graph output width, context and classifier settings remain the same. At track-embedding width 48 it has 37,171 trainable parameters (13,296 in the graph encoder and 23,875 in the classifier).
-
-`F1_double` concatenates the same global jet representation twice, `[z_global, z_global]`, by selecting the embedding columns twice from the existing frozen cache. It uses the same normalisation, MLP and training settings as the other tabular recipes. Its input width is `2 * embedding_dim` (96 at width 48), matching `F2_vertex` exactly in trainable parameter count (22,851), without adding information. This matches the parameter count of `F2_vertex`, not every refiner. Since the two first-layer weight blocks can be summed into one, duplication does not enlarge the representable function class relative to `F1_embed`; optimisation and regularisation can still differ.
-
-Result artifacts are kept separate for download and post-processing:
-
-```text
-<result-root>/<experiment>/
-├── data/                              # data-stage manifest and resolved config
-├── parallel/parallel_seed<p>/          # Parallel checkpoints and training artifacts
-├── refiner/parallel_seed<p>/<recipe>/dnn_seed<d>/
-└── evaluation/parallel_seed<p>/<recipe>/dnn_seed<d>/
-```
-
-The Parallel-only Y evaluation is stored at `evaluation/parallel_seed<p>/parallel/`. The configured split and feature-cache locations remain shared cache inputs; `data/data_preparation_manifest.json` records their exact identities and split hashes rather than duplicating those large files.
-
-Each Parallel and refiner run saves checkpoints, JSON/CSV training histories, TensorBoard logs, and a run manifest. The final Y-test evaluation saves predictions and metrics for both models, jet probability and discriminant plots, auxiliary origin/pair diagnostics for the Parallel model, and DNN-versus-Parallel rejection comparison plots. Rejection ratios are evaluated at common target signal efficiencies, with each model setting its own score threshold.
-
-### Loss objectives
-
-Parallel uses `jet CE + 0.5 * origin CE + 1.5 * pair BCE` in the current components. Jet CE has fixed class weights `[2, 2, 1]` for b/c/light, matching the inverse of the configured sampling ratio `1:1:2`; weights are not recomputed from split counts. Origin CE uses its configured eight-class weights and ignores label `-1`; pair BCE excludes invalid, self and ignored track pairs.
-
-Both tabular DNN and graph-DNN now use only weighted jet CE, inheriting `parallel.class_weights.jet_class_weights` from the resolved experiment. The same criterion drives training, B-val checkpoint selection, early stopping and learning-rate decay. Frozen origin/pair predictions remain inputs without auxiliary-label supervision. Resolved configurations, histories and run manifests record the loss and class weights. The existing `train_cross_entropy`/`val_cross_entropy` history fields now refer to weighted CE; probability metrics retain their ordinary unweighted CE alongside the separately recorded validation weighted CE.
-
-Use a new experiment identity for weighted downstream runs. The derived loss is included in the resolved configuration hash, so historical unweighted results cannot be silently reused under the same experiment manifest.
-
-### Learning-rate decay
-
-The reusable Parallel and refiner components enable `ReduceLROnPlateau`, with initial LR `1e-3`, factor `0.5`, minimum LR `1e-5`, relative improvement threshold `1e-4`, and no cooldown. Parallel uses patience **8** and monitors A-val weighted jet cross-entropy; both tabular DNN and graph-DNN use patience **4** and monitor B-val weighted jet cross-entropy. In PyTorch, reduction occurs after more than `patience` consecutive epochs without a qualifying improvement. The schedule steps once after validation and affects all parameters in the stage's optimiser, including the upstream shared backbone and auxiliary heads.
-
-Configure `lr_scheduler` in `parallel.training`, `refiners.dnn`, or `refiners.graph`. Set `enabled: false` to reproduce fixed-LR training; old standalone components with no scheduler field also retain fixed LR. Early stopping and best-checkpoint selection remain unchanged and are not reset when LR decreases. Histories record `lr` (used during the completed epoch), `lr_next` (after validation), and `lr_reduced`; TensorBoard records these under `optimizer/learning_rate`, `optimizer/learning_rate_next`, and `optimizer/lr_reduced`. Histories and run manifests also identify the scheduler configuration and validation metric.
-
-Use a new experiment name for decay runs, such as `configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a075_b025.json`, to keep earlier fixed-LR outputs intact. The existing immutable experiment manifest rejects changed configurations in an old result directory. To isolate the two stages, create separately named experiments and disable the other stage's scheduler through experiment overrides:
-
-```json
-{
-  "overrides": {
-    "parallel": {"training": {"lr_scheduler": {"enabled": false}}}
-  }
-}
-```
-
-This fragment enables a downstream-only comparison when combined with the current components. For upstream-only decay, disable `lr_scheduler` in both `overrides.refiners.dnn` and `overrides.refiners.graph`. Keep the data, seeds, loss weights, initial LR, epoch limits and early stopping identical to the control. Select the protocol on A-val/B-val before evaluating locked Y-test; implementation and offline tests do not establish a tagging-performance gain.
-
-Run the stages from the repository root:
+1. Copy the example JSON to `local_3m_75_25.json` in the same directory so that the relative component references still resolve.
+2. In that copy, set `experiment.output_root` to a writable results directory. Under `overrides.data`, set `train_file` to the HDF5 path and set `split_dir` and `processed_cache_dir` to writable cache paths. Add `overrides.feature_cache.root` and `overrides.feature_cache.graph_root` for the frozen tabular and graph caches.
+3. Set `GPU_SLOTS` in the [experiment launcher](scripts/run_parallel_refine_experiment.sh) to match the available CUDA devices. Then run from the repository root in Bash.
 
 ```bash
-python scripts/prepare_data.py --config configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a075_b025.json
-python scripts/train_parallel.py --config configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a075_b025.json
-python scripts/generate_cache.py --config configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a075_b025.json
-python scripts/train_dnn.py --config configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a075_b025.json
-python scripts/evaluate.py --config configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a075_b025.json
+PARALLEL_REFINE_CONFIG=configs/parallel_refine/experiments/experiment1_ex_v2/local_3m_75_25.json \
+  bash scripts/run_parallel_refine_experiment.sh
 ```
 
-## Exploration directions
+The launcher prepares the data, trains the Transformer and configured refiners, and evaluates and aggregates rejection curves on the held-out Y-test sample. The example allocates 1,575,000 jets to A-train and 525,000 to B-train, with a shared 300,000-jet validation sample and 600,000 jets for Y-test. The [training-data reuse comparison](configs/parallel_refine/experiments/experiment1_ex_v2/experiment1_ex_v2_p122k_n3m_a075_b025_refiner25.json) is a separate protocol that trains the refiner on upstream training events.
 
-1. Under limited data, compare Transformer-only training with Transformer plus a frozen-feature DNN, including smaller Transformer backbones and matched total parameter budgets. A higher ceiling for the two-stage route would indicate that the readout contributes more than a simple capacity increase.
+## Experiment configurations
 
-2. With a fixed Transformer architecture, vary the available training data and measure whether the DNN gain vanishes or persists. A persistent gain at large sample sizes would support the hypothesis that the main classification head and physics-motivated auxiliary tasks retain complementary information.
+| Study | Configuration |
+| --- | --- |
+| Data allocation at 1M, 3M, and 5M jets, including refiner ablations | [Experiment 1 EX V2](configs/parallel_refine/experiments/experiment1_ex_v2/README.md) |
+| Transformer width at fixed data size | [Experiment 2 V2](configs/parallel_refine/experiments/experiment2_v2/) |
+| Standard and enhanced task heads | [Experiment 2 EX V2](configs/parallel_refine/experiments/experiment2_ex_v2/) |
+| Auxiliary-loss weight scan | [Experiment 3](configs/parallel_refine/experiments/experiment3/README.md) |
+| Upstream auxiliary-task ablation | [Upstream auxiliary ablation](configs/parallel_refine/experiments/upstream_aux_ablation/README.md) |
 
-3. Sweep the multi-task loss weights and relate the downstream DNN gain to the upstream jet-classification optimum. This tests whether the DNN mainly recovers information sacrificed by a non-optimal main-task weighting, or adds value even when the upstream objective is well tuned.
+The main refiner names in the paper correspond to these recipe IDs in the plotting results and [refiner configuration](configs/parallel_refine/refiner/dnn_default.json).
+
+| Paper label | Recipe ID |
+| --- | --- |
+| DNN-embed | `F1_embed` |
+| DNN-origin | `F2_origin` |
+| DNN-pair | `F2_vertex` |
+| DNN-ori-pair | `F3_embed_aux` |
+| DNN-graph | `FG1_48d` |
+
+## Repository layout and outputs
+
+| Path | Contents |
+| --- | --- |
+| [`src/`](src/) | Transformer, refiner models, data processing, and evaluation |
+| [`scripts/`](scripts/) | Training and evaluation entry points, including [production launchers](scripts/production/) |
+| [`configs/parallel_refine/`](configs/parallel_refine/) | Reusable components and experiment configurations |
+| [`plots/`](plots/) | Paper figures, prepared plotting data, and [plotting instructions](plots/README.md) and [notebook](plots/paper_figures.ipynb) |
+
+For the example run, the launcher writes data manifests, upstream checkpoints, refiner checkpoints, and Y-test results under `<output_root>/<experiment.name>/`, in `data/`, `parallel/`, `refiner/`, and `evaluation/`, respectively. Launcher logs are written to `logs/parallel_refine/<experiment.name>/`.

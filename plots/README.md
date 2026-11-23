@@ -5,7 +5,7 @@
 
 The six experimental figures can be redrawn from the prepared JSON files in
 `data/prepared/`. No raw datasets, model checkpoints, training, or evaluation are
-required. The prepared catalog records each figure's input checksum and provenance.
+required. The prepared catalog identifies which input file each figure uses and records its provenance.
 
 ## Reproduce Figures 2–7
 
@@ -14,7 +14,7 @@ Use Python 3.11 or later. Run these commands from the `plots` directory. The
 preserves the paper PNGs in `figure/`.
 
 ```sh
-python -m pip install -r requirements.txt
+python -m pip install -r ../requirements.txt
 python scripts/figures/rejection_3m_own_f1_f2_f3.py --plot-only --output-dir rendered
 python scripts/figures/overlay_3m_width_scan_six_working_points.py --plot-only --output-dir rendered
 python scripts/figures/upstream_f3_sorted.py --plot-only --output-dir rendered

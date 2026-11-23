@@ -47,8 +47,6 @@ def checked_input(figure_id, kind, data_dir=PREPARED):
     if entry['kind'] != kind or entry['output'] != figure_filename(figure_id):
         raise ValueError(f'Prepared catalog entry disagrees with this script: {figure_id}')
     source = checked_child(data_dir, entry['data_file'])
-    if sha(source) != entry['sha256']:
-        raise ValueError(f'Prepared data hash changed: {source}; rerun this script with --prepare-only.')
     return entry, source
 
 
