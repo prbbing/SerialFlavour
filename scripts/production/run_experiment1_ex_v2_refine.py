@@ -27,6 +27,7 @@ from src.parallel_refine.config import (
 )
 
 RECIPES = ("F1_double", "F2_origin", "F2_vertex", "FG1_48d", "FG2_32d")
+PAIR_STATISTICS_RECIPES = ("F3_embed_aux_104", "DNN-pair-99")
 CONFIG_DIR = ROOT / "configs/parallel_refine/experiments/experiment1_ex_v2"
 
 # Explicit parent-config inventory, grouped by total dataset size and A-train
@@ -75,7 +76,7 @@ PARENT_CONFIGS = {
 }
 
 
-def extension(parent_path, suffix, recipes=RECIPES):
+def extension(parent_path, suffix, recipes=RECIPES, *, output_root=None):
     """Keep component references relative to the parent directory."""
     parent_path = Path(parent_path).resolve()
     parent = load_study_config(parent_path)
@@ -84,6 +85,8 @@ def extension(parent_path, suffix, recipes=RECIPES):
     raw = json.loads(parent_path.read_text(encoding="utf-8"))
     raw["experiment"]["name"] = f"{parent.study_name}_{suffix}"
     raw["experiment"]["upstream_experiment_name"] = parent.upstream_experiment_name
+    if output_root is not None:
+        raw["experiment"]["output_root"] = str(output_root.resolve())
     # Always isolate downstream results from the original run.
     raw["experiment"].pop("refiner_output_experiment_name", None)
     markers = raw["experiment"].setdefault("markers", {})
@@ -228,10 +231,12 @@ def main(argv=None):
                         help="A-train percent; repeat to select allocations. Default: 50..95.")
     parser.add_argument("--config", type=Path, action="append",
                         help="Explicit parent config; repeat. Overrides --total-m selection.")
+    parser.add_argument("--output-root", type=Path,
+                        help="Use an existing results root for upstream checkpoints and new extension outputs.")
     parser.add_argument("--gpus", nargs="+", default=["0"])
     parser.add_argument("--seed", type=int, action="append", help="Upstream seed; repeat.")
-    parser.add_argument("--recipe", choices=RECIPES, action="append",
-                        help="Refiner recipe; repeat. Default: all supplementary recipes.")
+    parser.add_argument("--recipe", choices=(*RECIPES, *PAIR_STATISTICS_RECIPES), action="append",
+                        help="Refiner recipe; repeat. Default: the original five supplementary recipes.")
     parser.add_argument("--downstream-workers", type=int, default=1,
                         help="Concurrent downstream seeds per GPU within one recipe. Default: 1.")
     parser.add_argument("--suffix", default="refine_inputs_v1")
@@ -273,7 +278,7 @@ def main(argv=None):
               if args.prune_after_aggregate and args.stage == "all" else (args.stage,))
     plans = []
     for parent_path in paths:
-        plan = extension(parent_path, args.suffix, recipes)
+        plan = extension(parent_path, args.suffix, recipes, output_root=args.output_root)
         if plan is None:
             print(f"Skip {parent_path.name}: B-train is zero")
             continue
@@ -285,8 +290,9 @@ def main(argv=None):
               f"{len(runs)} upstream seeds x {len(parent.downstream_seeds)} downstream seeds "
               f"x {len(recipes)} recipes; stage={args.stage}; "
               f"downstream workers per GPU={min(args.downstream_workers, len(parent.downstream_seeds))}")
-        print(f"  Reuse upstream: {parent.parallel_output_directory}")
-        print(f"  Results: {Path(raw['experiment']['output_root']) / raw['experiment']['name']}")
+        output_root = Path(raw["experiment"]["output_root"])
+        print(f"  Reuse upstream: {output_root / parent.upstream_experiment_name / 'parallel'}")
+        print(f"  Results: {output_root / raw['experiment']['name']}")
         plans.append((path, raw, runs))
         if args.dry_run:
             downstream = parent.downstream_seeds if args.downstream_workers > 1 else ()

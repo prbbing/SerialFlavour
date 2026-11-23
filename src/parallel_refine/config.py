@@ -24,13 +24,14 @@ FEATURE_RECIPES = {
     "F1_embed": ("embedding",),
     # Repeated column selection gives [z_global, z_global] without new cache fields.
     "F1_double": ("embedding", "embedding"),
-    # These two selectors are resolved by feature name so that the embedding
-    # width is inherited from the frozen Parallel checkpoint rather than from
-    # a hard-coded model dimension.
+    # Select subsets of the cached auxiliary features by name. The embedding
+    # width is inherited from the frozen Parallel checkpoint.
     "F2_origin": ("embedding", "origin"),
     "F2_vertex": ("embedding", "pair_weighted_embedding"),
+    "DNN-pair-99": ("embedding", "pair_weighted_embedding", "pair_statistics"),
     "F2_jet_aux": ("jet_probability", "aux"),
     "F3_embed_aux": ("embedding", "aux"),
+    "F3_embed_aux_104": ("embedding", "origin", "pair_weighted_embedding"),
     "F4_all": ("jet_probability", "embedding", "aux"),
 }
 GRAPH_RECIPES = ("FG0", "FG1", "FG2", "FG2s", "FG1_48d", "FG2_32d", "FG4")

@@ -4,10 +4,38 @@ import json
 from pathlib import Path
 from threading import Barrier
 
+import numpy as np
 import pytest
+import torch
 
 from scripts.production import run_experiment1_ex_v2_refine as runner
+from src.parallel_refine.cache import FrozenFeatureCache, build_feature_table
 from src.parallel_refine.config import load_study_config
+
+
+def test_pair_statistics_ablation_changes_only_the_intended_features():
+    embeddings = torch.ones(1, 2, 48)
+    table = build_feature_table({
+        "track_mask": torch.ones(1, 2, dtype=torch.bool),
+        "flavour_probs": torch.full((1, 3), 1 / 3),
+        "track_embedding": embeddings,
+        "pool_attention": torch.full((1, 2, 1), 0.5),
+        "pooled_embedding": embeddings.mean(dim=1),
+        "origin_probs": torch.full((1, 2, 8), 1 / 8),
+        "pair_probs": torch.full((1, 2, 2), 0.5),
+    })
+    cache = FrozenFeatureCache(
+        directory=None, features=table.values.numpy(), labels=np.array([0]),
+        source_index=np.array([10]), event_number=np.array([1]),
+        manifest={"feature_names": table.names, "groups": table.groups},
+    )
+    statistics = ["pair_match_mean", "pair_match_max", "pair_match_sum"]
+    pair_with_statistics = cache.recipe_names("DNN-pair-99")
+    both_without_statistics = cache.recipe_names("F3_embed_aux_104")
+    assert len(pair_with_statistics) == 99
+    assert pair_with_statistics == cache.recipe_names("F2_vertex") + statistics
+    assert len(both_without_statistics) == 104
+    assert both_without_statistics + statistics == cache.recipe_names("F3_embed_aux")
 
 
 @pytest.mark.parametrize("total_m", [1, 3, 5])
