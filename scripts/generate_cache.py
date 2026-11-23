@@ -28,6 +28,8 @@ def main(argv=None):
     parser.add_argument("--seed", type=int, action="append")
     parser.add_argument("--split", action="append")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--no-graph", action="store_true",
+                        help="Generate only the structured feature cache.")
     args = parser.parse_args(argv)
     study = load_study_config(args.config)
     print(f"experiment_manifest={write_experiment_manifest(study)}")
@@ -42,7 +44,8 @@ def main(argv=None):
         print(f"seed={run.seed} device={device}")
         for split in splits:
             cache, graph = generate_frozen_and_graph_cache(
-                study, run, split, device, force=args.force)
+                study, run, split, device, force=args.force,
+                include_graph=False if args.no_graph else None)
             print(
                 f"cache seed={run.seed} split={split} rows={len(cache.labels):,} "
                 f"features={cache.features.shape[1]} dir={cache.directory}")

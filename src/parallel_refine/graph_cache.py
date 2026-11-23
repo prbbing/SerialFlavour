@@ -18,6 +18,7 @@ import torch
 
 from src.parallel_refine.cache import (
     generate_frozen_and_graph_cache, sha256_array, sha256_file)
+from src.parallel_refine.cache_workspace import feature_cache_path
 from src.parallel_refine.config import SeedRun, StudyConfig, active_parallel_config
 from src.parallel_refine.splits import load_split_bundle
 
@@ -42,7 +43,8 @@ def graph_cache_directory(study, run, split, checkpoint, split_index_sha256):
     identity = (
         f"{GRAPH_CACHE_VERSION}_{sha256_file(checkpoint)[:12]}_"
         f"{split_index_sha256[:12]}")
-    return Path(study.cache["graph_root"]) / run.output_name / split / identity
+    return feature_cache_path(study.cache["graph_root"], study.study_name,
+                              Path(run.output_name) / split / identity)
 
 
 class _GraphWriter:

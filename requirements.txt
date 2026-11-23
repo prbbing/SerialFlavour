@@ -1,0 +1,12 @@
+# Training, evaluation, and paper plots
+h5py
+matplotlib
+numpy
+pandas
+tensorboard
+torch
+
+# Notebook and tests
+ipykernel
+ipython
+pytest

@@ -1,0 +1,72 @@
+{
+  "components": {
+    "data": "../../data/experiment1_ex_n3m.json",
+    "parallel": "../../parallel/experiment1_p122k.json",
+    "refiner": "../../refiner/dnn_default.json"
+  },
+  "config_kind": "experiment",
+  "experiment": {
+    "name": "experiment1_ex_v2_p122k_n3m_a050_b050_refiner50",
+    "output_root": "/data/yuyang/SerialFlavour/results/parallel_refine",
+    "markers": {
+      "label": "Experiment 1 EX V2 | Parallel 122k | total 3M | 50/50 upstream | A-train reused for refiners",
+      "tags": [
+        "experiment-1-ex-v2",
+        "fixed-total-data",
+        "training-allocation-scan",
+        "transformer-plus-dnn",
+        "upstream-train-reuse"
+      ],
+      "comparison_group": "experiment1_ex_v2_p122k_n3m_training_allocation",
+      "variables": {
+        "parallel_parameters": 122077,
+        "total_dataset_jets": 3000000,
+        "train_pool_jets": 2100000,
+        "validation_jets": 300000,
+        "test_jets": 600000,
+        "a_train_jets": 1050000,
+        "b_train_jets": 1050000,
+        "a_fraction_percent": 50,
+        "b_fraction_percent": 50,
+        "dnn_enabled": true,
+        "lambda_jet": 1.0,
+        "lambda_origin": 0.5,
+        "lambda_pair": 1.5,
+        "refiner_train_fraction_percent_of_train_pool": 50
+      }
+    },
+    "upstream_experiment_name": "experiment1_ex_v2_p122k_n3m_a050_b050"
+  },
+  "overrides": {
+    "data": {
+      "split_dir": "/data/yuyang/SerialFlavour/parallel_refine/cache/splits/experiment1_ex_v2_n3m_a050_b050_refiner50",
+      "sizes": {
+        "a_train": 1050000,
+        "b_train": 1050000
+      },
+      "refiner_train_selection": {
+        "parent_split_dir": "/data/yuyang/SerialFlavour/parallel_refine/cache/splits/experiment1_ex_v2_n3m_a050_b050",
+        "parent_b_train": 1050000,
+        "rng_seed": 42,
+        "jet_index_sha256": "a783ceae1f7a39c0f632e8e08a975e378c2e953ddd5998f40b2f902276e2a132",
+        "event_sha256": "fcfcdde6214235111a3ef5bc7efdd53d7516444adbc47711fc5edf81cea06fa1"
+      }
+    },
+    "parallel": {
+      "loss_weights": {
+        "jet": 1.0,
+        "origin": 0.5,
+        "pair": 1.5
+      }
+    },
+    "refiners": {
+      "recipes": [
+        "F3_embed_aux",
+        "FG1_48d",
+        "F1_embed",
+        "F2_origin",
+        "F2_vertex"
+      ]
+    }
+  }
+}

@@ -2,11 +2,40 @@
 
 import json
 from pathlib import Path
+from threading import Barrier
 
+import numpy as np
 import pytest
+import torch
 
 from scripts.production import run_experiment1_ex_v2_refine as runner
+from src.parallel_refine.cache import FrozenFeatureCache, build_feature_table
 from src.parallel_refine.config import load_study_config
+
+
+def test_pair_statistics_ablation_changes_only_the_intended_features():
+    embeddings = torch.ones(1, 2, 48)
+    table = build_feature_table({
+        "track_mask": torch.ones(1, 2, dtype=torch.bool),
+        "flavour_probs": torch.full((1, 3), 1 / 3),
+        "track_embedding": embeddings,
+        "pool_attention": torch.full((1, 2, 1), 0.5),
+        "pooled_embedding": embeddings.mean(dim=1),
+        "origin_probs": torch.full((1, 2, 8), 1 / 8),
+        "pair_probs": torch.full((1, 2, 2), 0.5),
+    })
+    cache = FrozenFeatureCache(
+        directory=None, features=table.values.numpy(), labels=np.array([0]),
+        source_index=np.array([10]), event_number=np.array([1]),
+        manifest={"feature_names": table.names, "groups": table.groups},
+    )
+    statistics = ["pair_match_mean", "pair_match_max", "pair_match_sum"]
+    pair_with_statistics = cache.recipe_names("DNN-pair-99")
+    both_without_statistics = cache.recipe_names("F3_embed_aux_104")
+    assert len(pair_with_statistics) == 99
+    assert pair_with_statistics == cache.recipe_names("F2_vertex") + statistics
+    assert len(both_without_statistics) == 104
+    assert both_without_statistics + statistics == cache.recipe_names("F3_embed_aux")
 
 
 @pytest.mark.parametrize("total_m", [1, 3, 5])
@@ -142,3 +171,120 @@ def test_failure_is_reported_and_other_seeds_continue(parent, monkeypatch):
     assert runner.main(["--config", str(parent), "--stage", "all"]) == 1
     assert any("5" in cmd for cmd in calls)
     assert not any("--aggregate-parallel-seeds" in cmd for cmd in calls)
+
+
+def test_two_gpus_run_five_downstream_seeds_per_recipe(parent, monkeypatch):
+    recipes = ("F1_double", "F2_origin", "F2_vertex", "FG1_48d")
+    concurrent = {recipe: Barrier(10, timeout=5) for recipe in recipes}
+    events = []
+
+    def simulate(cmd, gpu, log, python):
+        seed = int(cmd[cmd.index("--seed") + 1])
+        if cmd[0] == "scripts/generate_cache.py":
+            assert cmd[-4:] == ["--split", "b_train", "--split", "b_val"]
+            events.append((gpu, seed, "cache", None))
+            return
+        recipe = cmd[cmd.index("--recipe") + 1]
+        trainer = "train_graph_refiner.py" if recipe == "FG1_48d" else "train_dnn.py"
+        assert cmd[0] == f"scripts/{trainer}"
+        assert "--skip-complete" in cmd
+        downstream = int(cmd[cmd.index("--downstream-seed") + 1])
+        assert log.name == f"{recipe}.dnn_seed{downstream}.log"
+        events.append((gpu, seed, recipe, downstream))
+        concurrent[recipe].wait()
+
+    monkeypatch.setattr(runner, "run_command", simulate)
+    assert runner.main([
+        "--config", str(parent), "--gpus", "0", "1", "--seed", "1", "--seed", "2",
+        "--downstream-workers", "5",
+        *(arg for recipe in recipes for arg in ("--recipe", recipe)),
+    ]) == 0
+
+    assert len(events) == 42
+    assignments = {(gpu, seed) for gpu, seed, recipe, _ in events if recipe == "cache"}
+    assert {gpu for gpu, _ in assignments} == {"0", "1"}
+    assert {seed for _, seed in assignments} == {1, 2}
+    for gpu, seed in assignments:
+        stages = [(recipe, downstream) for card, upstream, recipe, downstream in events
+                  if card == gpu and upstream == seed]
+        assert stages[0] == ("cache", None)
+        for start, recipe in enumerate(recipes):
+            first = 1 + 5 * start
+            assert sorted(stages[first:first + 5]) == [(recipe, seed) for seed in range(1, 6)]
+
+
+@pytest.mark.parametrize("failed_stage", [None, "b_cache", "y_cache", "aggregate"])
+def test_private_cache_lifetime(parent, tmp_path, monkeypatch, failed_stage):
+    from src.parallel_refine.cache_workspace import (
+        PRIVATE_CACHE_ENV, cache_workspace, feature_cache_path,
+    )
+
+    raw = json.loads(parent.read_text(encoding="utf-8"))
+    roots = {"root": tmp_path / "frozen", "graph_root": tmp_path / "graph"}
+    raw["overrides"]["feature_cache"] = {key: str(root) for key, root in roots.items()}
+    parent.write_text(json.dumps(raw), encoding="utf-8")
+    alternate = tmp_path / "parent2.json"
+    raw["experiment"]["upstream_experiment_name"] = raw["experiment"]["name"]
+    raw["experiment"]["name"] += "_other"
+    alternate.write_text(json.dumps(raw), encoding="utf-8")
+
+    first = load_study_config(parent).study_name + "_test"
+    second = load_study_config(alternate).study_name + "_test"
+    relative = Path("parallel_seed1/b_train/cache")
+    shared = roots["root"] / relative
+    shared.mkdir(parents=True)
+    (shared / "manifest.json").touch()
+    monkeypatch.setenv(PRIVATE_CACHE_ENV, "1")
+    assert feature_cache_path(roots["root"], first, relative) == shared
+    assert feature_cache_path(roots["graph_root"], first, relative) == (
+        cache_workspace(roots["graph_root"], first) / relative
+    )
+    events = []
+
+    def simulate(cmd, gpu, log, python, *, private_cache):
+        assert private_cache
+        name = Path(cmd[cmd.index("--config") + 1]).stem
+        seed = int(cmd[cmd.index("--seed") + 1]) if "--seed" in cmd else None
+        if name == second:
+            assert all(not cache_workspace(root, first).exists() for root in roots.values())
+        if "--aggregate-parallel-seeds" in cmd:
+            assert all(cache_workspace(root, name).is_dir() for root in roots.values())
+            events.append((name, "aggregate"))
+            if failed_stage == "aggregate" and name == first:
+                raise RuntimeError("aggregation failed")
+        elif "y_test" in cmd:
+            assert events.count((name, "train")) == (4 if name == first and failed_stage == "b_cache" else 5)
+            events.append((name, f"y_cache:{seed}"))
+            if name == first and seed == 1 and failed_stage == "y_cache":
+                raise RuntimeError("Y cache failed")
+        elif cmd[0] == "scripts/train_dnn.py":
+            events.append((name, "train"))
+            study = load_study_config(cmd[cmd.index("--config") + 1])
+            run, = study.selected_seeds([seed])
+            for downstream in study.downstream_seeds:
+                directory = study.refiner_directory(run, "F2_origin", downstream)
+                directory.mkdir(parents=True, exist_ok=True)
+                (directory / "last_dnn.pt").touch()
+                (directory / "run_manifest.json").touch()
+        elif "b_train" in cmd:
+            for root in roots.values():
+                cache_workspace(root, name).mkdir(parents=True, exist_ok=True)
+            if name == first and seed == 1 and failed_stage == "b_cache":
+                raise RuntimeError("B cache failed")
+
+    monkeypatch.setattr(runner, "run_command", simulate)
+    args = ["--config", str(parent), "--config", str(alternate), "--suffix", "test",
+            "--gpus", "0", "1", "--recipe", "F2_origin", "--stage", "all",
+            "--prune-after-aggregate"]
+    assert runner.main(args) == int(failed_stage is not None)
+    expected_aggregates = [(first, "aggregate"), (second, "aggregate")]
+    if failed_stage in {"b_cache", "y_cache"}:
+        expected_aggregates.pop(0)
+    assert [(name, action) for name, action in events if action == "aggregate"] == expected_aggregates
+    for seed in range(2, 6):
+        assert (first, f"y_cache:{seed}") in events
+    assert ((first, "y_cache:1") in events) == (failed_stage != "b_cache")
+    for root in roots.values():
+        assert not cache_workspace(root, first).exists()
+        assert not cache_workspace(root, second).exists()
+    assert (shared / "manifest.json").is_file()

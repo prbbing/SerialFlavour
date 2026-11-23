@@ -272,3 +272,41 @@ refiner，不依赖旧队列的 `.done` 标记。中断留下的不完整 refine
 已有扩展 JSON 内容或 manifest 身份与当前配置不一致时拒绝运行；有意改变方案应
 使用新的 `--suffix`（默认 `refine_inputs_v1`）。原结果目录和 Archived 配置不修改。
 本入口已在本地做模拟流程测试；尚未执行 GPU 训练或 Y-test 评估。
+
+
+### 1M / 5M refiner ablation
+
+The 20 `*_refiner_ablation_v1.json` configs for 1M and 5M cover A/B 95/5
+through 50/50 and enable DNN-double (`F1_double`), DNN-origin (`F2_origin`),
+DNN-vertex (`F2_vertex`), and DNN-graph (`FG1_48d`). They reuse the original
+Transformer checkpoints and split files. Each GPU builds or reuses the frozen
+and pair-graph B caches for one upstream seed, trains the five downstream seeds of one
+recipe concurrently, then does the same for the next recipe. Each downstream
+seed writes a separate log and completed seeds are skipped on reruns.
+
+The launcher attempts training, locked-Y evaluation, and the upstream-seed
+aggregate one configuration at a time. Independent jobs continue after a
+failure. Before advancing, the launcher releases the attempted configuration's
+private frozen and graph caches, which can be regenerated from the original
+inputs. Existing shared feature caches are reused and retained. Completed
+training and evaluation stages are reused on a retry. The launcher reports
+failed configurations and returns a nonzero status after the queue finishes.
+
+```bash
+# Review the full 1M + 5M training and evaluation plan.
+GPU_POOL="0 1 2 3" bash scripts/production/run_experiment1_ex_v2_refiner_ablation.sh --dry-run
+
+# Train on B, evaluate on locked Y, and aggregate the five upstream seeds.
+GPU_POOL="0 1 2 3" bash scripts/production/run_experiment1_ex_v2_refiner_ablation.sh
+
+# Run only one stage if needed.
+GPU_POOL="0 1 2 3" bash scripts/production/run_experiment1_ex_v2_refiner_ablation.sh --stage train
+GPU_POOL="0 1 2 3" bash scripts/production/run_experiment1_ex_v2_refiner_ablation.sh --stage evaluate
+```
+
+Set `PYTHON` to the server environment's interpreter as needed.
+`TOTAL_M=1` or `TOTAL_M=5` limits the run to one size.
+`--allocation 75` limits it to 75/25 and `--seed 1` limits it to one
+upstream seed. `--prepare-configs-only` materializes the selected configs
+without starting jobs. Per-seed logs are under
+`logs/parallel_refine/experiment1_ex_v2/refine_inputs/` by default.

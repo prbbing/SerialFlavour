@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 import torch
 
+from src.parallel_refine.cache_workspace import feature_cache_path
 from src.parallel_refine.config import (
     FEATURE_RECIPES, GRAPH_RECIPES, SeedRun, StudyConfig,
     active_parallel_config)
@@ -25,6 +26,12 @@ from src.parallel_refine.splits import load_split_bundle
 
 FEATURE_SCHEMA_VERSION = "parallel_refine_structured_pool_v4"
 _FEATURE_EPS = 1e-12
+_NAMED_FEATURE_PREFIXES = {
+    "embedding": "pooled_",
+    "origin": "origin_attention_",
+    "pair_weighted_embedding": "pair_weighted_embedding_",
+    "pair_statistics": "pair_match_",
+}
 
 
 @dataclass(frozen=True)
@@ -111,7 +118,8 @@ def cache_directory(
     identity = (
         f"{FEATURE_SCHEMA_VERSION}_{sha256_file(checkpoint)[:12]}_"
         f"{split_index_sha256[:12]}")
-    return Path(study.cache["root"]) / run.output_name / split / identity
+    return feature_cache_path(study.cache["root"], study.study_name,
+                              Path(run.output_name) / split / identity)
 
 
 @dataclass(frozen=True)
@@ -124,17 +132,15 @@ class FrozenFeatureCache:
     manifest: dict[str, Any]
 
     def recipe_columns(self, recipe: str) -> np.ndarray:
-        if recipe == "F2_origin":
-            prefixes = ("pooled_", "origin_attention_")
-            return self._columns_with_prefixes(prefixes)
-        if recipe == "F2_vertex":
-            prefixes = ("pooled_", "pair_weighted_embedding_")
-            return self._columns_with_prefixes(prefixes)
         if recipe == "F1OJ":
             # Graph-only context selector: F2_origin plus the frozen jet posterior.
             prefixes = ("jet_prob_", "pooled_", "origin_attention_")
             return self._columns_with_prefixes(prefixes)
         groups = FEATURE_RECIPES[recipe]
+        # Select subsets of the legacy aux group by name, without rebuilding caches.
+        if any(group in _NAMED_FEATURE_PREFIXES and group != "embedding" for group in groups):
+            return self._columns_with_prefixes(
+                tuple(_NAMED_FEATURE_PREFIXES[group] for group in groups))
         indices = []
         for group in groups:
             start, stop = self.manifest["groups"][group]
