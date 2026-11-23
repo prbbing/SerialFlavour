@@ -1,0 +1,569 @@
+{
+  "schema_version": 1,
+  "kind": "e3",
+  "figure": "rejection_aux_weights_ori_ver.png",
+  "payload": {
+    "panels": [
+      {
+        "key": "b_light_70",
+        "label": "b/light 70%",
+        "rows": [
+          {
+            "rank": 1,
+            "working_point": "b_light_70",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p5_pair0p5",
+            "origin_weight": 1.5,
+            "pair_weight": 0.5,
+            "upstream_rejection": 451.801496454906,
+            "f3_rejection": 474.5742935167035,
+            "upstream_sample_sd": 43.74566077682021,
+            "f3_sample_sd": 34.14778781225384
+          },
+          {
+            "rank": 2,
+            "working_point": "b_light_70",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p0_pair0p5",
+            "origin_weight": 1.0,
+            "pair_weight": 0.5,
+            "upstream_rejection": 468.1631799404392,
+            "f3_rejection": 487.7635134586011,
+            "upstream_sample_sd": 45.07548220663877,
+            "f3_sample_sd": 34.41954129429391
+          },
+          {
+            "rank": 3,
+            "working_point": "b_light_70",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p5_pair0p2",
+            "origin_weight": 1.5,
+            "pair_weight": 0.2,
+            "upstream_rejection": 473.5365273539668,
+            "f3_rejection": 482.45540646673237,
+            "upstream_sample_sd": 30.113823866266173,
+            "f3_sample_sd": 20.77499872329836
+          },
+          {
+            "rank": 4,
+            "working_point": "b_light_70",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p0_pair1p5",
+            "origin_weight": 1.0,
+            "pair_weight": 1.5,
+            "upstream_rejection": 473.55968982340585,
+            "f3_rejection": 512.4017826169809,
+            "upstream_sample_sd": 41.293560253983834,
+            "f3_sample_sd": 33.34532545321878
+          },
+          {
+            "rank": 5,
+            "working_point": "b_light_70",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p0_pair0p2",
+            "origin_weight": 1.0,
+            "pair_weight": 0.2,
+            "upstream_rejection": 477.9991627942944,
+            "f3_rejection": 495.5533310324953,
+            "upstream_sample_sd": 23.152247326117187,
+            "f3_sample_sd": 16.63921147526111
+          },
+          {
+            "rank": 6,
+            "working_point": "b_light_70",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p0_pair1p0",
+            "origin_weight": 1.0,
+            "pair_weight": 1.0,
+            "upstream_rejection": 484.45631381615533,
+            "f3_rejection": 517.9137462827001,
+            "upstream_sample_sd": 36.92135653563775,
+            "f3_sample_sd": 18.61152335442838
+          },
+          {
+            "rank": 7,
+            "working_point": "b_light_70",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p5_pair1p5",
+            "origin_weight": 1.5,
+            "pair_weight": 1.5,
+            "upstream_rejection": 488.3507466487328,
+            "f3_rejection": 505.84381244961605,
+            "upstream_sample_sd": 62.42183769135104,
+            "f3_sample_sd": 41.90007152250103
+          },
+          {
+            "rank": 8,
+            "working_point": "b_light_70",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p5_pair0p5",
+            "origin_weight": 0.5,
+            "pair_weight": 0.5,
+            "upstream_rejection": 489.7661109375349,
+            "f3_rejection": 539.4253586034199,
+            "upstream_sample_sd": 36.34725383012596,
+            "f3_sample_sd": 48.359669704705915
+          },
+          {
+            "rank": 9,
+            "working_point": "b_light_70",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p5_pair0p2",
+            "origin_weight": 0.5,
+            "pair_weight": 0.2,
+            "upstream_rejection": 492.3596877526158,
+            "f3_rejection": 521.6210771206395,
+            "upstream_sample_sd": 30.962696070643297,
+            "f3_sample_sd": 21.762255814791075
+          },
+          {
+            "rank": 10,
+            "working_point": "b_light_70",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p2_pair1p0",
+            "origin_weight": 0.2,
+            "pair_weight": 1.0,
+            "upstream_rejection": 499.1906833078521,
+            "f3_rejection": 542.8020294927601,
+            "upstream_sample_sd": 43.35289135085452,
+            "f3_sample_sd": 46.59147397810538
+          },
+          {
+            "rank": 11,
+            "working_point": "b_light_70",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p2_pair0p2",
+            "origin_weight": 0.2,
+            "pair_weight": 0.2,
+            "upstream_rejection": 502.17173185026184,
+            "f3_rejection": 534.3619230414745,
+            "upstream_sample_sd": 38.80906184346123,
+            "f3_sample_sd": 36.80691580804458
+          },
+          {
+            "rank": 12,
+            "working_point": "b_light_70",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p5_pair1p0",
+            "origin_weight": 1.5,
+            "pair_weight": 1.0,
+            "upstream_rejection": 506.44199512153307,
+            "f3_rejection": 500.1922673613938,
+            "upstream_sample_sd": 97.5433696451731,
+            "f3_sample_sd": 40.540090334816014
+          },
+          {
+            "rank": 13,
+            "working_point": "b_light_70",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p5_pair1p0",
+            "origin_weight": 0.5,
+            "pair_weight": 1.0,
+            "upstream_rejection": 507.9266375296487,
+            "f3_rejection": 541.5060765298529,
+            "upstream_sample_sd": 38.520928226034265,
+            "f3_sample_sd": 56.031200874605325
+          },
+          {
+            "rank": 14,
+            "working_point": "b_light_70",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p5_pair1p5",
+            "origin_weight": 0.5,
+            "pair_weight": 1.5,
+            "upstream_rejection": 512.3226355887521,
+            "f3_rejection": 543.5039261039726,
+            "upstream_sample_sd": 56.203647944018485,
+            "f3_sample_sd": 18.518301814661267
+          },
+          {
+            "rank": 15,
+            "working_point": "b_light_70",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p2_pair1p5",
+            "origin_weight": 0.2,
+            "pair_weight": 1.5,
+            "upstream_rejection": 521.6991328489087,
+            "f3_rejection": 559.0516271923858,
+            "upstream_sample_sd": 24.837278760008047,
+            "f3_sample_sd": 30.9063278743603
+          },
+          {
+            "rank": 16,
+            "working_point": "b_light_70",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p2_pair0p5",
+            "origin_weight": 0.2,
+            "pair_weight": 0.5,
+            "upstream_rejection": 536.9361301463118,
+            "f3_rejection": 555.3027383611509,
+            "upstream_sample_sd": 45.068859036427575,
+            "f3_sample_sd": 48.90902060690306
+          }
+        ],
+        "upstream_max_reference": 536.9361301463118
+      },
+      {
+        "key": "b_light_85",
+        "label": "b/light 85%",
+        "rows": [
+          {
+            "rank": 1,
+            "working_point": "b_light_85",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p5_pair0p5",
+            "origin_weight": 1.5,
+            "pair_weight": 0.5,
+            "upstream_rejection": 51.2582114762302,
+            "f3_rejection": 55.86101177558762,
+            "upstream_sample_sd": 1.7781970407595877,
+            "f3_sample_sd": 2.2902614532460013
+          },
+          {
+            "rank": 2,
+            "working_point": "b_light_85",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p0_pair0p2",
+            "origin_weight": 1.0,
+            "pair_weight": 0.2,
+            "upstream_rejection": 52.335606094403246,
+            "f3_rejection": 55.854716311930815,
+            "upstream_sample_sd": 1.050379498466151,
+            "f3_sample_sd": 1.9447480501622594
+          },
+          {
+            "rank": 3,
+            "working_point": "b_light_85",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p5_pair1p5",
+            "origin_weight": 1.5,
+            "pair_weight": 1.5,
+            "upstream_rejection": 52.47139085499269,
+            "f3_rejection": 56.3284070813135,
+            "upstream_sample_sd": 1.4564257821351576,
+            "f3_sample_sd": 3.0033323973322443
+          },
+          {
+            "rank": 4,
+            "working_point": "b_light_85",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p5_pair0p2",
+            "origin_weight": 1.5,
+            "pair_weight": 0.2,
+            "upstream_rejection": 52.48491523898647,
+            "f3_rejection": 55.55741473554408,
+            "upstream_sample_sd": 1.9957856786638295,
+            "f3_sample_sd": 2.092308094267732
+          },
+          {
+            "rank": 5,
+            "working_point": "b_light_85",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p0_pair1p5",
+            "origin_weight": 1.0,
+            "pair_weight": 1.5,
+            "upstream_rejection": 52.64750461873344,
+            "f3_rejection": 58.31444994879356,
+            "upstream_sample_sd": 2.4787350603015,
+            "f3_sample_sd": 1.9621958843456129
+          },
+          {
+            "rank": 6,
+            "working_point": "b_light_85",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p0_pair1p0",
+            "origin_weight": 1.0,
+            "pair_weight": 1.0,
+            "upstream_rejection": 52.8522613458112,
+            "f3_rejection": 57.87253975597747,
+            "upstream_sample_sd": 1.9103878607603282,
+            "f3_sample_sd": 2.444401260502923
+          },
+          {
+            "rank": 7,
+            "working_point": "b_light_85",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p2_pair0p2",
+            "origin_weight": 0.2,
+            "pair_weight": 0.2,
+            "upstream_rejection": 53.045616890023744,
+            "f3_rejection": 57.53793798695822,
+            "upstream_sample_sd": 2.11679478062498,
+            "f3_sample_sd": 2.555164555048316
+          },
+          {
+            "rank": 8,
+            "working_point": "b_light_85",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p5_pair0p5",
+            "origin_weight": 0.5,
+            "pair_weight": 0.5,
+            "upstream_rejection": 53.06306415096291,
+            "f3_rejection": 59.337160323536615,
+            "upstream_sample_sd": 1.264347156937166,
+            "f3_sample_sd": 2.7895697216803494
+          },
+          {
+            "rank": 9,
+            "working_point": "b_light_85",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p5_pair1p0",
+            "origin_weight": 1.5,
+            "pair_weight": 1.0,
+            "upstream_rejection": 53.12032097207996,
+            "f3_rejection": 56.6324247223165,
+            "upstream_sample_sd": 5.108311169866424,
+            "f3_sample_sd": 3.008970315542157
+          },
+          {
+            "rank": 10,
+            "working_point": "b_light_85",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p0_pair0p5",
+            "origin_weight": 1.0,
+            "pair_weight": 0.5,
+            "upstream_rejection": 53.126963745068565,
+            "f3_rejection": 56.92643348192458,
+            "upstream_sample_sd": 2.649716455115697,
+            "f3_sample_sd": 2.3923062567875393
+          },
+          {
+            "rank": 11,
+            "working_point": "b_light_85",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p5_pair0p2",
+            "origin_weight": 0.5,
+            "pair_weight": 0.2,
+            "upstream_rejection": 53.256765871714876,
+            "f3_rejection": 58.17704969319881,
+            "upstream_sample_sd": 2.274417316325111,
+            "f3_sample_sd": 1.5378585527891206
+          },
+          {
+            "rank": 12,
+            "working_point": "b_light_85",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p2_pair1p0",
+            "origin_weight": 0.2,
+            "pair_weight": 1.0,
+            "upstream_rejection": 54.07809827801202,
+            "f3_rejection": 59.28030349576751,
+            "upstream_sample_sd": 1.9838423356300503,
+            "f3_sample_sd": 2.8226146197196638
+          },
+          {
+            "rank": 13,
+            "working_point": "b_light_85",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p5_pair1p0",
+            "origin_weight": 0.5,
+            "pair_weight": 1.0,
+            "upstream_rejection": 54.147007828558586,
+            "f3_rejection": 59.62094466341715,
+            "upstream_sample_sd": 1.3915376739072134,
+            "f3_sample_sd": 3.4741382634776325
+          },
+          {
+            "rank": 14,
+            "working_point": "b_light_85",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p2_pair1p5",
+            "origin_weight": 0.2,
+            "pair_weight": 1.5,
+            "upstream_rejection": 54.76133090829408,
+            "f3_rejection": 60.23761836568774,
+            "upstream_sample_sd": 1.1547300302035712,
+            "f3_sample_sd": 2.5945361993092417
+          },
+          {
+            "rank": 15,
+            "working_point": "b_light_85",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p2_pair0p5",
+            "origin_weight": 0.2,
+            "pair_weight": 0.5,
+            "upstream_rejection": 55.243304376581726,
+            "f3_rejection": 60.438936872274994,
+            "upstream_sample_sd": 0.7631189173054489,
+            "f3_sample_sd": 4.215262311151676
+          },
+          {
+            "rank": 16,
+            "working_point": "b_light_85",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p5_pair1p5",
+            "origin_weight": 0.5,
+            "pair_weight": 1.5,
+            "upstream_rejection": 55.64439318866977,
+            "f3_rejection": 60.67012599664027,
+            "upstream_sample_sd": 2.501902201526752,
+            "f3_sample_sd": 1.749779143252448
+          }
+        ],
+        "upstream_max_reference": 55.64439318866977
+      },
+      {
+        "key": "c_light_30",
+        "label": "c/light 30%",
+        "rows": [
+          {
+            "rank": 1,
+            "working_point": "c_light_30",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p5_pair0p2",
+            "origin_weight": 1.5,
+            "pair_weight": 0.2,
+            "upstream_rejection": 57.14953883164427,
+            "f3_rejection": 66.29055192568701,
+            "upstream_sample_sd": 7.4707885307906245,
+            "f3_sample_sd": 5.106334255902358
+          },
+          {
+            "rank": 2,
+            "working_point": "c_light_30",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p0_pair0p2",
+            "origin_weight": 1.0,
+            "pair_weight": 0.2,
+            "upstream_rejection": 58.7177923158168,
+            "f3_rejection": 66.12766653650382,
+            "upstream_sample_sd": 5.921120831428453,
+            "f3_sample_sd": 3.2116951162473413
+          },
+          {
+            "rank": 3,
+            "working_point": "c_light_30",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p5_pair0p5",
+            "origin_weight": 1.5,
+            "pair_weight": 0.5,
+            "upstream_rejection": 59.736003590174086,
+            "f3_rejection": 66.1742382603391,
+            "upstream_sample_sd": 5.342685127241864,
+            "f3_sample_sd": 5.127864052113456
+          },
+          {
+            "rank": 4,
+            "working_point": "c_light_30",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p5_pair1p0",
+            "origin_weight": 1.5,
+            "pair_weight": 1.0,
+            "upstream_rejection": 62.36504350136751,
+            "f3_rejection": 67.78771274003593,
+            "upstream_sample_sd": 3.37773979986167,
+            "f3_sample_sd": 4.528673158065661
+          },
+          {
+            "rank": 5,
+            "working_point": "c_light_30",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p0_pair0p5",
+            "origin_weight": 1.0,
+            "pair_weight": 0.5,
+            "upstream_rejection": 62.79775630701115,
+            "f3_rejection": 67.81250401087851,
+            "upstream_sample_sd": 1.278637501676441,
+            "f3_sample_sd": 3.2509632469977463
+          },
+          {
+            "rank": 6,
+            "working_point": "c_light_30",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p5_pair1p5",
+            "origin_weight": 1.5,
+            "pair_weight": 1.5,
+            "upstream_rejection": 63.68074143446561,
+            "f3_rejection": 69.14591529469513,
+            "upstream_sample_sd": 4.023532003785536,
+            "f3_sample_sd": 6.109165330689978
+          },
+          {
+            "rank": 7,
+            "working_point": "c_light_30",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p0_pair1p0",
+            "origin_weight": 1.0,
+            "pair_weight": 1.0,
+            "upstream_rejection": 63.89236471698556,
+            "f3_rejection": 69.71351042072516,
+            "upstream_sample_sd": 2.980965648755516,
+            "f3_sample_sd": 4.463407284418978
+          },
+          {
+            "rank": 8,
+            "working_point": "c_light_30",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p2_pair0p2",
+            "origin_weight": 0.2,
+            "pair_weight": 0.2,
+            "upstream_rejection": 66.05193860323605,
+            "f3_rejection": 69.6373822192883,
+            "upstream_sample_sd": 3.831727446642536,
+            "f3_sample_sd": 3.5794100117253453
+          },
+          {
+            "rank": 9,
+            "working_point": "c_light_30",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin1p0_pair1p5",
+            "origin_weight": 1.0,
+            "pair_weight": 1.5,
+            "upstream_rejection": 68.4886539381528,
+            "f3_rejection": 72.50750507832116,
+            "upstream_sample_sd": 6.0847181316236565,
+            "f3_sample_sd": 5.048688903331414
+          },
+          {
+            "rank": 10,
+            "working_point": "c_light_30",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p5_pair0p5",
+            "origin_weight": 0.5,
+            "pair_weight": 0.5,
+            "upstream_rejection": 68.57026279898919,
+            "f3_rejection": 70.60694603149878,
+            "upstream_sample_sd": 4.290233066477385,
+            "f3_sample_sd": 6.136960322095382
+          },
+          {
+            "rank": 11,
+            "working_point": "c_light_30",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p5_pair0p2",
+            "origin_weight": 0.5,
+            "pair_weight": 0.2,
+            "upstream_rejection": 68.648101535378,
+            "f3_rejection": 69.61177259334174,
+            "upstream_sample_sd": 6.1871849277360385,
+            "f3_sample_sd": 4.83799404685175
+          },
+          {
+            "rank": 12,
+            "working_point": "c_light_30",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p2_pair0p5",
+            "origin_weight": 0.2,
+            "pair_weight": 0.5,
+            "upstream_rejection": 69.47079324504138,
+            "f3_rejection": 75.17558958554062,
+            "upstream_sample_sd": 9.456562786561733,
+            "f3_sample_sd": 5.884843262968107
+          },
+          {
+            "rank": 13,
+            "working_point": "c_light_30",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p5_pair1p5",
+            "origin_weight": 0.5,
+            "pair_weight": 1.5,
+            "upstream_rejection": 72.15196399316233,
+            "f3_rejection": 73.8461501845499,
+            "upstream_sample_sd": 6.791000876177439,
+            "f3_sample_sd": 5.295416078287294
+          },
+          {
+            "rank": 14,
+            "working_point": "c_light_30",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p5_pair1p0",
+            "origin_weight": 0.5,
+            "pair_weight": 1.0,
+            "upstream_rejection": 72.29727667631182,
+            "f3_rejection": 73.9199932591055,
+            "upstream_sample_sd": 5.542191760656462,
+            "f3_sample_sd": 7.066747006923956
+          },
+          {
+            "rank": 15,
+            "working_point": "c_light_30",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p2_pair1p5",
+            "origin_weight": 0.2,
+            "pair_weight": 1.5,
+            "upstream_rejection": 72.93539241443229,
+            "f3_rejection": 77.79750795724688,
+            "upstream_sample_sd": 4.089492118879999,
+            "f3_sample_sd": 6.844441874276927
+          },
+          {
+            "rank": 16,
+            "working_point": "c_light_30",
+            "experiment": "experiment3_p122k_n3m_a075_b025_origin0p2_pair1p0",
+            "origin_weight": 0.2,
+            "pair_weight": 1.0,
+            "upstream_rejection": 75.90587596349317,
+            "f3_rejection": 76.54152931410081,
+            "upstream_sample_sd": 2.5725012404986343,
+            "f3_sample_sd": 4.7200593637945865
+          }
+        ],
+        "upstream_max_reference": 75.90587596349317
+      }
+    ],
+    "recipe": "F3",
+    "sort_definition": "ascending upstream rejection independently at each working point; ties ordered by origin/pair weights",
+    "upstream_seeds": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "downstream_seed_count_per_upstream": 5,
+    "uncertainty": "Sample SD (ddof=1) across five upstream-seed group means; each downstream group averages five downstream seeds."
+  }
+}

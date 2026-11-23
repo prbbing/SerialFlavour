@@ -1,0 +1,2 @@
+# Preserve the exact bytes checked by the prepared data catalog.
+data/prepared/*.json -text whitespace=cr-at-eol
